@@ -36,4 +36,18 @@ a changelog line "Sampled values changed" with the reason.
 ## Pull requests
 
 Branch from `dev`; pull requests squash-merge into `dev` with a green
-`alls-green` status.
+`alls-green` status. Commit messages follow Conventional Commits. The
+template's four boxes (tests, docs, changelog, breaking or
+sampled-values change) are the whole checklist.
+
+## Releases
+
+Component tags `core-vX.Y.Z`, `py-vX.Y.Z`, `r-vX.Y.Z`; the process is
+in the release section of this file once the first release is wired.
+`main` carries releases only.
+
+## Triage
+
+Issues are triaged by the maintainer; bug reports need the version,
+platform, seed and minimal configuration the template asks for.
+Questions belong in Discussions.

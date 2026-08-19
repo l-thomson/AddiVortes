@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: If you use this software, cite both the software and the paper.
+title: thiessen
+type: software
+authors:
+  - family-names: Thomson
+    given-names: Leo
+    email: leo@feasibly.co.uk
+repository-code: "https://github.com/l-thomson/thiessen"
+license:
+  - MIT
+  - Apache-2.0
+keywords:
+  - Bayesian
+  - MCMC
+  - regression
+  - Voronoi tessellation
+preferred-citation:
+  type: article
+  title: "AddiVortes: (Bayesian) Additive Voronoi Tessellations"
+  authors:
+    - family-names: Stone
+      given-names: Adam J.
+    - family-names: Gosling
+      given-names: John Paul
+  journal: Journal of Computational and Graphical Statistics
+  year: 2025
+  volume: 34
+  issue: 3
+  start: 859
+  end: 871
+  doi: 10.1080/10618600.2024.2414104

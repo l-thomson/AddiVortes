@@ -4,6 +4,20 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    ignore:
+      # The reproducibility contract pins distribution sampling to a
+      # minor series; rand-family bumps change sampled values.
+      - dependency-name: rand
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: rand_chacha
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: rand_core
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: rand_distr
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # proptest above 1.8 needs rustc 1.85; the MSRV is 1.74.
+      - dependency-name: proptest
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: "/"
     schedule:

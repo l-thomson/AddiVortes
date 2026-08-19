@@ -1,0 +1,4 @@
+- [ ] Tests cover the change
+- [ ] Documentation updated where behaviour changed
+- [ ] Changelog entry added, or not applicable
+- [ ] Breaking change or sampled-values change stated in the description, or none
