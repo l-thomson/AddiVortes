@@ -1,0 +1,6 @@
+* text=auto eol=lf
+
+# Snapshot fixtures are compared on the reference target; no checkout may
+# rewrite their line endings.
+tests/snapshots/** -text
+crates/*/tests/snapshots/** -text
