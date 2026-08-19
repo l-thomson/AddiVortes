@@ -15,3 +15,5 @@ says "Sampled values changed" with the reason.
 - Reproducibility contract in the crate-root documentation, with
   determinism and fixed-seed snapshot tests.
 - CI pipeline, nightly statistical suite and branch protection.
+- Input-data contract in the crate-root documentation; a design matrix
+  with no columns is rejected with `Error::NoFeatures`.
