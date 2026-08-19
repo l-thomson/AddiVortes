@@ -28,6 +28,9 @@ pub enum Error {
         /// Rows of the design matrix.
         x_rows: usize,
     },
+    /// The design matrix has no columns.
+    #[error("design matrix has no columns")]
+    NoFeatures,
     /// Fewer observations than the sampler needs.
     #[error("found {found} observations but at least {required} are required")]
     InsufficientObservations {
@@ -126,6 +129,7 @@ mod tests {
                 },
                 "found 1 observations but at least 2 are required",
             ),
+            (Error::NoFeatures, "design matrix has no columns"),
             (
                 Error::NonFiniteResponse { row: 3 },
                 "response value in row 3 is not finite",

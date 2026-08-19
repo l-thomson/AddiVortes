@@ -108,10 +108,10 @@ impl std::fmt::Display for Warning {
 }
 
 /// Fit-boundary validation, in this order: `RowCountMismatch`,
-/// `InsufficientObservations` (n >= 2), `NonFiniteResponse`,
-/// `NonFiniteFeature` (row-major, first offence), `DegenerateResponse`,
-/// `DegenerateFeature`, `InvalidHyperparameter` for omega outside (0, p]
-/// when p >= 2.
+/// `InsufficientObservations` (n >= 2), `NoFeatures` (p >= 1),
+/// `NonFiniteResponse`, `NonFiniteFeature` (row-major, first offence),
+/// `DegenerateResponse`, `DegenerateFeature`, `InvalidHyperparameter` for
+/// omega outside (0, p] when p >= 2.
 pub(crate) fn validate_fit(x: &Data, y: &[f64], omega: f64) -> Result<()> {
     if y.len() != x.n_rows {
         return Err(Error::RowCountMismatch {
@@ -124,6 +124,9 @@ pub(crate) fn validate_fit(x: &Data, y: &[f64], omega: f64) -> Result<()> {
             found: x.n_rows,
             required: 2,
         });
+    }
+    if x.n_cols == 0 {
+        return Err(Error::NoFeatures);
     }
     if let Some(row) = y.iter().position(|v| !v.is_finite()) {
         return Err(Error::NonFiniteResponse { row });
@@ -220,6 +223,11 @@ mod tests {
             validate_fit(&one, &[1.0], 1.0).unwrap_err(),
             Error::InsufficientObservations { found: 1, .. }
         ));
+        let no_cols = Data::new(vec![], 3, 0).unwrap();
+        assert_eq!(
+            validate_fit(&no_cols, &y, 1.0).unwrap_err(),
+            Error::NoFeatures
+        );
         assert_eq!(
             validate_fit(&x, &[0.5, f64::NAN, 2.5], 1.0).unwrap_err(),
             Error::NonFiniteResponse { row: 1 }
