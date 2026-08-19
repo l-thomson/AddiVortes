@@ -80,6 +80,9 @@ pub enum Error {
         /// The invariant that failed.
         reason: String,
     },
+    /// The design matrix has no columns.
+    #[error("design matrix has no columns")]
+    NoFeatures,
 }
 
 /// `Result<T, Error>`.
@@ -126,6 +129,7 @@ mod tests {
                 },
                 "found 1 observations but at least 2 are required",
             ),
+            (Error::NoFeatures, "design matrix has no columns"),
             (
                 Error::NonFiniteResponse { row: 3 },
                 "response value in row 3 is not finite",

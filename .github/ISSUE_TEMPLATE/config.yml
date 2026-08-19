@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions
+    url: https://github.com/l-thomson/thiessen/discussions
+    about: Usage questions belong in Discussions.
