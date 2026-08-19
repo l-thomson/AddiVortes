@@ -1,0 +1,17 @@
+name: Feature request
+description: A proposed addition or change.
+labels: [feature]
+body:
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should change, and the use case it serves.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
