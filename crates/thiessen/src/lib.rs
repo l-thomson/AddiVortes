@@ -26,18 +26,31 @@
 //! The same seed, crate version and target triple give identical draws;
 //! draws do not depend on thread count. Transcendental functions go through
 //! `libm`, so the reference target `x86_64-unknown-linux-gnu` does not
-//! depend on the system libc. Across targets results are statistically
-//! equivalent and are compared by posterior summaries. Patch releases
-//! preserve sampled values for a fixed seed; minor releases may change them
-//! and the changelog says so (the value-stability policy of `rand`).
+//! drift with system libc releases. Distribution sampling is pinned to a
+//! minor series of `rand_distr` and follows the value-stability policy of
+//! `rand` (Rust Rand Book, Reproducibility chapter). Across targets results
+//! are statistically equivalent and are compared by posterior summaries,
+//! never draw by draw. Patch releases preserve sampled values for a fixed
+//! seed; minor releases may change them and the changelog entry says
+//! "Sampled values changed" with the reason. Fixed-seed chains are stored
+//! under `tests/snapshots/` and checked bit-exact on the reference target;
+//! other targets check posterior summaries against the stored chain within
+//! Monte Carlo error.
 //!
 //! # Input data
 //!
-//! `x` is a numeric matrix; the response is numeric. Missing or non-finite
-//! values, a constant response, a constant column, fewer than two rows, or a
-//! row-count mismatch are errors, never repaired. Categorical covariates are
-//! encoded by the caller (the Python and R packages do this) before they
-//! reach the crate.
+//! `x` is a numeric row-major matrix with at least one column; the response
+//! is numeric. Rejected with an [`Error`], never repaired: missing or
+//! non-finite values in `x` or `y`, a constant response, a constant column,
+//! no columns, fewer than two rows, and a row count that differs between
+//! `x` and `y`. Missing-value imputation is the caller's job. Duplicate
+//! rows are valid data. More columns than rows fits and returns
+//! [`Warning::MoreFeaturesThanObservations`]. At predict the column count
+//! must match the fitted model; an empty matrix is valid. Categorical
+//! covariates are encoded by the caller before they reach the crate; the
+//! Python and R packages encode a d-level factor as d - 1 indicator
+//! columns. This section corresponds to rOpenSci general standard G2 and
+//! Bayesian standard BS2.
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 #![deny(rustdoc::broken_intra_doc_links)]
