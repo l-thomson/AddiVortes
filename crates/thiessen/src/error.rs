@@ -28,9 +28,6 @@ pub enum Error {
         /// Rows of the design matrix.
         x_rows: usize,
     },
-    /// The design matrix has no columns.
-    #[error("design matrix has no columns")]
-    NoFeatures,
     /// Fewer observations than the sampler needs.
     #[error("found {found} observations but at least {required} are required")]
     InsufficientObservations {
@@ -83,6 +80,9 @@ pub enum Error {
         /// The invariant that failed.
         reason: String,
     },
+    /// The design matrix has no columns.
+    #[error("design matrix has no columns")]
+    NoFeatures,
 }
 
 /// `Result<T, Error>`.
