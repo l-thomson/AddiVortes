@@ -22,9 +22,8 @@ Metropolis-Hastings moves on the tessellation structure.
 ## Reproducibility
 
 Same seed, same `thiessen` version and same target triple give identical
-draws; draws do not depend on thread count. Across targets results are
-statistically equivalent. Patch releases preserve sampled values for a fixed seed; minor
-releases may change them and say so in the changelog.
+draws; the full contract is in the crate-root documentation
+([crates/thiessen/src/lib.rs](crates/thiessen/src/lib.rs)).
 
 ## Licence
 

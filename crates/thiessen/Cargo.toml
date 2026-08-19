@@ -5,7 +5,7 @@ edition = "2021"
 rust-version = "1.74"
 license = "MIT OR Apache-2.0"
 description = "Bayesian additive Voronoi tessellations (AddiVortes): Gibbs sampler, fit and predict"
-repository = "https://github.com/l-thomson/addivortes"
+repository = "https://github.com/l-thomson/thiessen"
 documentation = "https://docs.rs/thiessen"
 readme = "README.md"
 keywords = ["bayesian", "mcmc", "regression", "voronoi", "nonparametric"]
@@ -30,6 +30,7 @@ serde = { version = "1.0.166", features = ["derive"] }
 thiserror = "2"
 
 [dev-dependencies]
+insta = "1.48.0"
 proptest = { version = "1.8", default-features = false, features = ["no_std", "alloc"] }
 serde_json = { version = "1.0.100", features = ["float_roundtrip"] }
 
