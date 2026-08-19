@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+exclude = ["r/src/rust"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.74"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/l-thomson/addivortes"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
