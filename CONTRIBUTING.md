@@ -42,9 +42,30 @@ sampled-values change) are the whole checklist.
 
 ## Releases
 
-Component tags `core-vX.Y.Z`, `py-vX.Y.Z`, `r-vX.Y.Z`; the process is
-in the release section of this file once the first release is wired.
-`main` carries releases only.
+Component tags: `core-vX.Y.Z` for the crate, `py-vX.Y.Z` for the Python
+package, `r-vX.Y.Z` for the R package. Each binding versions
+independently and states the core version it wraps (pyproject metadata
+for Python; `Config/thiessen/core-version` in DESCRIPTION for R).
+
+Core releases run through release-plz (`release-plz.toml`, the
+release-plz workflow): a release PR carries the version bump and the
+changelog section; merging it creates the tag, publishes to crates.io
+and opens a GitHub release with the changelog section as notes. A
+Python tag triggers the wheel matrix and trusted publishing. R releases
+follow the CRAN checklist, with r-universe as the development channel.
+
+Versions follow semver. Patch releases preserve sampled values for a
+fixed seed; minor releases may change them and the changelog entry says
+"Sampled values changed" with the reason, following the value-stability
+policy of rand. The same rule continues past 1.0: a sampled-value
+change is a minor bump with the same line, never silent.
+
+At each tag, `main` is fast-forwarded to the tagged commit on `dev`
+with `git push origin <tag>^{commit}:main`; `main` carries releases
+only. `CHANGELOG.md` is keepachangelog; the R package keeps `NEWS.md`;
+Python release notes come from the changelog. The first tag of every
+component is gated on the final name; the working name is never
+published.
 
 ## Triage
 
