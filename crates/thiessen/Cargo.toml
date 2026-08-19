@@ -22,7 +22,7 @@ include = [
 
 [dependencies]
 libm = "0.2"
-rand = { version = "0.9", default-features = false }
+rand = { version = "0.10", default-features = false }
 rand_chacha = "0.9"
 rand_core = "0.9"
 rand_distr = "0.5"
