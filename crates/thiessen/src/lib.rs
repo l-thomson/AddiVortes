@@ -26,10 +26,16 @@
 //! The same seed, crate version and target triple give identical draws;
 //! draws do not depend on thread count. Transcendental functions go through
 //! `libm`, so the reference target `x86_64-unknown-linux-gnu` does not
-//! depend on the system libc. Across targets results are statistically
-//! equivalent and are compared by posterior summaries. Patch releases
-//! preserve sampled values for a fixed seed; minor releases may change them
-//! and the changelog says so (the value-stability policy of `rand`).
+//! drift with system libc releases. Distribution sampling is pinned to a
+//! minor series of `rand_distr` and follows the value-stability policy of
+//! `rand` (Rust Rand Book, Reproducibility chapter). Across targets results
+//! are statistically equivalent and are compared by posterior summaries,
+//! never draw by draw. Patch releases preserve sampled values for a fixed
+//! seed; minor releases may change them and the changelog entry says
+//! "Sampled values changed" with the reason. Fixed-seed chains are stored
+//! under `tests/snapshots/` and checked bit-exact on the reference target;
+//! other targets check posterior summaries against the stored chain within
+//! Monte Carlo error.
 //!
 //! # Input data
 //!
