@@ -60,6 +60,12 @@ fixed seed; minor releases may change them and the changelog entry says
 policy of rand. The same rule continues past 1.0: a sampled-value
 change is a minor bump with the same line, never silent.
 
+Every GitHub release is archived on Zenodo with a DOI once the Zenodo
+integration is enabled; the concept DOI badge joins the README at the
+first release. `CITATION.cff` carries the software and paper references
+and is validated in CI; the R package's `inst/CITATION` and the DOI in
+the Python documentation join with their packages.
+
 At each tag, `main` is fast-forwarded to the tagged commit on `dev`
 with `git push origin <tag>^{commit}:main`; `main` carries releases
 only. `CHANGELOG.md` is keepachangelog; the R package keeps `NEWS.md`;
