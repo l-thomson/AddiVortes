@@ -14,15 +14,21 @@ pub(crate) enum Breakage {
     /// The add-dimension selection ratio without the weight folding: the
     /// reverse-bound terms upstream corrected in 0.6.8.
     DroppedReverseBounds,
+    /// The per-cell normaliser of the inverse-gamma integrated likelihood
+    /// dropped from the add-centre and remove-centre ratios; no effect on
+    /// a Gaussian ensemble, whose normaliser is zero.
+    DroppedCellNormaliser,
 }
 
-/// The shift the defect adds to ln alpha for move `m`.
+/// The shift the defect adds to ln alpha for move `m`; `normaliser` is
+/// the cell family's per-cell constant.
 pub(crate) fn log_alpha_shift(
     breakage: Breakage,
     m: Move,
     current: &Tessellation,
     proposed: &Tessellation,
     prior: &Prior,
+    normaliser: f64,
 ) -> f64 {
     match breakage {
         Breakage::None => 0.0,
@@ -40,6 +46,11 @@ pub(crate) fn log_alpha_shift(
                 0.0
             }
         }
+        Breakage::DroppedCellNormaliser => match m {
+            Move::AddCentre => -normaliser,
+            Move::RemoveCentre => normaliser,
+            _ => 0.0,
+        },
     }
 }
 
@@ -277,5 +288,36 @@ mod tests {
         let statistics = sbc_statistics(Breakage::DroppedReverseBounds);
         let max = statistics.iter().cloned().fold(0.0, f64::max);
         assert!(max > CRITICAL, "{statistics:?}");
+    }
+
+    #[test]
+    fn dropped_cell_normaliser_shifts_the_centre_moves_only() {
+        use crate::moves::{Move, Prior};
+        use crate::tessellation::Tessellation;
+        let prior = Prior {
+            p: 2,
+            omega: 1.0,
+            lambda_c: 2.0,
+            sigma_c: 0.8,
+        };
+        let t = |b: usize| Tessellation {
+            centres: vec![0.0; b],
+            dims: vec![0],
+            mus: vec![0.0; b],
+        };
+        let shift = |m: Move, from: usize, to: usize| {
+            super::log_alpha_shift(
+                Breakage::DroppedCellNormaliser,
+                m,
+                &t(from),
+                &t(to),
+                &prior,
+                0.7,
+            )
+        };
+        assert_eq!(shift(Move::AddCentre, 2, 3), -0.7);
+        assert_eq!(shift(Move::RemoveCentre, 3, 2), 0.7);
+        assert_eq!(shift(Move::Change, 2, 2), 0.0);
+        assert_eq!(shift(Move::AddDimension, 2, 2), 0.0);
     }
 }

@@ -2,17 +2,41 @@
 //! Gosling 2025, Algorithm 1): one sweep per `step`, the caller's loop
 //! deciding burn-in and thinning through `keep`, and `finish` producing the
 //! fitted model.
+//!
+//! The sampler composes a mean ensemble (Gaussian cell means, additive)
+//! with one of three noise models, chosen by [`Config::model`]: a global
+//! sigma^2 drawn from its inverse-gamma conditional (Gaussian model); a
+//! fixed unit variance with the Albert and Chib (1993) latent response
+//! refreshed before each sweep (probit model); or a variance ensemble
+//! (inverse-gamma cell values, multiplicative) whose product at each
+//! observation is its variance, updated before the mean sweep
+//! (heteroscedastic model; the sweep order of the authors' code, HBART
+//! sweeping mean then variance).
 
-use crate::cells::CellStats;
+use crate::cells::{GaussianCells, InverseGammaCells};
 use crate::config::Config;
 use crate::data::{self, Data, Warning};
+use crate::ensemble::Ensemble;
 use crate::error::{Error, Result};
 use crate::fitted::{Fitted, Posterior};
 use crate::maths;
-use crate::moves::{self, Prior};
+use crate::model::Model;
+use crate::moves::Prior;
 use crate::rng::{self, Rng};
 use crate::scaler::{self, Scaler};
-use crate::tessellation::{Assignment, Tessellation};
+use crate::tessellation::Tessellation;
+
+/// The noise model in force.
+#[derive(Debug, Clone)]
+enum Noise {
+    /// One global variance, scaled space.
+    Gaussian { sigma_sq: f64 },
+    /// Unit latent variance; the labels in {0, 1} and the offset c of
+    /// P(y = 1 | x) = Phi(c + f(x)).
+    Unit { labels: Vec<f64>, offset: f64 },
+    /// The variance ensemble, whose total at each observation is s^2(x_i).
+    Ensemble(Ensemble<InverseGammaCells>),
+}
 
 /// The sampler state for one chain. Construct with [`Sampler::new`], advance
 /// with [`step`](Sampler::step), record draws with [`keep`](Sampler::keep),
@@ -20,8 +44,10 @@ use crate::tessellation::{Assignment, Tessellation};
 ///
 /// The response is on the caller's scale through the affine map frozen at
 /// construction; [`set_response`](Sampler::set_response) and
-/// [`fitted_values`](Sampler::fitted_values) speak that scale. The sampler
-/// owns its RNG, seeded at construction; a caller's loop consumes none of it.
+/// [`fitted_values`](Sampler::fitted_values) speak that scale. Under the
+/// probit model the response is the labels and the fitted values are the
+/// latent mean c + f(x). The sampler owns its RNG, seeded at construction;
+/// a caller's loop consumes none of it.
 #[derive(Debug, Clone)]
 pub struct Sampler {
     rng: Rng,
@@ -30,17 +56,13 @@ pub struct Sampler {
     warnings: Vec<Warning>,
     /// Scaled design.
     x: Data,
-    /// Scaled working response.
+    /// Scaled working response: the scaled y, or under the probit model the
+    /// latent z - c.
     y: Vec<f64>,
-    tessellations: Vec<Tessellation>,
-    assignments: Vec<Assignment>,
-    /// Running ensemble fit, scaled space.
-    fit: Vec<f64>,
-    sigma_sq: f64,
-    /// Per-observation precision, 1 / sigma_sq for every observation.
+    mean: Ensemble<GaussianCells>,
+    noise: Noise,
+    /// Per-observation precision of the mean ensemble's observations.
     precision: Vec<f64>,
-    prior: Prior,
-    sigma_mu_sq: f64,
     /// Calibrated scale of the prior sigma^2 ~ nu lambda / chi^2_nu.
     lambda: f64,
     kept: Posterior,
@@ -56,8 +78,9 @@ impl Sampler {
     /// # Errors
     ///
     /// [`Config::validate`], then the data checks: row counts, at least two
-    /// observations, finite values, non-constant response and columns, and
-    /// omega <= p.
+    /// observations, finite values, non-constant response and columns,
+    /// omega <= p, and under the probit model `InvalidLabel` for a response
+    /// value outside {0, 1}.
     pub fn new(config: &Config, x: &Data, y: &[f64], seed: u64) -> Result<Self> {
         Self::build(config, x, y, seed, None)
     }
@@ -68,12 +91,14 @@ impl Sampler {
     /// data. Calibration tests (SBC, Geweke test) require this
     /// constructor; under [`Sampler::new`] the y-scaling and the lambda
     /// calibration make the prior a function of the data, which
-    /// invalidates a joint-distribution test.
+    /// invalidates a joint-distribution test. Under the probit model
+    /// `lambda` is not used; `offset` must then be set on the
+    /// configuration, since Phi^-1(ybar) is a function of the data.
     ///
     /// # Errors
     ///
-    /// [`Sampler::new`], and `InvalidHyperparameter` for a non-positive
-    /// `lambda`.
+    /// [`Sampler::new`], `InvalidHyperparameter` for a non-positive
+    /// `lambda`, and for a probit configuration without `offset`.
     pub fn pinned_prior(
         config: &Config,
         x: &Data,
@@ -85,6 +110,12 @@ impl Sampler {
             return Err(crate::error::invalid(
                 "lambda",
                 format!("must be finite and positive, got {lambda}"),
+            ));
+        }
+        if config.model == Model::Probit && config.offset.is_none() {
+            return Err(crate::error::invalid(
+                "offset",
+                "must be set under the pinned prior of the probit model",
             ));
         }
         Self::build(config, x, y, seed, Some(lambda))
@@ -101,46 +132,95 @@ impl Sampler {
         let p = x.n_cols();
         let omega = config.omega_for(p);
         data::validate_fit(x, y, omega)?;
+        if config.model == Model::Probit {
+            if let Some(row) = y.iter().position(|&v| v != 0.0 && v != 1.0) {
+                return Err(Error::InvalidLabel { row });
+            }
+        }
         let mut config = config.clone();
         config.omega = Some(omega);
         let warnings = data::fit_warnings(x);
-        let (scaler, x_scaled, y_scaled, lambda, sigma_sq) = match pinned_lambda {
-            Some(lambda) => (Scaler::identity(p), x.clone(), y.to_vec(), lambda, lambda),
-            None => {
+        let n = x.n_rows();
+
+        // Response scaling, lambda and the initial sigma^2 at the model
+        // boundary: the probit model keeps the response unscaled.
+        let (scaler, x_scaled, y_scaled, lambda, sigma_sq) = match (config.model, pinned_lambda) {
+            (Model::Probit, Some(lambda)) => {
+                (Scaler::identity(p), x.clone(), y.to_vec(), lambda, 1.0)
+            }
+            (Model::Probit, None) => {
+                let (scaler, x_scaled) = Scaler::fit_x(x);
+                (scaler, x_scaled, y.to_vec(), 1.0, 1.0)
+            }
+            (_, Some(lambda)) => (Scaler::identity(p), x.clone(), y.to_vec(), lambda, lambda),
+            (_, None) => {
                 let (scaler, x_scaled, y_scaled) = Scaler::fit(x, y);
                 let sigma_hat = scaler::sigma_hat(&x_scaled, &y_scaled);
                 let lambda = scaler::calibrate_lambda(config.nu, config.q, sigma_hat);
                 (scaler, x_scaled, y_scaled, lambda, sigma_hat * sigma_hat)
             }
         };
-        let n = x_scaled.n_rows();
-        let sigma_mu_sq = scaler::sigma_mu_sq(config.k, config.m);
+        let sigma_mu_sq = match config.model {
+            Model::Probit => scaler::probit_sigma_mu_sq(config.k, config.m),
+            Model::Gaussian | Model::Heteroscedastic => scaler::sigma_mu_sq(config.k, config.m),
+        };
         let prior = Prior {
             p,
             omega,
             lambda_c: config.lambda_c,
             sigma_c: config.sigma_c,
         };
-
-        // Initial state: m single-cell tessellations on one covariate each,
-        // every cell mean ybar / m so the ensemble fit starts at ybar.
         let mut rng = rng::chain_rng(seed);
         let mean_y = y_scaled.iter().sum::<f64>() / n as f64;
-        let tessellations: Vec<Tessellation> = (0..config.m)
-            .map(|_| {
-                let dim = rng::uniform_index(p, &mut rng);
-                let centre = config.sigma_c * rng::standard_normal(&mut rng);
-                Tessellation {
-                    centres: vec![centre],
-                    dims: vec![dim],
-                    mus: vec![mean_y / config.m as f64],
+
+        // Initial state: m single-cell tessellations on one covariate each,
+        // every cell mean ybar / m so the ensemble fit starts at ybar; under
+        // the probit model f starts at 0 and the offset carries the mean.
+        let (cell_value, total) = match config.model {
+            Model::Probit => (0.0, 0.0),
+            Model::Gaussian | Model::Heteroscedastic => (mean_y / config.m as f64, mean_y),
+        };
+        let mean = Ensemble::new(
+            GaussianCells { sigma_mu_sq },
+            prior,
+            &x_scaled,
+            config.m,
+            cell_value,
+            total,
+            &mut rng,
+        );
+        let noise = match config.model {
+            Model::Gaussian => Noise::Gaussian { sigma_sq },
+            Model::Probit => {
+                let offset = config
+                    .offset
+                    .unwrap_or_else(|| maths::normal_quantile(mean_y));
+                config.offset = Some(offset);
+                Noise::Unit {
+                    labels: y_scaled.clone(),
+                    offset,
                 }
-            })
-            .collect();
-        let assignments = tessellations
-            .iter()
-            .map(|t| Assignment::full(&x_scaled, t))
-            .collect();
+            }
+            Model::Heteroscedastic => {
+                let (nu, lambda_prime) =
+                    scaler::variance_cell_prior(config.nu, lambda, config.m_var);
+                // Every variance cell starts at sigma^2 ^ (1 / m') so the
+                // product starts at the initial sigma^2.
+                Noise::Ensemble(Ensemble::new(
+                    InverseGammaCells {
+                        nu,
+                        lambda: lambda_prime,
+                        prior_only: config.prior_only,
+                    },
+                    prior,
+                    &x_scaled,
+                    config.m_var,
+                    libm::pow(sigma_sq, 1.0 / config.m_var as f64),
+                    sigma_sq,
+                    &mut rng,
+                ))
+            }
+        };
         // Zero precision removes the likelihood from every conditional:
         // the integrated-likelihood terms of the acceptance ratio vanish
         // and the cell means are drawn from N(0, sigma_mu^2).
@@ -149,6 +229,10 @@ impl Sampler {
         } else {
             vec![1.0 / sigma_sq; n]
         };
+        let y = match config.model {
+            Model::Probit => vec![0.0; n],
+            Model::Gaussian | Model::Heteroscedastic => y_scaled,
+        };
 
         Ok(Self {
             rng,
@@ -156,14 +240,10 @@ impl Sampler {
             scaler,
             warnings,
             x: x_scaled,
-            y: y_scaled,
-            tessellations,
-            assignments,
-            fit: vec![mean_y; n],
-            sigma_sq,
+            y,
+            mean,
+            noise,
             precision,
-            prior,
-            sigma_mu_sq,
             lambda,
             kept: Posterior::empty(),
             #[cfg(test)]
@@ -171,107 +251,104 @@ impl Sampler {
         })
     }
 
-    /// One sweep: sigma^2 | rest, then for each tessellation in turn a
-    /// structural move, accept or reject, and the cell means | rest.
+    /// One sweep: the noise update (sigma^2 | rest; the latent response |
+    /// rest; or the variance ensemble | rest), then for each mean
+    /// tessellation in turn a structural move, accept or reject, and the
+    /// cell means | rest.
     pub fn step(&mut self) {
-        self.draw_sigma_sq();
-        for j in 0..self.tessellations.len() {
-            self.backfit(j);
-        }
-    }
-
-    /// sigma^2 | y, F ~ Inv-Gamma((nu + n) / 2, (nu lambda + sum r_i^2) / 2)
-    /// with r = y - F; under prior-only sampling the prior
-    /// Inv-Gamma(nu / 2, nu lambda / 2).
-    fn draw_sigma_sq(&mut self) {
-        let (shape, scale) = if self.config.prior_only {
-            (0.5 * self.config.nu, 2.0 / (self.config.nu * self.lambda))
-        } else {
-            let rss: f64 = self
-                .y
-                .iter()
-                .zip(&self.fit)
-                .map(|(y, f)| (y - f) * (y - f))
-                .sum();
-            let n = self.y.len();
-            (
-                0.5 * (self.config.nu + n as f64),
-                2.0 / (self.config.nu * self.lambda + rss),
-            )
-        };
-        self.sigma_sq = 1.0 / rng::gamma(shape, scale, &mut self.rng);
-        if !self.config.prior_only {
-            let precision = 1.0 / self.sigma_sq;
-            self.precision.iter_mut().for_each(|w| *w = precision);
-        }
-    }
-
-    /// The backfitting update of tessellation `j`: partial residuals, one
-    /// structural move with the empty-cell guard, the cell means, and the
-    /// running fit.
-    fn backfit(&mut self, j: usize) {
-        let n = self.y.len();
-        let current = &self.tessellations[j];
-        let cells = &self.assignments[j].cells;
-        let residuals: Vec<f64> = (0..n)
-            .map(|i| self.y[i] - self.fit[i] + current.mus[cells[i]])
-            .collect();
-
-        let m = moves::select(current, &self.prior, &mut self.rng);
-        let proposal = moves::propose(m, current, &self.prior, &mut self.rng);
-        let proposed_assignment =
-            self.assignments[j].updated(&self.x, &proposal.tessellation, proposal.delta);
-        let proposed_stats = CellStats::accumulate(
-            &proposed_assignment.cells,
-            &residuals,
+        self.update_noise();
+        self.mean.sweep(
+            &self.x,
+            &self.y,
             &self.precision,
-            proposal.tessellation.n_cells(),
-        );
-        // A proposal leaving a cell empty is rejected before the acceptance
-        // draw, so no uniform is consumed.
-        let mut stats = None;
-        if proposed_stats.all_occupied() {
-            let current_stats =
-                CellStats::accumulate(cells, &residuals, &self.precision, current.n_cells());
-            #[allow(unused_mut)]
-            let mut log_alpha = proposed_stats.log_marginal(self.sigma_mu_sq)
-                - current_stats.log_marginal(self.sigma_mu_sq)
-                + proposal.log_structure_ratio
-                + moves::log_selection_ratio(m, current, &proposal.tessellation, &self.prior);
+            &mut self.rng,
             #[cfg(test)]
-            {
-                log_alpha += crate::broken::log_alpha_shift(
+            self.breakage,
+        );
+    }
+
+    fn update_noise(&mut self) {
+        let prior_only = self.config.prior_only;
+        match &mut self.noise {
+            // sigma^2 | y, F ~ Inv-Gamma((nu + n) / 2, (nu lambda + sum r_i^2) / 2)
+            // with r = y - F; under prior-only sampling the prior
+            // Inv-Gamma(nu / 2, nu lambda / 2).
+            Noise::Gaussian { sigma_sq } => {
+                let nu = self.config.nu;
+                let (shape, scale) = if prior_only {
+                    (0.5 * nu, 2.0 / (nu * self.lambda))
+                } else {
+                    let rss: f64 = self
+                        .y
+                        .iter()
+                        .zip(self.mean.total())
+                        .map(|(y, f)| (y - f) * (y - f))
+                        .sum();
+                    let n = self.y.len();
+                    (0.5 * (nu + n as f64), 2.0 / (nu * self.lambda + rss))
+                };
+                *sigma_sq = 1.0 / rng::gamma(shape, scale, &mut self.rng);
+                if !prior_only {
+                    let precision = 1.0 / *sigma_sq;
+                    self.precision.iter_mut().for_each(|w| *w = precision);
+                }
+            }
+            // z_i ~ N(c + f(x_i), 1) truncated to z_i > 0 when y_i = 1 and
+            // z_i < 0 when y_i = 0; the working response is z_i - c.
+            Noise::Unit { labels, offset } => {
+                if prior_only {
+                    return;
+                }
+                for ((slot, &label), &f) in
+                    self.y.iter_mut().zip(labels.iter()).zip(self.mean.total())
+                {
+                    let mean = f + *offset;
+                    let z = if label == 1.0 {
+                        mean + rng::truncated_standard_normal_above(-mean, &mut self.rng)
+                    } else {
+                        mean - rng::truncated_standard_normal_above(mean, &mut self.rng)
+                    };
+                    *slot = z - *offset;
+                }
+            }
+            // The variance ensemble given the residuals e = y - F, then the
+            // precision 1 / s^2(x_i).
+            Noise::Ensemble(variance) => {
+                let residuals: Vec<f64> = self
+                    .y
+                    .iter()
+                    .zip(self.mean.total())
+                    .map(|(y, f)| y - f)
+                    .collect();
+                variance.sweep(
+                    &self.x,
+                    &residuals,
+                    &self.precision,
+                    &mut self.rng,
+                    #[cfg(test)]
                     self.breakage,
-                    m,
-                    current,
-                    &proposal.tessellation,
-                    &self.prior,
                 );
+                if !prior_only {
+                    for (w, &s) in self.precision.iter_mut().zip(variance.total()) {
+                        *w = 1.0 / s;
+                    }
+                }
             }
-            debug_assert!(!log_alpha.is_nan());
-            let u = rng::uniform(&mut self.rng);
-            if maths::ln(u) < log_alpha {
-                self.tessellations[j] = proposal.tessellation;
-                self.assignments[j] = proposed_assignment;
-                stats = Some(proposed_stats);
-            } else {
-                stats = Some(current_stats);
-            }
-        }
-        let tessellation = &mut self.tessellations[j];
-        let cells = &self.assignments[j].cells;
-        let stats = stats.unwrap_or_else(|| {
-            CellStats::accumulate(cells, &residuals, &self.precision, tessellation.n_cells())
-        });
-        tessellation.mus = stats.draw_means(self.sigma_mu_sq, &mut self.rng);
-        for i in 0..n {
-            self.fit[i] = self.y[i] - residuals[i] + tessellation.mus[cells[i]];
         }
     }
 
     /// Record the current state as a posterior draw.
     pub fn keep(&mut self) {
-        self.kept.push(self.sigma_sq, self.tessellations.clone());
+        let sigma_sq = match &self.noise {
+            Noise::Gaussian { sigma_sq } => Some(*sigma_sq),
+            Noise::Unit { .. } | Noise::Ensemble(_) => None,
+        };
+        let variance = match &self.noise {
+            Noise::Ensemble(v) => Some(v.tessellations().to_vec()),
+            Noise::Gaussian { .. } | Noise::Unit { .. } => None,
+        };
+        self.kept
+            .push(sigma_sq, self.mean.tessellations().to_vec(), variance);
     }
 
     /// Number of draws kept so far.
@@ -279,13 +356,13 @@ impl Sampler {
         self.kept.n_draws()
     }
 
-    /// Replace the response (caller scale), keeping the tessellations, the
-    /// cell means and sigma^2. The partial residuals of the next sweep use
-    /// the new response.
+    /// Replace the response (caller scale; labels in {0, 1} under the
+    /// probit model), keeping the tessellations, the cell values and
+    /// sigma^2. The next sweep conditions on the new response.
     ///
     /// # Errors
     ///
-    /// `RowCountMismatch` or `NonFiniteResponse`.
+    /// `RowCountMismatch`, `NonFiniteResponse`, `InvalidLabel`.
     pub fn set_response(&mut self, y: &[f64]) -> Result<()> {
         if y.len() != self.y.len() {
             return Err(Error::RowCountMismatch {
@@ -296,32 +373,75 @@ impl Sampler {
         if let Some(row) = y.iter().position(|v| !v.is_finite()) {
             return Err(Error::NonFiniteResponse { row });
         }
+        if let Noise::Unit { labels, .. } = &mut self.noise {
+            if let Some(row) = y.iter().position(|&v| v != 0.0 && v != 1.0) {
+                return Err(Error::InvalidLabel { row });
+            }
+            labels.copy_from_slice(y);
+            return Ok(());
+        }
         for (slot, &v) in self.y.iter_mut().zip(y) {
             *slot = self.scaler.scale_y(v);
         }
         Ok(())
     }
 
-    /// The current ensemble fit at the training rows, caller scale.
+    /// The current mean function at the training rows, caller scale: f(x_i),
+    /// or c + f(x_i) under the probit model.
     pub fn fitted_values(&self) -> Vec<f64> {
-        self.fit.iter().map(|&f| self.scaler.unscale_y(f)).collect()
+        let offset = self.offset();
+        self.mean
+            .total()
+            .iter()
+            .map(|&f| self.scaler.unscale_y(f) + offset)
+            .collect()
     }
 
-    /// The current sigma^2, scaled space.
+    /// The variance of y_i given f at each training row, caller scale:
+    /// sigma^2 under the Gaussian model, 1 under the probit model (the
+    /// latent scale), s^2(x_i) under the heteroscedastic model.
+    pub fn noise_variances(&self) -> Vec<f64> {
+        let n = self.y.len();
+        let range_sq = self.scaler.y_range() * self.scaler.y_range();
+        match &self.noise {
+            Noise::Gaussian { sigma_sq } => vec![sigma_sq * range_sq; n],
+            Noise::Unit { .. } => vec![1.0; n],
+            Noise::Ensemble(v) => v.total().iter().map(|s| s * range_sq).collect(),
+        }
+    }
+
+    /// The current global sigma^2, scaled space: the Gaussian model's draw,
+    /// or 1 under the probit and heteroscedastic models, whose variance is
+    /// fixed at 1 on the latent scale and carried by the variance ensemble
+    /// respectively.
     pub fn sigma_sq(&self) -> f64 {
-        self.sigma_sq
+        match &self.noise {
+            Noise::Gaussian { sigma_sq } => *sigma_sq,
+            Noise::Unit { .. } | Noise::Ensemble(_) => 1.0,
+        }
     }
 
     /// lambda of the sigma^2 prior nu lambda / chi^2_nu: calibrated from
     /// the data at construction, or the value given to
-    /// [`pinned_prior`](Sampler::pinned_prior).
+    /// [`pinned_prior`](Sampler::pinned_prior). The heteroscedastic model
+    /// derives its per-cell lambda' = lambda^(1 / m') from it; the probit
+    /// model does not use it.
     pub fn lambda(&self) -> f64 {
         self.lambda
     }
 
-    /// The current tessellations, scaled space.
+    /// The current mean tessellations, scaled space.
     pub fn tessellations(&self) -> &[Tessellation] {
-        &self.tessellations
+        self.mean.tessellations()
+    }
+
+    /// The current variance tessellations, scaled space; empty outside the
+    /// heteroscedastic model.
+    pub fn variance_tessellations(&self) -> &[Tessellation] {
+        match &self.noise {
+            Noise::Ensemble(v) => v.tessellations(),
+            Noise::Gaussian { .. } | Noise::Unit { .. } => &[],
+        }
     }
 
     /// The scaling frozen at construction.
@@ -329,9 +449,17 @@ impl Sampler {
         &self.scaler
     }
 
-    /// The configuration, with omega resolved.
+    /// The configuration, with omega (and under the probit model the
+    /// offset) resolved.
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    fn offset(&self) -> f64 {
+        match &self.noise {
+            Noise::Unit { offset, .. } => *offset,
+            Noise::Gaussian { .. } | Noise::Ensemble(_) => 0.0,
+        }
     }
 
     /// The fitted model from the kept draws.
@@ -344,18 +472,31 @@ impl Sampler {
             return Err(crate::error::invalid("draws", "no draws were kept"));
         }
         let n = self.y.len();
-        let mut mean_fit = vec![0.0; n];
+        // The posterior-mean prediction on the response scale: f, or
+        // Phi(c + f) under the probit model.
+        let offset = self.offset();
+        let probit = matches!(self.noise, Noise::Unit { .. });
+        let mut mean_prediction = vec![0.0; n];
         for draw in self.kept.tessellations() {
-            for (i, slot) in mean_fit.iter_mut().enumerate() {
+            for (i, slot) in mean_prediction.iter_mut().enumerate() {
                 let row = self.x.row(i);
-                *slot += draw.iter().map(|t| t.value_at(row)).sum::<f64>();
+                let f: f64 = draw.iter().map(|t| t.value_at(row)).sum();
+                *slot += if probit {
+                    maths::normal_cdf(f + offset)
+                } else {
+                    f
+                };
             }
         }
         let n_draws = self.kept.n_draws() as f64;
         let range = self.scaler.y_range();
-        let in_sample_rmse = (mean_fit
+        let target: &[f64] = match &self.noise {
+            Noise::Unit { labels, .. } => labels,
+            Noise::Gaussian { .. } | Noise::Ensemble(_) => &self.y,
+        };
+        let in_sample_rmse = (mean_prediction
             .iter()
-            .zip(&self.y)
+            .zip(target)
             .map(|(f, y)| {
                 let r = (f / n_draws - y) * range;
                 r * r
@@ -375,26 +516,19 @@ impl Sampler {
 
 #[cfg(test)]
 impl Sampler {
-    /// One sweep with the structural moves disabled: sigma^2 | rest, then
-    /// every tessellation's cell means | rest. On a fixed tessellation the
-    /// chain is the conjugate Gibbs sampler of the known-answer tests.
+    /// One sweep with the structural moves disabled: the noise update, then
+    /// every mean tessellation's cell means | rest. On a fixed tessellation
+    /// the chain is the conjugate Gibbs sampler of the known-answer tests.
     fn conjugate_sweep(&mut self) {
-        self.draw_sigma_sq();
-        let n = self.y.len();
-        for j in 0..self.tessellations.len() {
-            let cells = &self.assignments[j].cells;
-            let current = &self.tessellations[j];
-            let residuals: Vec<f64> = (0..n)
-                .map(|i| self.y[i] - self.fit[i] + current.mus[cells[i]])
-                .collect();
-            let stats =
-                CellStats::accumulate(cells, &residuals, &self.precision, current.n_cells());
-            let mus = stats.draw_means(self.sigma_mu_sq, &mut self.rng);
-            let tessellation = &mut self.tessellations[j];
-            tessellation.mus = mus;
-            for i in 0..n {
-                self.fit[i] = self.y[i] - residuals[i] + tessellation.mus[cells[i]];
-            }
+        self.update_noise();
+        self.mean
+            .conjugate_sweep(&self.y, &self.precision, &mut self.rng);
+    }
+
+    pub(crate) fn variance_ensemble(&self) -> Option<&Ensemble<InverseGammaCells>> {
+        match &self.noise {
+            Noise::Ensemble(v) => Some(v),
+            _ => None,
         }
     }
 }
@@ -403,12 +537,19 @@ impl Sampler {
 mod tests {
     use super::*;
     use crate::fit;
+    use crate::tessellation::Assignment;
 
     fn toy(n: usize) -> (Data, Vec<f64>) {
         let xs: Vec<f64> = (0..n).map(|i| i as f64 / (n - 1) as f64).collect();
         let y: Vec<f64> = xs.iter().map(|&v| 3.0 * v * v - v).collect();
         let x = Data::new(xs, n, 1).unwrap();
         (x, y)
+    }
+
+    fn labels(n: usize) -> (Data, Vec<f64>) {
+        let (x, y) = toy(n);
+        let labels = y.iter().map(|&v| if v > 0.5 { 1.0 } else { 0.0 }).collect();
+        (x, labels)
     }
 
     fn small() -> Config {
@@ -452,10 +593,42 @@ mod tests {
             sampler.step();
             for i in 0..40 {
                 let row = sampler.x.row(i);
-                let sum: f64 = sampler.tessellations.iter().map(|t| t.value_at(row)).sum();
-                assert!((sum - sampler.fit[i]).abs() < 1e-9);
+                let sum: f64 = sampler
+                    .tessellations()
+                    .iter()
+                    .map(|t| t.value_at(row))
+                    .sum();
+                assert!((sum - sampler.mean.total()[i]).abs() < 1e-9);
             }
-            for (t, a) in sampler.tessellations.iter().zip(&sampler.assignments) {
+            for (t, a) in sampler
+                .tessellations()
+                .iter()
+                .zip(sampler.mean.assignments())
+            {
+                assert_eq!(*a, Assignment::full(&sampler.x, t));
+            }
+        }
+    }
+
+    #[test]
+    fn running_variance_product_matches_recomputation() {
+        let (x, y) = toy(40);
+        let config = small().with_model(Model::Heteroscedastic).with_m_var(6);
+        let mut sampler = Sampler::new(&config, &x, &y, 3).unwrap();
+        for _ in 0..15 {
+            sampler.step();
+            let variance = sampler.variance_ensemble().unwrap();
+            for i in 0..40 {
+                let row = sampler.x.row(i);
+                let product: f64 = variance
+                    .tessellations()
+                    .iter()
+                    .map(|t| t.value_at(row))
+                    .product();
+                assert!((product - variance.total()[i]).abs() < 1e-9 * product);
+                assert!((1.0 / variance.total()[i] - sampler.precision[i]).abs() < 1e-9);
+            }
+            for (t, a) in variance.tessellations().iter().zip(variance.assignments()) {
                 assert_eq!(*a, Assignment::full(&sampler.x, t));
             }
         }
@@ -493,6 +666,79 @@ mod tests {
             sampler.set_response(&vec![f64::NAN; 30]),
             Err(Error::NonFiniteResponse { row: 0 })
         ));
+    }
+
+    #[test]
+    fn probit_boundary_and_state() {
+        let (x, labels) = labels(30);
+        let config = small().with_model(Model::Probit);
+        let mut bad = labels.clone();
+        bad[3] = 0.5;
+        assert_eq!(
+            Sampler::new(&config, &x, &bad, 1).unwrap_err(),
+            Error::InvalidLabel { row: 3 }
+        );
+        assert!(Sampler::pinned_prior(&config, &x, &labels, 1.0, 1).is_err());
+        assert!(
+            Sampler::pinned_prior(&config.clone().with_offset(0.0), &x, &labels, 1.0, 1).is_ok()
+        );
+
+        let mut sampler = Sampler::new(&config, &x, &labels, 1).unwrap();
+        let share = labels.iter().sum::<f64>() / 30.0;
+        let offset = sampler.config().offset.unwrap();
+        assert!((maths::normal_cdf(offset) - share).abs() < 1e-9);
+        // The response is unscaled and f starts at 0, so the fitted values
+        // start at the offset.
+        assert_eq!(sampler.scaler().y_range(), 1.0);
+        assert!(sampler.fitted_values().iter().all(|&v| v == offset));
+        assert_eq!(sampler.sigma_sq(), 1.0);
+        assert_eq!(sampler.noise_variances(), vec![1.0; 30]);
+        assert!(sampler.variance_tessellations().is_empty());
+        assert_eq!(
+            sampler.mean.family().sigma_mu_sq,
+            (3.0 / (3.0 * 10f64.sqrt())).powi(2)
+        );
+        for _ in 0..50 {
+            sampler.step();
+        }
+        // The latent response has the sign of its label.
+        for (z, &label) in sampler.y.iter().zip(&labels) {
+            assert_eq!((z + offset > 0.0), label == 1.0);
+        }
+        assert_eq!(
+            sampler.set_response(&vec![2.0; 30]).unwrap_err(),
+            Error::InvalidLabel { row: 0 }
+        );
+        sampler.keep();
+        let fitted = sampler.finish().unwrap();
+        assert!(fitted.posterior().sigma_sq().is_empty());
+        assert!(fitted.in_sample_rmse() < 0.5);
+    }
+
+    #[test]
+    fn heteroscedastic_state() {
+        let (x, y) = toy(30);
+        let config = small().with_model(Model::Heteroscedastic).with_m_var(4);
+        let mut sampler = Sampler::new(&config, &x, &y, 1).unwrap();
+        assert_eq!(sampler.variance_tessellations().len(), 4);
+        assert_eq!(sampler.sigma_sq(), 1.0);
+        let family = sampler.variance_ensemble().unwrap().family();
+        let (nu, lambda) = scaler::variance_cell_prior(6.0, sampler.lambda(), 4);
+        assert_eq!((family.nu, family.lambda), (nu, lambda));
+        // The product starts at sigma_hat^2 and the precision at its inverse.
+        let initial = sampler.noise_variances()[0] / sampler.scaler().y_range().powi(2);
+        assert!((1.0 / initial - sampler.precision[0]).abs() < 1e-12);
+        for _ in 0..30 {
+            sampler.step();
+        }
+        sampler.keep();
+        assert!(sampler
+            .noise_variances()
+            .iter()
+            .all(|v| v.is_finite() && *v > 0.0));
+        let fitted = sampler.finish().unwrap();
+        assert!(fitted.posterior().sigma_sq().is_empty());
+        assert_eq!(fitted.posterior().variance_tessellations()[0].len(), 4);
     }
 
     #[test]
@@ -649,14 +895,14 @@ mod tests {
                 dims: vec![0],
                 mus: vec![0.0; b],
             };
-            sampler.assignments[0] = Assignment::full(&sampler.x, &fixed);
-            sampler.tessellations[0] = fixed;
-            sampler.fit = vec![0.0; n];
+            let x_scaled = sampler.x.clone();
+            sampler.mean.set_tessellation(0, &x_scaled, fixed, 0.0);
 
-            let stats = FixedCells::accumulate(&sampler.assignments[0].cells, &y, b);
+            let stats = FixedCells::accumulate(&sampler.mean.assignments()[0].cells, &y, b);
             assert!(stats.n.iter().all(|&c| c > 0.0));
+            let sigma_mu_sq = sampler.mean.family().sigma_mu_sq;
             let (ref_sigma_sq, ref_mus) =
-                quadrature_reference(&stats, sampler.config.nu, lambda, sampler.sigma_mu_sq);
+                quadrature_reference(&stats, sampler.config.nu, lambda, sigma_mu_sq);
 
             for _ in 0..200 {
                 sampler.conjugate_sweep();
@@ -666,9 +912,9 @@ mod tests {
             let mut mus: Vec<Vec<f64>> = vec![Vec::with_capacity(kept); b];
             for _ in 0..kept {
                 sampler.conjugate_sweep();
-                sigma_sq.push(sampler.sigma_sq);
+                sigma_sq.push(sampler.sigma_sq());
                 for (k, series) in mus.iter_mut().enumerate() {
-                    series.push(sampler.tessellations[0].mus[k]);
+                    series.push(sampler.tessellations()[0].mus[k]);
                 }
             }
             let (mean, mcse) = batch_means_mcse(&sigma_sq);

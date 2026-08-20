@@ -2,28 +2,38 @@
 //! consuming `with_*` setters and a data-free `validate()`.
 
 use crate::error::{invalid, Result};
+use crate::model::Model;
 
-/// Configuration of an AddiVortes fit: the hyperparameters of Stone and
-/// Gosling (2025), s. 2, and the sweep schedule that `fit` runs.
+/// Configuration of an AddiVortes fit: the observation model, the
+/// hyperparameters of Stone and Gosling (2025), s. 2, and the sweep
+/// schedule that `fit` runs.
 ///
 /// Every field has a default; unset JSON fields take it; unknown fields are
 /// rejected. The seed is not part of the configuration; it is an argument
 /// to [`fit`](crate::fit) and [`Sampler::new`](crate::Sampler::new).
 ///
 /// Setters never panic or clamp; [`validate`](Config::validate) checks
-/// every field and `fit` calls it first.
+/// every field and `fit` calls it first. Fields a model does not use
+/// (`offset` outside the probit model, `m_var` outside the heteroscedastic
+/// model) are not validated and have no effect.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct Config {
-    /// Ensemble size m. Default 200.
+    /// The observation model. Default [`Model::Gaussian`].
+    pub model: Model,
+    /// Ensemble size m of the mean function. Default 200.
     pub m: usize,
-    /// sigma^2 prior degrees of freedom nu. Default 6.
+    /// sigma^2 prior degrees of freedom nu. Default 6. The heteroscedastic
+    /// model requires nu > 2.
     pub nu: f64,
     /// sigma^2 prior calibration quantile q, Pr(sigma < sigma_hat) = q.
     /// Default 0.85.
     pub q: f64,
-    /// Cell-mean prior spread k: sigma_mu = 0.5 / (k sqrt(m)). Default 3.
+    /// Cell-mean prior spread k: sigma_mu = 0.5 / (k sqrt(m)) on the
+    /// response scaled to [-0.5, 0.5] (Gaussian and heteroscedastic
+    /// models), 3 / (k sqrt(m)) on the latent scale (probit model; Chipman,
+    /// George and McCulloch 2010, s. 4). Default 3.
     pub k: f64,
     /// Centre-coordinate prior and proposal standard deviation sigma_c
     /// (scaled space). Default 0.8.
@@ -53,11 +63,19 @@ pub struct Config {
     /// tessellation draws are truncated to those whose cells all hold a
     /// training row. Default false.
     pub prior_only: bool,
+    /// Probit model only: the offset c in P(y = 1 | x) = Phi(c + f(x)).
+    /// `None` resolves to Phi^-1(ybar) at fit (BART `binaryOffset`); the
+    /// resolved value is stored on the fitted model. Default `None`.
+    pub offset: Option<f64>,
+    /// Heteroscedastic model only: the number m' of variance
+    /// tessellations. Default 40.
+    pub m_var: usize,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
+            model: Model::Gaussian,
             m: 200,
             nu: 6.0,
             q: 0.85,
@@ -69,6 +87,8 @@ impl Default for Config {
             draws: 1000,
             thinning: 1,
             prior_only: false,
+            offset: None,
+            m_var: 40,
         }
     }
 }
@@ -162,18 +182,67 @@ impl Config {
         self
     }
 
+    /// The observation model.
+    #[must_use]
+    pub fn with_model(mut self, model: Model) -> Self {
+        self.model = model;
+        self
+    }
+
+    /// Probit offset c.
+    #[must_use]
+    pub fn with_offset(mut self, offset: f64) -> Self {
+        self.offset = Some(offset);
+        self
+    }
+
+    /// Number of variance tessellations m'.
+    #[must_use]
+    pub fn with_m_var(mut self, m_var: usize) -> Self {
+        self.m_var = m_var;
+        self
+    }
+
     /// The omega in force for p covariates: the field, or min(3, p).
     pub(crate) fn omega_for(&self, p: usize) -> f64 {
         self.omega.unwrap_or_else(|| 3.0_f64.min(p as f64))
     }
 
-    /// Data-free validation of every field.
+    /// Data-free validation of every field the model uses.
     ///
     /// # Errors
     ///
     /// `InvalidHyperparameter` naming the field. The omega <= p check needs
     /// the data and runs at the fit boundary.
     pub fn validate(&self) -> Result<()> {
+        self.validate_shared()?;
+        match self.model {
+            Model::Gaussian => Ok(()),
+            Model::Probit => match self.offset {
+                Some(c) if !c.is_finite() => {
+                    Err(invalid("offset", format!("must be finite, got {c}")))
+                }
+                _ => Ok(()),
+            },
+            Model::Heteroscedastic => {
+                if self.m_var < 1 {
+                    return Err(invalid("m_var", "must be at least 1"));
+                }
+                if self.nu <= 2.0 {
+                    return Err(invalid(
+                        "nu",
+                        format!(
+                            "must exceed 2 under the heteroscedastic model, got {}",
+                            self.nu
+                        ),
+                    ));
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn validate_shared(&self) -> Result<()> {
         let positive = |name: &str, value: f64| -> Result<()> {
             if value.is_finite() && value > 0.0 {
                 Ok(())
@@ -238,6 +307,41 @@ mod tests {
         rejects(Config::new().with_lambda_c(f64::INFINITY), "lambda_c");
         rejects(Config::new().with_draws(0), "draws");
         rejects(Config::new().with_thinning(0), "thinning");
+    }
+
+    #[test]
+    fn model_specific_fields_are_checked_only_under_their_model() {
+        let rejects = |config: Config, field: &str| {
+            assert!(matches!(
+                config.validate(),
+                Err(Error::InvalidHyperparameter { ref name, .. }) if name == field
+            ));
+        };
+        let probit = Config::new().with_model(Model::Probit);
+        let hetero = Config::new().with_model(Model::Heteroscedastic);
+        rejects(probit.clone().with_offset(f64::NAN), "offset");
+        rejects(hetero.clone().with_m_var(0), "m_var");
+        rejects(hetero.clone().with_nu(2.0), "nu");
+        assert!(probit.with_offset(0.3).validate().is_ok());
+        assert!(hetero.with_m_var(1).validate().is_ok());
+        assert!(Config::new()
+            .with_offset(f64::NAN)
+            .with_m_var(0)
+            .validate()
+            .is_ok());
+        assert!(Config::new().with_nu(1.0).validate().is_ok());
+    }
+
+    #[test]
+    fn model_serialises_in_snake_case_and_defaults_to_gaussian() {
+        let parsed: Config = serde_json::from_str(r#"{"m": 7}"#).unwrap();
+        assert_eq!(parsed.model, Model::Gaussian);
+        let parsed: Config =
+            serde_json::from_str(r#"{"model": "heteroscedastic", "m_var": 5}"#).unwrap();
+        assert_eq!(parsed.model, Model::Heteroscedastic);
+        assert_eq!(parsed.m_var, 5);
+        let json = serde_json::to_string(&Config::new().with_model(Model::Probit)).unwrap();
+        assert!(json.contains("\"model\":\"probit\""));
     }
 
     #[test]

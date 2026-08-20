@@ -1,7 +1,8 @@
 //! Simulation-based calibration (Talts et al. 2018; Modrák et al. 2025,
-//! Bayesian Analysis) and the Geweke (2004) joint-distribution test for
-//! the Gaussian model, run under the pinned prior so the prior does not
-//! depend on the data.
+//! Bayesian Analysis) and the Geweke (2004) joint-distribution test, run
+//! under the pinned prior so the prior does not depend on the data. The
+//! harness is parametrised by a [`Model`]: its configuration, its prior
+//! simulator, its response generator and its list of test quantities.
 //!
 //! Each test has two sizes. The small configuration runs in `cargo test`
 //! and applies chi-squared and Kolmogorov-Smirnov gates in process. The
@@ -15,11 +16,11 @@ mod common;
 use common::TestRng;
 use thiessen::{Config, Data, Sampler};
 
-/// Quantities compared, in column order: sigma^2, total cells and total
-/// active dimensions over the ensemble, f at three fixed training rows,
-/// and the mean of the generated response. SBC ranks the first six (theta
-/// functions); the Geweke test compares all seven.
-const QUANTITIES: [&str; 7] = ["sigma_sq", "cells", "dims", "f_a", "f_b", "f_c", "y_mean"];
+/// Quantities of the Gaussian model, in column order: sigma^2, total cells
+/// and total active dimensions over the ensemble, f at three fixed
+/// training rows, and the mean of the generated response. SBC ranks the
+/// theta functions (the first `n_sbc`); the Geweke test compares all.
+const GAUSSIAN_QUANTITIES: [&str; 7] = ["sigma_sq", "cells", "dims", "f_a", "f_b", "f_c", "y_mean"];
 const F_ROWS: [usize; 3] = [10, 25, 40];
 
 /// Significance 0.01 per test family, Bonferroni-split across the
@@ -30,11 +31,15 @@ const GEWEKE_CHI2_DF7: f64 = 23.440;
 const GEWEKE_CHI2_DF3: f64 = 15.510;
 const GEWEKE_ALPHA: f64 = 0.01 / 7.0;
 
+/// One model under test: the pinned-prior configuration and the test
+/// quantities, the first `n_sbc` of which are functions of theta alone.
 struct Model {
     config: Config,
     lambda: f64,
     x: Data,
     rows: Vec<[f64; 2]>,
+    quantities: &'static [&'static str],
+    n_sbc: usize,
 }
 
 /// One prior draw of the ensemble, engine-free: the test's own sampler.
@@ -67,6 +72,8 @@ fn gaussian_model() -> Model {
         lambda: 0.04,
         x,
         rows,
+        quantities: &GAUSSIAN_QUANTITIES,
+        n_sbc: 6,
     }
 }
 
@@ -140,11 +147,11 @@ impl Model {
             .collect()
     }
 
-    /// The seven quantities of a marginal-conditional draw.
-    fn mc_quantities(&self, draw: &PriorDraw, y: &[f64]) -> [f64; 7] {
+    /// The quantities of a marginal-conditional draw.
+    fn mc_quantities(&self, draw: &PriorDraw, y: &[f64]) -> Vec<f64> {
         let cells: usize = draw.tessellations.iter().map(|(_, _, m)| m.len()).sum();
         let dims: usize = draw.tessellations.iter().map(|(d, _, _)| d.len()).sum();
-        [
+        vec![
             draw.sigma_sq,
             cells as f64,
             dims as f64,
@@ -175,13 +182,13 @@ fn nearest(row: &[f64], dims: &[usize], centres: &[f64], d: usize) -> usize {
     cell
 }
 
-/// The seven quantities of the current sampler state and the response it
+/// The quantities of the current sampler state and the response it
 /// conditioned on.
-fn sampler_quantities(sampler: &Sampler, y: &[f64]) -> [f64; 7] {
+fn sampler_quantities(sampler: &Sampler, y: &[f64]) -> Vec<f64> {
     let cells: usize = sampler.tessellations().iter().map(|t| t.n_cells()).sum();
     let dims: usize = sampler.tessellations().iter().map(|t| t.n_dims()).sum();
     let fit = sampler.fitted_values();
-    [
+    vec![
         sampler.sigma_sq(),
         cells as f64,
         dims as f64,
@@ -196,7 +203,7 @@ fn sampler_quantities(sampler: &Sampler, y: &[f64]) -> [f64; 7] {
 // Simulation-based calibration
 // ---------------------------------------------------------------------------
 
-/// Ranks of the first six quantities over `sims` simulations: theta from
+/// Ranks of the first `n_sbc` quantities over `sims` simulations: theta from
 /// the prior, y from the model, `kept` posterior draws at `thinning`
 /// after `burn_in`, rank of the theta quantity among the draws with
 /// uniform tie-breaking (Talts et al. 2018, s. 4).
@@ -208,7 +215,7 @@ fn sbc_ranks(
     burn_in: usize,
     seed: u64,
 ) -> Vec<Vec<usize>> {
-    let mut ranks: Vec<Vec<usize>> = (0..6).map(|_| Vec::with_capacity(sims)).collect();
+    let mut ranks: Vec<Vec<usize>> = (0..model.n_sbc).map(|_| Vec::with_capacity(sims)).collect();
     for sim in 0..sims {
         let mut rng = TestRng(seed ^ (sim as u64).wrapping_mul(0x9E37_79B9));
         let draw = model.prior_draw(&mut rng);
@@ -220,7 +227,7 @@ fn sbc_ranks(
         for _ in 0..burn_in {
             sampler.step();
         }
-        let mut draws: Vec<Vec<f64>> = (0..6).map(|_| Vec::with_capacity(kept)).collect();
+        let mut draws: Vec<Vec<f64>> = (0..model.n_sbc).map(|_| Vec::with_capacity(kept)).collect();
         for _ in 0..kept {
             for _ in 0..thinning {
                 sampler.step();
@@ -254,13 +261,13 @@ fn rank_uniformity(ranks: &[usize], kept: usize) -> f64 {
         .sum()
 }
 
-fn assert_uniform(ranks: &[Vec<usize>], kept: usize, critical: f64) {
+fn assert_uniform(model: &Model, ranks: &[Vec<usize>], kept: usize, critical: f64) {
     for (q, series) in ranks.iter().enumerate() {
         let statistic = rank_uniformity(series, kept);
         assert!(
             statistic < critical,
             "{}: chi-squared {statistic} over {} bins, critical {critical}",
-            QUANTITIES[q],
+            model.quantities[q],
             kept + 1
         );
     }
@@ -268,24 +275,26 @@ fn assert_uniform(ranks: &[Vec<usize>], kept: usize, critical: f64) {
 
 #[test]
 fn sbc_small_ranks_are_uniform() {
-    let ranks = sbc_ranks(&gaussian_model(), 160, 19, 15, 150, 401);
-    assert_uniform(&ranks, 19, SBC_CHI2_DF19);
+    let model = gaussian_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 401);
+    assert_uniform(&model, &ranks, 19, SBC_CHI2_DF19);
 }
 
 #[test]
 #[ignore = "full size, nightly"]
 fn sbc_full_ranks_are_uniform() {
-    let ranks = sbc_ranks(&gaussian_model(), 1000, 99, 20, 300, 401);
+    let model = gaussian_model();
+    let ranks = sbc_ranks(&model, 1000, 99, 20, 300, 401);
     // Files first, so a failed gate still leaves the R evaluation its
     // input.
     let mut lines = vec!["quantity,rank,max_rank".to_string()];
     for (q, series) in ranks.iter().enumerate() {
         for rank in series {
-            lines.push(format!("{},{rank},99", QUANTITIES[q]));
+            lines.push(format!("{},{rank},99", model.quantities[q]));
         }
     }
     write_csv("sbc_ranks.csv", &lines);
-    assert_uniform(&ranks, 99, SBC_CHI2_DF99);
+    assert_uniform(&model, &ranks, 99, SBC_CHI2_DF99);
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +315,8 @@ fn geweke_samples(
     seed: u64,
 ) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
     let mut rng = TestRng(seed);
-    let mut mc: Vec<Vec<f64>> = (0..7).map(|_| Vec::with_capacity(n_mc)).collect();
+    let n_q = model.quantities.len();
+    let mut mc: Vec<Vec<f64>> = (0..n_q).map(|_| Vec::with_capacity(n_mc)).collect();
     for _ in 0..n_mc {
         let draw = model.prior_draw(&mut rng);
         let y = model.generate_y(&draw, &mut rng);
@@ -320,12 +330,12 @@ fn geweke_samples(
     let mut y = model.generate_y(&first, &mut rng);
     let mut sampler =
         Sampler::pinned_prior(&model.config, &model.x, &y, model.lambda, seed).unwrap();
-    let mut sc: Vec<Vec<f64>> = (0..7).map(|_| Vec::with_capacity(n_sc)).collect();
+    let mut sc: Vec<Vec<f64>> = (0..n_q).map(|_| Vec::with_capacity(n_sc)).collect();
     let transition = |sampler: &mut Sampler, y: &mut Vec<f64>, rng: &mut TestRng| {
         let fit = sampler.fitted_values();
-        let sigma = sampler.sigma_sq().sqrt();
-        for (slot, f) in y.iter_mut().zip(&fit) {
-            *slot = f + sigma * rng.normal();
+        let variances = sampler.noise_variances();
+        for ((slot, f), v) in y.iter_mut().zip(&fit).zip(&variances) {
+            *slot = f + v.sqrt() * rng.normal();
         }
         sampler.set_response(y).unwrap();
         sampler.step();
@@ -391,8 +401,8 @@ fn chi_squared_binned(a: &[f64], b: &[f64], lo: usize, hi: usize) -> f64 {
         .sum()
 }
 
-fn assert_simulators_agree(mc: &[Vec<f64>], sc: &[Vec<f64>]) {
-    for (q, name) in QUANTITIES.iter().enumerate() {
+fn assert_simulators_agree(model: &Model, mc: &[Vec<f64>], sc: &[Vec<f64>]) {
+    for (q, name) in model.quantities.iter().enumerate() {
         match *name {
             // Total cells over m = 3 tessellations, bins <=5 to >=12;
             // total dimensions, bins 3 to 6.
@@ -424,18 +434,20 @@ fn assert_simulators_agree(mc: &[Vec<f64>], sc: &[Vec<f64>]) {
 
 #[test]
 fn geweke_small_simulators_agree() {
-    let (mc, sc) = geweke_samples(&gaussian_model(), 2000, 800, 15, 200, 907);
-    assert_simulators_agree(&mc, &sc);
+    let model = gaussian_model();
+    let (mc, sc) = geweke_samples(&model, 2000, 800, 15, 200, 907);
+    assert_simulators_agree(&model, &mc, &sc);
 }
 
 #[test]
 #[ignore = "full size, nightly"]
 fn geweke_full_simulators_agree() {
-    let (mc, sc) = geweke_samples(&gaussian_model(), 20_000, 5000, 20, 500, 907);
+    let model = gaussian_model();
+    let (mc, sc) = geweke_samples(&model, 20_000, 5000, 20, 500, 907);
     // Files first, so a failed gate still leaves the R evaluation its
     // input.
     let mut lines = vec!["quantity,simulator,value".to_string()];
-    for (q, name) in QUANTITIES.iter().enumerate() {
+    for (q, name) in model.quantities.iter().enumerate() {
         for v in &mc[q] {
             lines.push(format!("{name},mc,{v}"));
         }
@@ -444,7 +456,7 @@ fn geweke_full_simulators_agree() {
         }
     }
     write_csv("geweke_samples.csv", &lines);
-    assert_simulators_agree(&mc, &sc);
+    assert_simulators_agree(&model, &mc, &sc);
 }
 
 fn write_csv(name: &str, lines: &[String]) {

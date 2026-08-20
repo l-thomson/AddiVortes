@@ -11,9 +11,11 @@ In `src/*`, run by `cargo test`. Closed-form values
 for the move selection table and its boundary folding, the count-prior
 ratios, cell-statistic accumulation, and equality of every incremental
 update with a full recomputation: assignments after each move kind, the
-running ensemble fit, and log-marginal differences against a dense
-Cholesky evaluation. They detect coding errors in a component; they say
-nothing about a mispriced but self-consistent sampler.
+running ensemble sum and product, and log-marginal differences against
+an independent evaluation (dense Cholesky for the Gaussian cell family,
+one-dimensional quadrature for the inverse-gamma family). They detect
+coding errors in a component; they say nothing about a mispriced but
+self-consistent sampler.
 
 ### Determinism and snapshots
 
@@ -51,7 +53,8 @@ In `tests/calibration.rs`. Simulation-based calibration
 (Talts et al. 2018; Modrák et al. 2025) and the Geweke (2004)
 joint-distribution test, run under the pinned prior
 (`Sampler::pinned_prior`), which fixes lambda and the scaling so the
-prior is not a function of the data. Small configurations run in
+prior is not a function of the data. The harness takes a per-model list
+of test quantities. Small configurations run in
 `cargo test` with chi-squared and Kolmogorov-Smirnov gates at family
 alpha 0.01, Bonferroni-split across the quantities; full configurations
 run nightly and are also evaluated in R with the SBC package's rank ECDF
