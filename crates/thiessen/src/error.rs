@@ -89,14 +89,6 @@ pub enum Error {
         /// Zero-based row.
         row: usize,
     },
-    /// An option is compiled only with a Cargo feature this build lacks.
-    #[error("{item} requires the `{feature}` feature")]
-    RequiresFeature {
-        /// The option named as the caller supplied it.
-        item: String,
-        /// The Cargo feature.
-        feature: &'static str,
-    },
     /// A method has no meaning under the fitted model.
     #[error("`{method}` is not defined under the {model} model")]
     NotApplicable {
@@ -104,6 +96,14 @@ pub enum Error {
         method: String,
         /// The fitted model.
         model: crate::Model,
+    },
+    /// An option is compiled only with a Cargo feature this build lacks.
+    #[error("{item} requires the `{feature}` feature")]
+    RequiresFeature {
+        /// The option named as the caller supplied it.
+        item: String,
+        /// The Cargo feature.
+        feature: &'static str,
     },
 }
 
