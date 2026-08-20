@@ -57,6 +57,8 @@
 #![forbid(unsafe_code)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+#[cfg(test)]
+mod broken;
 mod cells;
 mod config;
 mod data;
