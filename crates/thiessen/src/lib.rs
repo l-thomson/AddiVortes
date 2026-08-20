@@ -35,7 +35,8 @@
 //! "Sampled values changed" with the reason. Fixed-seed chains are stored
 //! under `tests/snapshots/` and checked bit-exact on the reference target;
 //! other targets check posterior summaries against the stored chain within
-//! Monte Carlo error.
+//! Monte Carlo error. The testing strategy, from unit tests to
+//! simulation-based calibration, is `docs/testing.md` in the repository.
 //!
 //! # Input data
 //!

@@ -64,6 +64,12 @@ Same seed, same `thiessen` version and same target triple give identical
 draws; the full contract is in the crate-root documentation
 ([crates/thiessen/src/lib.rs](crates/thiessen/src/lib.rs)).
 
+## Testing
+
+The suite is layered from unit tests to simulation-based calibration and
+comparison against the upstream R package; the layers, their limits and
+the numbers are in [docs/testing.md](docs/testing.md).
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Conduct is governed by
