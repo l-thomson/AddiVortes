@@ -95,6 +95,29 @@ fn more_columns_than_rows_fits_with_a_warning() {
 }
 
 #[test]
+fn a_single_feature_fits() {
+    let n = 8;
+    let xs: Vec<f64> = (0..n).map(|i| i as f64).collect();
+    let y: Vec<f64> = xs.iter().map(|v| v * v).collect();
+    let x = Data::new(xs, n, 1).unwrap();
+    let model = fit(&config(), &x, &y, 1).unwrap();
+    assert_eq!(model.predict(&x).unwrap().len(), n);
+}
+
+#[test]
+fn zero_residual_response_fits() {
+    // y exactly linear in x: the least-squares residuals are zero, so the
+    // sigma^2 prior calibrates from the response standard deviation.
+    let n = 10;
+    let xs: Vec<f64> = (0..n).map(|i| i as f64).collect();
+    let y: Vec<f64> = xs.iter().map(|v| 2.0 * v + 1.0).collect();
+    let x = Data::new(xs, n, 1).unwrap();
+    let model = fit(&config(), &x, &y, 1).unwrap();
+    assert!(model.predict(&x).unwrap().iter().all(|p| p.is_finite()));
+    assert!(model.sigma().iter().all(|s| s.is_finite() && *s > 0.0));
+}
+
+#[test]
 fn predict_checks_columns_and_accepts_an_empty_matrix() {
     let (x, y) = valid();
     let model = fit(&config(), &x, &y, 1).unwrap();

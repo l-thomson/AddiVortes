@@ -110,6 +110,75 @@ mod tests {
         close(stats.log_marginal(0.25), expected, 1e-14);
     }
 
+    /// ln N(r; 0, D^-1 + sigma_mu^2 Z Z^T) with D = diag(w) and Z the cell
+    /// indicator matrix, by dense Cholesky. Shares no code with
+    /// `log_marginal`.
+    fn dense_log_density(r: &[f64], w: &[f64], cells: &[usize], sigma_mu_sq: f64) -> f64 {
+        let n = r.len();
+        let mut sigma = vec![0.0_f64; n * n];
+        for i in 0..n {
+            for j in 0..n {
+                let mut v = if cells[i] == cells[j] {
+                    sigma_mu_sq
+                } else {
+                    0.0
+                };
+                if i == j {
+                    v += 1.0 / w[i];
+                }
+                sigma[i * n + j] = v;
+            }
+        }
+        let mut l = vec![0.0_f64; n * n];
+        for i in 0..n {
+            for j in 0..=i {
+                let mut sum = sigma[i * n + j];
+                for k in 0..j {
+                    sum -= l[i * n + k] * l[j * n + k];
+                }
+                if i == j {
+                    l[i * n + i] = sum.sqrt();
+                } else {
+                    l[i * n + j] = sum / l[j * n + j];
+                }
+            }
+        }
+        let mut u = r.to_vec();
+        for i in 0..n {
+            for k in 0..i {
+                u[i] -= l[i * n + k] * u[k];
+            }
+            u[i] /= l[i * n + i];
+        }
+        let log_det: f64 = (0..n).map(|i| 2.0 * l[i * n + i].ln()).sum();
+        let quad: f64 = u.iter().map(|v| v * v).sum();
+        -0.5 * (n as f64 * (2.0 * std::f64::consts::PI).ln() + log_det + quad)
+    }
+
+    #[test]
+    fn log_marginal_difference_matches_a_dense_recomputation() {
+        // log_marginal drops terms that do not depend on the assignment,
+        // so differences between assignments equal the dense evaluation.
+        use crate::rng::{chain_rng, standard_normal, uniform_index};
+        let mut rng = chain_rng(17);
+        for case in 0..60 {
+            let n = 4 + uniform_index(9, &mut rng);
+            let b = 1 + uniform_index(4, &mut rng);
+            let sigma_mu_sq = 0.05 + 0.4 * (case as f64 / 60.0);
+            let r: Vec<f64> = (0..n).map(|_| standard_normal(&mut rng)).collect();
+            let w: Vec<f64> = (0..n)
+                .map(|_| (0.6 * standard_normal(&mut rng)).exp())
+                .collect();
+            let cells_a: Vec<usize> = (0..n).map(|_| uniform_index(b, &mut rng)).collect();
+            let cells_b: Vec<usize> = (0..n).map(|_| uniform_index(b, &mut rng)).collect();
+            let delta = CellStats::accumulate(&cells_a, &r, &w, b).log_marginal(sigma_mu_sq)
+                - CellStats::accumulate(&cells_b, &r, &w, b).log_marginal(sigma_mu_sq);
+            let dense = dense_log_density(&r, &w, &cells_a, sigma_mu_sq)
+                - dense_log_density(&r, &w, &cells_b, sigma_mu_sq);
+            close(delta, dense, 1e-9);
+        }
+    }
+
     #[test]
     fn posterior_mean_and_variance() {
         // n = 4, S = 2, sigma^2 = 0.5, sigma_mu^2 = 0.25: mean 1/3, var 1/12.
