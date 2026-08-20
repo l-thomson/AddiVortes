@@ -21,19 +21,31 @@ use thiessen::{Config, Data, Sampler};
 /// training rows, and the mean of the generated response. SBC ranks the
 /// theta functions (the first `n_sbc`); the Geweke test compares all.
 const GAUSSIAN_QUANTITIES: [&str; 7] = ["sigma_sq", "cells", "dims", "f_a", "f_b", "f_c", "y_mean"];
+/// Quantities of the probit model: no sigma^2; f is the latent mean
+/// c + f(x); y_mean is the share of ones.
+const PROBIT_QUANTITIES: [&str; 6] = ["cells", "dims", "f_a", "f_b", "f_c", "y_mean"];
 const F_ROWS: [usize; 3] = [10, 25, 40];
 
 /// Significance 0.01 per test family, Bonferroni-split across the
-/// quantities: alpha' = 0.01 / 6 for SBC, 0.01 / 7 for Geweke.
+/// quantities of the Gaussian model: alpha' = 0.01 / 6 for SBC, 0.01 / 7
+/// for Geweke. The same critical values apply to models with fewer
+/// quantities, where they are conservative.
 const SBC_CHI2_DF19: f64 = 42.198;
 const SBC_CHI2_DF99: f64 = 145.404;
 const GEWEKE_CHI2_DF7: f64 = 23.440;
 const GEWEKE_CHI2_DF3: f64 = 15.510;
 const GEWEKE_ALPHA: f64 = 0.01 / 7.0;
 
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    Gaussian,
+    Probit,
+}
+
 /// One model under test: the pinned-prior configuration and the test
 /// quantities, the first `n_sbc` of which are functions of theta alone.
 struct Model {
+    kind: Kind,
     config: Config,
     lambda: f64,
     x: Data,
@@ -68,6 +80,7 @@ fn gaussian_model() -> Model {
         .with_omega(0.8)
         .with_sigma_c(0.8);
     Model {
+        kind: Kind::Gaussian,
         config,
         lambda: 0.04,
         x,
@@ -77,9 +90,38 @@ fn gaussian_model() -> Model {
     }
 }
 
+/// The probit model at the calibration size: the Gaussian model's rows
+/// and structural prior, offset c = -0.2 fixed, k = 3, no sigma^2.
+fn probit_model() -> Model {
+    let gaussian = gaussian_model();
+    Model {
+        kind: Kind::Probit,
+        config: gaussian
+            .config
+            .with_model(thiessen::Model::Probit)
+            .with_offset(-0.2),
+        lambda: 1.0,
+        quantities: &PROBIT_QUANTITIES,
+        n_sbc: 5,
+        ..gaussian
+    }
+}
+
+fn normal_cdf(z: f64) -> f64 {
+    0.5 * libm::erfc(-z * std::f64::consts::FRAC_1_SQRT_2)
+}
+
 impl Model {
     fn sigma_mu(&self) -> f64 {
-        0.5 / (self.config.k * (self.config.m as f64).sqrt())
+        let scale = match self.kind {
+            Kind::Gaussian => 0.5,
+            Kind::Probit => 3.0,
+        };
+        scale / (self.config.k * (self.config.m as f64).sqrt())
+    }
+
+    fn offset(&self) -> f64 {
+        self.config.offset.unwrap_or(0.0)
     }
 
     /// One tessellation from the prior truncated to full occupancy, by
@@ -117,17 +159,24 @@ impl Model {
         }
     }
 
-    /// theta ~ prior: m truncated tessellations and sigma^2 from
-    /// nu lambda / chi^2_nu (nu = 6: the chi-squared is a sum of three
-    /// exponentials).
+    /// theta ~ prior: m truncated tessellations and, under the Gaussian
+    /// model, sigma^2 from nu lambda / chi^2_nu (nu = 6: the chi-squared
+    /// is a sum of three exponentials); the probit model's latent variance
+    /// is 1.
     fn prior_draw(&self, rng: &mut TestRng) -> PriorDraw {
         let tessellations = (0..self.config.m)
             .map(|_| self.prior_tessellation(rng))
             .collect();
-        let chi_sq = -2.0 * (rng.uniform().ln() + rng.uniform().ln() + rng.uniform().ln());
+        let sigma_sq = match self.kind {
+            Kind::Gaussian => {
+                let chi_sq = -2.0 * (rng.uniform().ln() + rng.uniform().ln() + rng.uniform().ln());
+                self.config.nu * self.lambda / chi_sq
+            }
+            Kind::Probit => 1.0,
+        };
         PriorDraw {
             tessellations,
-            sigma_sq: self.config.nu * self.lambda / chi_sq,
+            sigma_sq,
         }
     }
 
@@ -139,11 +188,17 @@ impl Model {
             .sum()
     }
 
-    /// y | theta.
+    /// y | theta: f + sigma e, or labels Bernoulli(Phi(c + f)).
     fn generate_y(&self, draw: &PriorDraw, rng: &mut TestRng) -> Vec<f64> {
         let sigma = draw.sigma_sq.sqrt();
         (0..self.x.n_rows())
-            .map(|i| self.f_at(draw, i) + sigma * rng.normal())
+            .map(|i| {
+                let f = self.f_at(draw, i);
+                match self.kind {
+                    Kind::Gaussian => f + sigma * rng.normal(),
+                    Kind::Probit => f64::from(rng.uniform() < normal_cdf(self.offset() + f)),
+                }
+            })
             .collect()
     }
 
@@ -151,15 +206,45 @@ impl Model {
     fn mc_quantities(&self, draw: &PriorDraw, y: &[f64]) -> Vec<f64> {
         let cells: usize = draw.tessellations.iter().map(|(_, _, m)| m.len()).sum();
         let dims: usize = draw.tessellations.iter().map(|(d, _, _)| d.len()).sum();
-        vec![
-            draw.sigma_sq,
-            cells as f64,
-            dims as f64,
-            self.f_at(draw, F_ROWS[0]),
-            self.f_at(draw, F_ROWS[1]),
-            self.f_at(draw, F_ROWS[2]),
-            y.iter().sum::<f64>() / y.len() as f64,
-        ]
+        let mut out = Vec::with_capacity(self.quantities.len());
+        if self.kind == Kind::Gaussian {
+            out.push(draw.sigma_sq);
+        }
+        out.push(cells as f64);
+        out.push(dims as f64);
+        out.extend(F_ROWS.iter().map(|&r| self.offset() + self.f_at(draw, r)));
+        out.push(y.iter().sum::<f64>() / y.len() as f64);
+        out
+    }
+
+    /// The quantities of the current sampler state and the response it
+    /// conditioned on.
+    fn sampler_quantities(&self, sampler: &Sampler, y: &[f64]) -> Vec<f64> {
+        let cells: usize = sampler.tessellations().iter().map(|t| t.n_cells()).sum();
+        let dims: usize = sampler.tessellations().iter().map(|t| t.n_dims()).sum();
+        let fit = sampler.fitted_values();
+        let mut out = Vec::with_capacity(self.quantities.len());
+        if self.kind == Kind::Gaussian {
+            out.push(sampler.sigma_sq());
+        }
+        out.push(cells as f64);
+        out.push(dims as f64);
+        out.extend(F_ROWS.iter().map(|&r| fit[r]));
+        out.push(y.iter().sum::<f64>() / y.len() as f64);
+        out
+    }
+
+    /// One y | theta transition of the successive-conditional chain,
+    /// from the sampler's current state.
+    fn regenerate_y(&self, sampler: &Sampler, y: &mut [f64], rng: &mut TestRng) {
+        let fit = sampler.fitted_values();
+        let variances = sampler.noise_variances();
+        for ((slot, f), v) in y.iter_mut().zip(&fit).zip(&variances) {
+            *slot = match self.kind {
+                Kind::Gaussian => f + v.sqrt() * rng.normal(),
+                Kind::Probit => f64::from(rng.uniform() < normal_cdf(*f)),
+            };
+        }
     }
 }
 
@@ -182,23 +267,6 @@ fn nearest(row: &[f64], dims: &[usize], centres: &[f64], d: usize) -> usize {
     cell
 }
 
-/// The quantities of the current sampler state and the response it
-/// conditioned on.
-fn sampler_quantities(sampler: &Sampler, y: &[f64]) -> Vec<f64> {
-    let cells: usize = sampler.tessellations().iter().map(|t| t.n_cells()).sum();
-    let dims: usize = sampler.tessellations().iter().map(|t| t.n_dims()).sum();
-    let fit = sampler.fitted_values();
-    vec![
-        sampler.sigma_sq(),
-        cells as f64,
-        dims as f64,
-        fit[F_ROWS[0]],
-        fit[F_ROWS[1]],
-        fit[F_ROWS[2]],
-        y.iter().sum::<f64>() / y.len() as f64,
-    ]
-}
-
 // ---------------------------------------------------------------------------
 // Simulation-based calibration
 // ---------------------------------------------------------------------------
@@ -218,8 +286,16 @@ fn sbc_ranks(
     let mut ranks: Vec<Vec<usize>> = (0..model.n_sbc).map(|_| Vec::with_capacity(sims)).collect();
     for sim in 0..sims {
         let mut rng = TestRng(seed ^ (sim as u64).wrapping_mul(0x9E37_79B9));
-        let draw = model.prior_draw(&mut rng);
-        let y = model.generate_y(&draw, &mut rng);
+        // A constant response is rejected at the fit boundary. Redrawing
+        // (theta, y) until y varies selects on y alone, and the ranks stay
+        // uniform conditional on y.
+        let (draw, y) = loop {
+            let draw = model.prior_draw(&mut rng);
+            let y = model.generate_y(&draw, &mut rng);
+            if y.iter().any(|&v| v != y[0]) {
+                break (draw, y);
+            }
+        };
         let truth = model.mc_quantities(&draw, &y);
         let mut sampler =
             Sampler::pinned_prior(&model.config, &model.x, &y, model.lambda, seed + sim as u64)
@@ -232,7 +308,7 @@ fn sbc_ranks(
             for _ in 0..thinning {
                 sampler.step();
             }
-            let state = sampler_quantities(&sampler, &y);
+            let state = model.sampler_quantities(&sampler, &y);
             for (q, series) in draws.iter_mut().enumerate() {
                 series.push(state[q]);
             }
@@ -281,20 +357,35 @@ fn sbc_small_ranks_are_uniform() {
 }
 
 #[test]
-#[ignore = "full size, nightly"]
-fn sbc_full_ranks_are_uniform() {
-    let model = gaussian_model();
-    let ranks = sbc_ranks(&model, 1000, 99, 20, 300, 401);
-    // Files first, so a failed gate still leaves the R evaluation its
-    // input.
+fn sbc_small_ranks_are_uniform_probit() {
+    let model = probit_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 402);
+    assert_uniform(&model, &ranks, 19, SBC_CHI2_DF19);
+}
+
+/// Files first, so a failed gate still leaves the R evaluation its input.
+fn sbc_full(model: &Model, file: &str, seed: u64) {
+    let ranks = sbc_ranks(model, 1000, 99, 20, 300, seed);
     let mut lines = vec!["quantity,rank,max_rank".to_string()];
     for (q, series) in ranks.iter().enumerate() {
         for rank in series {
             lines.push(format!("{},{rank},99", model.quantities[q]));
         }
     }
-    write_csv("sbc_ranks.csv", &lines);
-    assert_uniform(&model, &ranks, 99, SBC_CHI2_DF99);
+    write_csv(file, &lines);
+    assert_uniform(model, &ranks, 99, SBC_CHI2_DF99);
+}
+
+#[test]
+#[ignore = "full size, nightly"]
+fn sbc_full_ranks_are_uniform() {
+    sbc_full(&gaussian_model(), "sbc_ranks.csv", 401);
+}
+
+#[test]
+#[ignore = "full size, nightly"]
+fn sbc_full_ranks_are_uniform_probit() {
+    sbc_full(&probit_model(), "sbc_ranks_probit.csv", 402);
 }
 
 // ---------------------------------------------------------------------------
@@ -332,11 +423,7 @@ fn geweke_samples(
         Sampler::pinned_prior(&model.config, &model.x, &y, model.lambda, seed).unwrap();
     let mut sc: Vec<Vec<f64>> = (0..n_q).map(|_| Vec::with_capacity(n_sc)).collect();
     let transition = |sampler: &mut Sampler, y: &mut Vec<f64>, rng: &mut TestRng| {
-        let fit = sampler.fitted_values();
-        let variances = sampler.noise_variances();
-        for ((slot, f), v) in y.iter_mut().zip(&fit).zip(&variances) {
-            *slot = f + v.sqrt() * rng.normal();
-        }
+        model.regenerate_y(sampler, y, rng);
         sampler.set_response(y).unwrap();
         sampler.step();
     };
@@ -347,7 +434,7 @@ fn geweke_samples(
         for _ in 0..thin {
             transition(&mut sampler, &mut y, &mut rng);
         }
-        let state = sampler_quantities(&sampler, &y);
+        let state = model.sampler_quantities(&sampler, &y);
         for (q, series) in sc.iter_mut().enumerate() {
             series.push(state[q]);
         }
@@ -440,12 +527,15 @@ fn geweke_small_simulators_agree() {
 }
 
 #[test]
-#[ignore = "full size, nightly"]
-fn geweke_full_simulators_agree() {
-    let model = gaussian_model();
-    let (mc, sc) = geweke_samples(&model, 20_000, 5000, 20, 500, 907);
-    // Files first, so a failed gate still leaves the R evaluation its
-    // input.
+fn geweke_small_simulators_agree_probit() {
+    let model = probit_model();
+    let (mc, sc) = geweke_samples(&model, 2000, 800, 15, 200, 908);
+    assert_simulators_agree(&model, &mc, &sc);
+}
+
+/// Files first, so a failed gate still leaves the R evaluation its input.
+fn geweke_full(model: &Model, file: &str, seed: u64) {
+    let (mc, sc) = geweke_samples(model, 20_000, 5000, 20, 500, seed);
     let mut lines = vec!["quantity,simulator,value".to_string()];
     for (q, name) in model.quantities.iter().enumerate() {
         for v in &mc[q] {
@@ -455,8 +545,20 @@ fn geweke_full_simulators_agree() {
             lines.push(format!("{name},sc,{v}"));
         }
     }
-    write_csv("geweke_samples.csv", &lines);
-    assert_simulators_agree(&model, &mc, &sc);
+    write_csv(file, &lines);
+    assert_simulators_agree(model, &mc, &sc);
+}
+
+#[test]
+#[ignore = "full size, nightly"]
+fn geweke_full_simulators_agree() {
+    geweke_full(&gaussian_model(), "geweke_samples.csv", 907);
+}
+
+#[test]
+#[ignore = "full size, nightly"]
+fn geweke_full_simulators_agree_probit() {
+    geweke_full(&probit_model(), "geweke_samples_probit.csv", 908);
 }
 
 fn write_csv(name: &str, lines: &[String]) {

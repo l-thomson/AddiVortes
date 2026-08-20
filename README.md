@@ -64,6 +64,12 @@ Same seed, same `thiessen` version and same target triple give identical
 draws; the full contract is in the crate-root documentation
 ([crates/thiessen/src/lib.rs](crates/thiessen/src/lib.rs)).
 
+## Models
+
+`Config::model` selects the Gaussian, probit or heteroscedastic model;
+their statements, priors and parameter correspondence with CRAN
+AddiVortes and the BART family are in [docs/models.md](docs/models.md).
+
 ## Testing
 
 The suite is layered from unit tests to simulation-based calibration and

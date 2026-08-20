@@ -45,6 +45,19 @@ impl TestRng {
     }
 }
 
+/// The fixed-seed fixture of the probit model: the Gaussian fixture's
+/// design with the response thresholded at its median, so both labels
+/// occur.
+#[allow(dead_code)]
+pub fn probit_fixture() -> (Config, Data, Vec<f64>) {
+    let (config, x, y) = fixture();
+    let mut sorted = y.clone();
+    sorted.sort_by(f64::total_cmp);
+    let median = sorted[sorted.len() / 2];
+    let labels = y.iter().map(|&v| f64::from(v >= median)).collect();
+    (config.with_model(thiessen::Model::Probit), x, labels)
+}
+
 #[allow(dead_code)]
 pub fn fixture() -> (Config, Data, Vec<f64>) {
     let n = 48;
