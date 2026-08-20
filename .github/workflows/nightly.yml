@@ -47,10 +47,35 @@ jobs:
           name: mutants-report
           path: mutants.out
 
+  calibration:
+    name: calibration
+    runs-on: ubuntu-latest
+    env:
+      CALIBRATION_DIR: ${{ github.workspace }}/calibration-out
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - run: cargo test --locked --release --test calibration -- --ignored
+      - uses: r-lib/actions/setup-r@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2.12.1
+        with:
+          use-public-rspm: true
+      - run: Rscript -e 'install.packages(c("remotes", "ggplot2"))'
+      # The SBC package is not on CRAN; pinned to a commit.
+      - run: Rscript -e 'remotes::install_github("hyunjimoon/SBC@3a8e632fd4d9e117073761d07502c730cbcac85b", upgrade = "never")'
+      - run: Rscript benchmarks/calibration/evaluate.R "$CALIBRATION_DIR"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: calibration-report
+          path: calibration-out
+
   file-issue:
     name: file-issue
     if: failure()
-    needs: [full-suite, mutants]
+    needs: [full-suite, mutants, calibration]
     runs-on: ubuntu-latest
     permissions:
       contents: read

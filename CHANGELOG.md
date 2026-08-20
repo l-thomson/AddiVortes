@@ -17,6 +17,10 @@ says "Sampled values changed" with the reason.
 - `Sampler::pinned_prior`: a sampler whose prior is fixed by the caller,
   for calibration tests; `Sampler::lambda` reports the sigma^2 prior
   scale in force.
+- Simulation-based calibration and Geweke joint-distribution tests for
+  the Gaussian model at two sizes: small in `cargo test`, full in the
+  nightly suite with an R evaluation (SBC package ECDF difference
+  bands).
 
 ### Changed
 
