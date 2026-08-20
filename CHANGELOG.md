@@ -23,6 +23,8 @@ says "Sampled values changed" with the reason.
   bands).
 - Broken-sampler fixtures under `cfg(test)`, each rejected by the small
   SBC configuration.
+- Upstream comparison: posterior summaries against CRAN AddiVortes 0.6.9
+  on fixed datasets, within 4 combined Monte Carlo standard errors.
 
 ### Changed
 
