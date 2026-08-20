@@ -44,7 +44,9 @@
 //! non-finite values in `x` or `y`, a constant response, a constant column,
 //! no columns, fewer than two rows, and a row count that differs between
 //! `x` and `y`. Missing-value imputation is the caller's job. Duplicate
-//! rows are valid data. More columns than rows fits and returns
+//! rows are valid data. A response lying exactly on a least-squares fit
+//! of the design is valid; the sigma^2 prior then calibrates from the
+//! response standard deviation. More columns than rows fits and returns
 //! [`Warning::MoreFeaturesThanObservations`]. At predict the column count
 //! must match the fitted model; an empty matrix is valid. Categorical
 //! covariates are encoded by the caller before they reach the crate; the

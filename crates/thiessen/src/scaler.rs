@@ -20,6 +20,17 @@ pub struct Scaler {
 }
 
 impl Scaler {
+    /// The identity maps: every training range is [-0.5, 0.5], so scaled
+    /// and caller space coincide. Used by `Sampler::pinned_prior`.
+    pub(crate) fn identity(p: usize) -> Self {
+        Self {
+            y_min: -0.5,
+            y_max: 0.5,
+            x_min: vec![-0.5; p],
+            x_max: vec![0.5; p],
+        }
+    }
+
     /// Fit on validated data; returns the scaler, scaled X and scaled y.
     pub(crate) fn fit(x: &Data, y: &[f64]) -> (Self, Data, Vec<f64>) {
         let (y_min, y_max) = min_max(y.iter().copied());
@@ -159,9 +170,10 @@ pub(crate) fn sigma_mu_sq(k: f64, m: usize) -> f64 {
 
 /// sigma_hat for the sigma^2 prior: the residual standard deviation of the
 /// least-squares fit of scaled y on the scaled design with intercept when
-/// n > p + 1 and the normal equations are well conditioned; otherwise the
-/// sample standard deviation of scaled y (upstream `InitialSigma =
-/// "Linear"`).
+/// n > p + 1, the normal equations are well conditioned and the residual
+/// standard deviation is positive; otherwise the sample standard deviation
+/// of scaled y (upstream `InitialSigma = "Linear"`). A zero sigma_hat
+/// would degenerate the prior at sigma^2 = 0.
 pub(crate) fn sigma_hat(x_scaled: &Data, y_scaled: &[f64]) -> f64 {
     ols_residual_sd(x_scaled, y_scaled).unwrap_or_else(|| sample_sd(y_scaled))
 }
@@ -239,7 +251,7 @@ fn ols_residual_sd(x: &Data, y: &[f64]) -> Option<f64> {
         rss += residual * residual;
     }
     let sd = (rss / (n - p1) as f64).sqrt();
-    sd.is_finite().then_some(sd)
+    (sd.is_finite() && sd > 0.0).then_some(sd)
 }
 
 fn sample_sd(values: &[f64]) -> f64 {

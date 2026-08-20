@@ -14,11 +14,17 @@ says "Sampled values changed" with the reason.
   with prediction, interval, likelihood and ensemble-summary methods.
 - `Config::prior_only`: sampling with the likelihood switched off, so
   `predict` gives prior predictive draws.
+- `Sampler::pinned_prior`: a sampler whose prior is fixed by the caller,
+  for calibration tests; `Sampler::lambda` reports the sigma^2 prior
+  scale in force.
 
 ### Changed
 
 - `Config` is non-exhaustive; construct it with `Config::new` and the
   `with_*` setters.
+- A response lying exactly on a least-squares fit no longer degenerates
+  the sigma^2 prior; sigma_hat falls back to the response standard
+  deviation.
 - Reproducibility contract in the crate-root documentation, with
   determinism and fixed-seed snapshot tests.
 - CI pipeline, nightly statistical suite and branch protection.

@@ -55,6 +55,44 @@ impl Sampler {
     /// observations, finite values, non-constant response and columns, and
     /// omega <= p.
     pub fn new(config: &Config, x: &Data, y: &[f64], seed: u64) -> Result<Self> {
+        Self::build(config, x, y, seed, None)
+    }
+
+    /// A sampler whose prior is fixed by the caller: `x` and `y` are taken
+    /// as already scaled, the affine maps are identity, and `lambda` is
+    /// given rather than calibrated, so the prior does not depend on the
+    /// data. Calibration tests (SBC, Geweke test) require this
+    /// constructor; under [`Sampler::new`] the y-scaling and the lambda
+    /// calibration make the prior a function of the data, which
+    /// invalidates a joint-distribution test.
+    ///
+    /// # Errors
+    ///
+    /// [`Sampler::new`], and `InvalidHyperparameter` for a non-positive
+    /// `lambda`.
+    pub fn pinned_prior(
+        config: &Config,
+        x: &Data,
+        y: &[f64],
+        lambda: f64,
+        seed: u64,
+    ) -> Result<Self> {
+        if !(lambda.is_finite() && lambda > 0.0) {
+            return Err(crate::error::invalid(
+                "lambda",
+                format!("must be finite and positive, got {lambda}"),
+            ));
+        }
+        Self::build(config, x, y, seed, Some(lambda))
+    }
+
+    fn build(
+        config: &Config,
+        x: &Data,
+        y: &[f64],
+        seed: u64,
+        pinned_lambda: Option<f64>,
+    ) -> Result<Self> {
         config.validate()?;
         let p = x.n_cols();
         let omega = config.omega_for(p);
@@ -62,11 +100,16 @@ impl Sampler {
         let mut config = config.clone();
         config.omega = Some(omega);
         let warnings = data::fit_warnings(x);
-        let (scaler, x_scaled, y_scaled) = Scaler::fit(x, y);
+        let (scaler, x_scaled, y_scaled, lambda, sigma_sq) = match pinned_lambda {
+            Some(lambda) => (Scaler::identity(p), x.clone(), y.to_vec(), lambda, lambda),
+            None => {
+                let (scaler, x_scaled, y_scaled) = Scaler::fit(x, y);
+                let sigma_hat = scaler::sigma_hat(&x_scaled, &y_scaled);
+                let lambda = scaler::calibrate_lambda(config.nu, config.q, sigma_hat);
+                (scaler, x_scaled, y_scaled, lambda, sigma_hat * sigma_hat)
+            }
+        };
         let n = x_scaled.n_rows();
-
-        let sigma_hat = scaler::sigma_hat(&x_scaled, &y_scaled);
-        let lambda = scaler::calibrate_lambda(config.nu, config.q, sigma_hat);
         let sigma_mu_sq = scaler::sigma_mu_sq(config.k, config.m);
         let prior = Prior {
             p,
@@ -94,7 +137,6 @@ impl Sampler {
             .iter()
             .map(|t| Assignment::full(&x_scaled, t))
             .collect();
-        let sigma_sq = sigma_hat * sigma_hat;
         // Zero precision removes the likelihood from every conditional:
         // the integrated-likelihood terms of the acceptance ratio vanish
         // and the cell means are drawn from N(0, sigma_mu^2).
@@ -253,6 +295,13 @@ impl Sampler {
         self.sigma_sq
     }
 
+    /// lambda of the sigma^2 prior nu lambda / chi^2_nu: calibrated from
+    /// the data at construction, or the value given to
+    /// [`pinned_prior`](Sampler::pinned_prior).
+    pub fn lambda(&self) -> f64 {
+        self.lambda
+    }
+
     /// The current tessellations, scaled space.
     pub fn tessellations(&self) -> &[Tessellation] {
         &self.tessellations
@@ -304,6 +353,32 @@ impl Sampler {
             self.warnings,
             in_sample_rmse,
         ))
+    }
+}
+
+#[cfg(test)]
+impl Sampler {
+    /// One sweep with the structural moves disabled: sigma^2 | rest, then
+    /// every tessellation's cell means | rest. On a fixed tessellation the
+    /// chain is the conjugate Gibbs sampler of the known-answer tests.
+    fn conjugate_sweep(&mut self) {
+        self.draw_sigma_sq();
+        let n = self.y.len();
+        for j in 0..self.tessellations.len() {
+            let cells = &self.assignments[j].cells;
+            let current = &self.tessellations[j];
+            let residuals: Vec<f64> = (0..n)
+                .map(|i| self.y[i] - self.fit[i] + current.mus[cells[i]])
+                .collect();
+            let stats =
+                CellStats::accumulate(cells, &residuals, &self.precision, current.n_cells());
+            let mus = stats.draw_means(self.sigma_mu_sq, &mut self.rng);
+            let tessellation = &mut self.tessellations[j];
+            tessellation.mus = mus;
+            for i in 0..n {
+                self.fit[i] = self.y[i] - residuals[i] + tessellation.mus[cells[i]];
+            }
+        }
     }
 }
 
@@ -442,5 +517,156 @@ mod tests {
         let sigma = fitted.sigma();
         let mean_sigma = sigma.iter().sum::<f64>() / sigma.len() as f64;
         assert!((0.05..0.2).contains(&mean_sigma), "sigma {mean_sigma}");
+    }
+
+    /// Per-cell count, sum and sum of squares of the response under a
+    /// fixed assignment.
+    struct FixedCells {
+        n: Vec<f64>,
+        s1: Vec<f64>,
+        s2: Vec<f64>,
+    }
+
+    impl FixedCells {
+        fn accumulate(cells: &[usize], y: &[f64], b: usize) -> Self {
+            let mut out = Self {
+                n: vec![0.0; b],
+                s1: vec![0.0; b],
+                s2: vec![0.0; b],
+            };
+            for (&cell, &v) in cells.iter().zip(y) {
+                out.n[cell] += 1.0;
+                out.s1[cell] += v;
+                out.s2[cell] += v * v;
+            }
+            out
+        }
+    }
+
+    /// Posterior means of sigma^2 and of every cell mean for the fixed
+    /// tessellation model by quadrature over t = ln sigma^2.
+    ///
+    /// With mu integrated out cell k contributes, up to constants,
+    ///
+    /// ```text
+    /// ln N(y_k; 0, sigma^2 I + sigma_mu^2 J) =
+    ///   -[ (n_k - 1) ln sigma^2 + ln(sigma^2 + n_k sigma_mu^2)
+    ///      + (s2_k - sigma_mu^2 s1_k^2 / (sigma^2 + n_k sigma_mu^2)) / sigma^2 ] / 2,
+    /// ```
+    ///
+    /// the prior is Inv-Gamma(nu / 2, nu lambda / 2), and
+    /// E[mu_k | sigma^2, y] = sigma_mu^2 s1_k / (sigma^2 + n_k sigma_mu^2).
+    fn quadrature_reference(
+        stats: &FixedCells,
+        nu: f64,
+        lambda: f64,
+        sigma_mu_sq: f64,
+    ) -> (f64, Vec<f64>) {
+        let b = stats.n.len();
+        let (a, scale) = (0.5 * nu, 0.5 * nu * lambda);
+        let steps = 40_000;
+        let (lo, hi) = (lambda.ln() - 10.0, lambda.ln() + 10.0);
+        let mut log_weights = Vec::with_capacity(steps + 1);
+        let mut grid = Vec::with_capacity(steps + 1);
+        for i in 0..=steps {
+            let t = lo + (hi - lo) * i as f64 / steps as f64;
+            let sigma_sq = t.exp();
+            let mut lp = -(a + 1.0) * t - scale / sigma_sq + t;
+            for k in 0..b {
+                let den = sigma_sq + stats.n[k] * sigma_mu_sq;
+                lp += -0.5
+                    * ((stats.n[k] - 1.0) * t
+                        + den.ln()
+                        + (stats.s2[k] - sigma_mu_sq * stats.s1[k] * stats.s1[k] / den) / sigma_sq);
+            }
+            grid.push(sigma_sq);
+            log_weights.push(lp);
+        }
+        let max = log_weights
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
+        let weights: Vec<f64> = log_weights.iter().map(|lp| (lp - max).exp()).collect();
+        let total: f64 = weights.iter().sum();
+        let mean_sigma_sq: f64 = weights.iter().zip(&grid).map(|(w, s)| w * s).sum::<f64>() / total;
+        let mean_mus: Vec<f64> = (0..b)
+            .map(|k| {
+                weights
+                    .iter()
+                    .zip(&grid)
+                    .map(|(w, s)| w * sigma_mu_sq * stats.s1[k] / (s + stats.n[k] * sigma_mu_sq))
+                    .sum::<f64>()
+                    / total
+            })
+            .collect();
+        (mean_sigma_sq, mean_mus)
+    }
+
+    fn batch_means_mcse(values: &[f64]) -> (f64, f64) {
+        let batches = 200;
+        let size = values.len() / batches;
+        let means: Vec<f64> = (0..batches)
+            .map(|k| values[k * size..(k + 1) * size].iter().sum::<f64>() / size as f64)
+            .collect();
+        let mean = means.iter().sum::<f64>() / batches as f64;
+        let var =
+            means.iter().map(|m| (m - mean) * (m - mean)).sum::<f64>() / (batches as f64 - 1.0);
+        (mean, (var / batches as f64).sqrt())
+    }
+
+    #[test]
+    fn fixed_tessellation_posterior_matches_quadrature() {
+        let n = 12;
+        let xs: Vec<f64> = (0..n).map(|i| i as f64 / (n - 1) as f64 - 0.5).collect();
+        let y: Vec<f64> = (0..n)
+            .map(|i| ((i * 7) % 13) as f64 / 26.0 - 0.25)
+            .collect();
+        let x = Data::new(xs, n, 1).unwrap();
+        let config = Config::new().with_m(1);
+        let lambda = 0.02;
+        for (centres, seed) in [(vec![-0.35, 0.0, 0.3], 21_u64), (vec![0.0], 22)] {
+            let b = centres.len();
+            let mut sampler = Sampler::pinned_prior(&config, &x, &y, lambda, seed).unwrap();
+            let fixed = Tessellation {
+                centres,
+                dims: vec![0],
+                mus: vec![0.0; b],
+            };
+            sampler.assignments[0] = Assignment::full(&sampler.x, &fixed);
+            sampler.tessellations[0] = fixed;
+            sampler.fit = vec![0.0; n];
+
+            let stats = FixedCells::accumulate(&sampler.assignments[0].cells, &y, b);
+            assert!(stats.n.iter().all(|&c| c > 0.0));
+            let (ref_sigma_sq, ref_mus) =
+                quadrature_reference(&stats, sampler.config.nu, lambda, sampler.sigma_mu_sq);
+
+            for _ in 0..200 {
+                sampler.conjugate_sweep();
+            }
+            let kept = 40_000;
+            let mut sigma_sq = Vec::with_capacity(kept);
+            let mut mus: Vec<Vec<f64>> = vec![Vec::with_capacity(kept); b];
+            for _ in 0..kept {
+                sampler.conjugate_sweep();
+                sigma_sq.push(sampler.sigma_sq);
+                for (k, series) in mus.iter_mut().enumerate() {
+                    series.push(sampler.tessellations[0].mus[k]);
+                }
+            }
+            let (mean, mcse) = batch_means_mcse(&sigma_sq);
+            assert!(
+                (mean - ref_sigma_sq).abs() < 4.0 * mcse,
+                "sigma^2 {mean} vs {ref_sigma_sq} +- {mcse}"
+            );
+            for (k, series) in mus.iter().enumerate() {
+                let (mean, mcse) = batch_means_mcse(series);
+                assert!(
+                    (mean - ref_mus[k]).abs() < 4.0 * mcse,
+                    "mu_{k} {mean} vs {} +- {mcse}",
+                    ref_mus[k]
+                );
+            }
+        }
     }
 }
