@@ -1,0 +1,43 @@
+#!/bin/sh
+# Checks that cargo and rustc are on the PATH (or under ~/.cargo/bin) at
+# the version DESCRIPTION requires, and reports the versions in use.
+# Nothing is installed or downloaded.
+
+PATH="$PATH:$HOME/.cargo/bin"
+export PATH
+
+msrv=$(sed -n 's/^SystemRequirements:.*rustc >= \([0-9][0-9.]*\).*/\1/p' DESCRIPTION)
+
+for tool in cargo rustc; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "------------------------- [$tool NOT FOUND] -------------------------"
+    echo "'$tool' was not found on the PATH or under ~/.cargo/bin."
+    echo "Install Rust $msrv or later from https://www.rust-lang.org/tools/install"
+    echo "or from the system package manager (Debian and Ubuntu: cargo, rustc;"
+    echo "Fedora: cargo, rust; macOS: brew install rust)."
+    echo "--------------------------------------------------------------------"
+    exit 1
+  fi
+done
+
+cargo_version=$(cargo --version)
+rustc_version=$(rustc --version)
+echo "Using $cargo_version"
+echo "Using $rustc_version"
+
+have=$(echo "$rustc_version" | sed -n 's/^rustc \([0-9][0-9.]*\).*/\1/p')
+if ! awk -v have="$have" -v need="$msrv" 'BEGIN {
+    n = split(have, h, "."); split(need, m, ".")
+    for (i = 1; i <= 3; i++) {
+      if (h[i] + 0 > m[i] + 0) exit 0
+      if (h[i] + 0 < m[i] + 0) exit 1
+    }
+    exit 0
+  }'; then
+  echo "--------------------- [UNSUPPORTED RUST VERSION] ---------------------"
+  echo "rustc $have is older than the minimum $msrv the package requires."
+  echo "--------------------------------------------------------------------"
+  exit 1
+fi
+
+exit 0

@@ -1,0 +1,17 @@
+\name{core_version}
+\alias{core_version}
+\title{Version of the core crate}
+\usage{
+core_version()
+}
+\value{
+A character string: the semantic version of the Rust core the package was
+built with, equal to the \code{Config/thiessen/core-version} field of the
+package \code{DESCRIPTION}.
+}
+\description{
+Version of the core crate
+}
+\examples{
+core_version()
+}

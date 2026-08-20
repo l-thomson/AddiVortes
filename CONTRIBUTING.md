@@ -66,6 +66,23 @@ evidence, linked from `docs/models.md`. The stabilisation pull request
 removes the `cfg` gate, marks the table row stabilised with the version,
 and is a minor version bump.
 
+## R package
+
+The package under `r/` links the core as a static library through
+extendr and builds offline from vendored sources, as the CRAN policy on
+Rust requires. `tools/vendor.sh` packages the core as `cargo package`
+would publish it (less its dev-dependencies), runs `cargo vendor` for the
+third-party crates, and writes `r/src/rust/vendor.tar.xz`,
+`r/inst/AUTHORS` and the core version in `r/DESCRIPTION`. Run it after
+any change to the core or to `r/src/rust/Cargo.toml`, commit the
+regenerated files (the tarball is not tracked), then
+
+    R CMD build r
+    R CMD check --as-cran thiessen_*.tar.gz
+
+CI builds the tarball once and checks it on Linux, macOS and Windows,
+failing on any warning.
+
 ## Pull requests
 
 Branch from `dev`; pull requests squash-merge into `dev` with a green

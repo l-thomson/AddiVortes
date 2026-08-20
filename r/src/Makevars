@@ -1,0 +1,39 @@
+TARGET_DIR = ./rust/target
+LIBDIR = $(TARGET_DIR)/release
+STATLIB = $(LIBDIR)/libthiessen.a
+PKG_LIBS = -L$(LIBDIR) -lthiessen
+CARGOTMP = $(CURDIR)/.cargo
+VENDOR_DIR = $(CURDIR)/rust/vendor
+
+all: $(SHLIB) rust_clean
+
+.PHONY: $(STATLIB) rust_clean
+
+$(SHLIB): $(STATLIB)
+
+# Offline from the vendored sources when they are present, unpacking
+# rust/vendor.tar.xz first if needed; two jobs and a package-local
+# CARGO_HOME, as the CRAN policy on Rust requires.
+$(STATLIB):
+	if [ ! -d "$(VENDOR_DIR)" ] && [ -f rust/vendor.tar.xz ]; then \
+	  tar xf rust/vendor.tar.xz -C rust; \
+	fi
+	mkdir -p "$(CARGOTMP)"
+	if [ -d "$(VENDOR_DIR)" ]; then \
+	  cp rust/vendor-config.toml "$(CARGOTMP)/config.toml"; \
+	  offline="--offline"; \
+	else \
+	  offline=""; \
+	fi; \
+	export CARGO_HOME="$(CARGOTMP)" && \
+	export PATH="$(PATH):$(HOME)/.cargo/bin" && \
+	cargo build --jobs 2 $$offline --lib --release \
+	  --manifest-path=./rust/Cargo.toml --target-dir="$(TARGET_DIR)"
+	rm -Rf "$(CARGOTMP)"
+
+rust_clean: $(SHLIB)
+	rm -Rf "$(CARGOTMP)" "$(TARGET_DIR)"
+	if [ -f rust/vendor.tar.xz ]; then rm -Rf "$(VENDOR_DIR)" rust/core; fi
+
+clean:
+	rm -Rf $(SHLIB) $(STATLIB) $(OBJECTS) "$(TARGET_DIR)" "$(CARGOTMP)"

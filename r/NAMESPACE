@@ -1,0 +1,2 @@
+useDynLib(thiessen, .registration = TRUE)
+export(core_version)

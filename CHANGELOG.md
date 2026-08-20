@@ -10,6 +10,7 @@ says "Sampled values changed" with the reason.
 
 ### Added
 
+- `VERSION`, the crate version as the bindings report it.
 - Cargo feature `experimental` for components and models beyond the
   published method, outside the semver promise; `Error::RequiresFeature`
   and `FromStr` for `Model`; the stability contract in the crate-root
@@ -73,3 +74,4 @@ says "Sampled values changed" with the reason.
 - CI pipeline, nightly statistical suite and branch protection.
 - Input-data contract in the crate-root documentation; a design matrix
   with no columns is rejected with `Error::NoFeatures`.
+- The crate readme is the repository README, so `cargo package` finds it.
