@@ -63,8 +63,11 @@ jobs:
         with:
           use-public-rspm: true
       - run: Rscript -e 'install.packages(c("remotes", "ggplot2"))'
-      # The SBC package is not on CRAN; pinned to a commit.
+      # The SBC package is not on CRAN; pinned to a commit. remotes reads
+      # the GitHub API, so it needs the workflow token.
       - run: Rscript -e 'remotes::install_github("hyunjimoon/SBC@3a8e632fd4d9e117073761d07502c730cbcac85b", upgrade = "never")'
+        env:
+          GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
       - run: Rscript benchmarks/calibration/evaluate.R "$CALIBRATION_DIR"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
