@@ -9,21 +9,22 @@ a changelog line. Enabling the feature does not change the draws of a
 configuration that uses no experimental option. The Python and R packages
 build the core without the feature.
 
-An item graduates to the stable surface when it meets the model or
-component bar of the contributing guide, has a citable write-up with a
-DOI stating the model, priors, calibration and recovery evidence, and has
-shipped behind the feature for one minor release with its tracking issue
-closed. Removing the gate is a minor version bump.
+An item is stabilised when it meets the acceptance criteria of the
+contributing guide, has shipped behind the feature for one minor release,
+has a stabilisation report on its tracking issue, and has a page under
+`docs/` stating the model, priors, and the calibration and recovery
+evidence. Removing the gate is a minor version bump.
 
 ## Table
 
-| Item | Kind | Configuration | Feature since | Calibration | Status |
-|---|---|---|---|---|---|
+| Item | Kind | Configuration | Feature since | Calibration | Status | Tracking issue |
+|---|---|---|---|---|---|---|
 
 Columns: the configuration field or `Model` variant; the first core version
 carrying the item behind the feature; calibration status (SBC and Geweke
 at the two sizes, or the component conformance tests); experimental or
-graduated, with the core version of graduation.
+stabilised, with the core version of stabilisation; the issue carrying the
+acceptance checklist and the stabilisation report.
 
 ## References
 
