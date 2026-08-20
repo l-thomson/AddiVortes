@@ -12,6 +12,13 @@ says "Sampled values changed" with the reason.
 
 - Gaussian AddiVortes model: `fit`, the `Sampler` step API, and `Fitted`
   with prediction, interval, likelihood and ensemble-summary methods.
+- `Config::prior_only`: sampling with the likelihood switched off, so
+  `predict` gives prior predictive draws.
+
+### Changed
+
+- `Config` is non-exhaustive; construct it with `Config::new` and the
+  `with_*` setters.
 - Reproducibility contract in the crate-root documentation, with
   determinism and fixed-seed snapshot tests.
 - CI pipeline, nightly statistical suite and branch protection.

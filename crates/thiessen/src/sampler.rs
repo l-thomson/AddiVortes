@@ -95,6 +95,14 @@ impl Sampler {
             .map(|t| Assignment::full(&x_scaled, t))
             .collect();
         let sigma_sq = sigma_hat * sigma_hat;
+        // Zero precision removes the likelihood from every conditional:
+        // the integrated-likelihood terms of the acceptance ratio vanish
+        // and the cell means are drawn from N(0, sigma_mu^2).
+        let precision = if config.prior_only {
+            vec![0.0; n]
+        } else {
+            vec![1.0 / sigma_sq; n]
+        };
 
         Ok(Self {
             rng,
@@ -107,7 +115,7 @@ impl Sampler {
             assignments,
             fit: vec![mean_y; n],
             sigma_sq,
-            precision: vec![1.0 / sigma_sq; n],
+            precision,
             prior,
             sigma_mu_sq,
             lambda,
@@ -125,20 +133,29 @@ impl Sampler {
     }
 
     /// sigma^2 | y, F ~ Inv-Gamma((nu + n) / 2, (nu lambda + sum r_i^2) / 2)
-    /// with r = y - F.
+    /// with r = y - F; under prior-only sampling the prior
+    /// Inv-Gamma(nu / 2, nu lambda / 2).
     fn draw_sigma_sq(&mut self) {
-        let n = self.y.len();
-        let rss: f64 = self
-            .y
-            .iter()
-            .zip(&self.fit)
-            .map(|(y, f)| (y - f) * (y - f))
-            .sum();
-        let shape = 0.5 * (self.config.nu + n as f64);
-        let scale = 2.0 / (self.config.nu * self.lambda + rss);
+        let (shape, scale) = if self.config.prior_only {
+            (0.5 * self.config.nu, 2.0 / (self.config.nu * self.lambda))
+        } else {
+            let rss: f64 = self
+                .y
+                .iter()
+                .zip(&self.fit)
+                .map(|(y, f)| (y - f) * (y - f))
+                .sum();
+            let n = self.y.len();
+            (
+                0.5 * (self.config.nu + n as f64),
+                2.0 / (self.config.nu * self.lambda + rss),
+            )
+        };
         self.sigma_sq = 1.0 / rng::gamma(shape, scale, &mut self.rng);
-        let precision = 1.0 / self.sigma_sq;
-        self.precision.iter_mut().for_each(|w| *w = precision);
+        if !self.config.prior_only {
+            let precision = 1.0 / self.sigma_sq;
+            self.precision.iter_mut().for_each(|w| *w = precision);
+        }
     }
 
     /// The backfitting update of tessellation `j`: partial residuals, one

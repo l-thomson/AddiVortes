@@ -14,6 +14,7 @@ use crate::error::{invalid, Result};
 /// every field and `fit` calls it first.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct Config {
     /// Ensemble size m. Default 200.
     pub m: usize,
@@ -43,6 +44,15 @@ pub struct Config {
     /// Thinning interval: `fit` keeps every `thinning`-th sweep after
     /// burn-in. Default 1.
     pub thinning: usize,
+    /// Sample from the prior: the likelihood is switched off, so the chain
+    /// draws sigma^2, the tessellations and the cell means from the prior
+    /// and `predict` on the fitted model gives prior predictive draws (brms
+    /// `sample_prior = "only"`). The response still fixes the scaling and
+    /// the lambda calibration, so the prior sampled is the prior a fit on
+    /// the same data would use, and the empty-cell rejection stays, so
+    /// tessellation draws are truncated to those whose cells all hold a
+    /// training row. Default false.
+    pub prior_only: bool,
 }
 
 impl Default for Config {
@@ -58,6 +68,7 @@ impl Default for Config {
             burn_in: 200,
             draws: 1000,
             thinning: 1,
+            prior_only: false,
         }
     }
 }
@@ -141,6 +152,13 @@ impl Config {
     #[must_use]
     pub fn with_thinning(mut self, thinning: usize) -> Self {
         self.thinning = thinning;
+        self
+    }
+
+    /// Prior-only sampling.
+    #[must_use]
+    pub fn with_prior_only(mut self, prior_only: bool) -> Self {
+        self.prior_only = prior_only;
         self
     }
 
