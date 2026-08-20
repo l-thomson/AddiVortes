@@ -59,6 +59,7 @@ mod tests {
     use super::Breakage;
     use crate::config::Config;
     use crate::data::Data;
+    use crate::model::Model;
     use crate::sampler::Sampler;
 
     /// splitmix64 with Box-Muller, sharing nothing with the chain RNG.
@@ -105,8 +106,10 @@ mod tests {
     const LAMBDA: f64 = 0.04;
     /// SBC size: 400 simulations, 19 kept draws at thinning 10 after 100
     /// burn-in sweeps; chi-squared uniformity over 20 rank bins per
-    /// quantity (cells, dimensions, sigma^2), family alpha 0.01
-    /// Bonferroni-split across the three, chi^2_19 quantile 39.939.
+    /// quantity (Gaussian: cells, dimensions, sigma^2; heteroscedastic
+    /// with m' = 1: cells, variance cells, s^2 at the first row), family
+    /// alpha 0.01 Bonferroni-split across the three, chi^2_19 quantile
+    /// 39.939.
     const SIMS: usize = 400;
     const KEPT: usize = 19;
     const THIN: usize = 10;
@@ -125,9 +128,11 @@ mod tests {
             .collect()
     }
 
-    fn config() -> Config {
+    fn config(model: Model) -> Config {
         Config::new()
+            .with_model(model)
             .with_m(M)
+            .with_m_var(1)
             .with_lambda_c(LAMBDA_C)
             .with_omega(OMEGA)
             .with_sigma_c(SIGMA_C)
@@ -178,50 +183,72 @@ mod tests {
         }
     }
 
-    /// SBC rank chi-squared statistics for (cells, dims, sigma^2) with the
-    /// given breakage in force on every fit.
-    fn sbc_statistics(breakage: Breakage) -> [f64; 3] {
+    fn nearest(row: &[f64; 3], dims: &[usize], centres: &[f64]) -> usize {
+        let d = dims.len();
+        let mut best = f64::INFINITY;
+        let mut cell = 0;
+        for (k, centre) in centres.chunks_exact(d).enumerate() {
+            let key: f64 = dims
+                .iter()
+                .zip(centre)
+                .map(|(&dim, c)| (row[dim] - c) * (row[dim] - c))
+                .sum();
+            if key < best {
+                best = key;
+                cell = k;
+            }
+        }
+        cell
+    }
+
+    /// nu lambda / chi^2_nu at nu = 6: the prior of sigma^2, and with m' = 1
+    /// of each variance cell.
+    fn prior_variance(rng: &mut SimRng) -> f64 {
+        let chi_sq = -2.0 * (rng.uniform().ln() + rng.uniform().ln() + rng.uniform().ln());
+        6.0 * LAMBDA / chi_sq
+    }
+
+    /// SBC rank chi-squared statistics for the model's three quantities
+    /// with the given breakage in force on every fit.
+    fn sbc_statistics(breakage: Breakage, model: Model) -> [f64; 3] {
         let rows = rows();
         let x = Data::from_rows(&rows).unwrap();
-        let config = config();
+        let config = config(model);
+        let heteroscedastic = model == Model::Heteroscedastic;
         let mut ranks = [[0.0_f64; 20]; 3];
         for sim in 0..SIMS {
             let mut rng = SimRng(4200 + sim as u64);
             let ensemble: Vec<_> = (0..M)
                 .map(|_| prior_tessellation(&rows, &mut rng))
                 .collect();
-            let chi_sq = -2.0 * (rng.uniform().ln() + rng.uniform().ln() + rng.uniform().ln());
-            let sigma_sq = 6.0 * LAMBDA / chi_sq;
+            let variance = heteroscedastic.then(|| {
+                let (dims, centres, mut values) = prior_tessellation(&rows, &mut rng);
+                for v in values.iter_mut() {
+                    *v = prior_variance(&mut rng);
+                }
+                (dims, centres, values)
+            });
+            let sigma_sq = prior_variance(&mut rng);
+            let variance_at = |row: &[f64; 3]| match &variance {
+                Some((dims, centres, values)) => values[nearest(row, dims, centres)],
+                None => sigma_sq,
+            };
             let truth = [
                 ensemble.iter().map(|(_, _, m)| m.len()).sum::<usize>() as f64,
-                ensemble.iter().map(|(d, _, _)| d.len()).sum::<usize>() as f64,
-                sigma_sq,
+                match &variance {
+                    Some((_, _, values)) => values.len() as f64,
+                    None => ensemble.iter().map(|(d, _, _)| d.len()).sum::<usize>() as f64,
+                },
+                variance_at(&rows[0]),
             ];
-            let sigma = sigma_sq.sqrt();
             let y: Vec<f64> = rows
                 .iter()
                 .map(|row| {
                     let f: f64 = ensemble
                         .iter()
-                        .map(|(dims, centres, mus)| {
-                            let d = dims.len();
-                            let mut best = f64::INFINITY;
-                            let mut cell = 0;
-                            for (k, centre) in centres.chunks_exact(d).enumerate() {
-                                let key: f64 = dims
-                                    .iter()
-                                    .zip(centre)
-                                    .map(|(&dim, c)| (row[dim] - c) * (row[dim] - c))
-                                    .sum();
-                                if key < best {
-                                    best = key;
-                                    cell = k;
-                                }
-                            }
-                            mus[cell]
-                        })
+                        .map(|(dims, centres, mus)| mus[nearest(row, dims, centres)])
                         .sum();
-                    f + sigma * rng.normal()
+                    f + variance_at(row).sqrt() * rng.normal()
                 })
                 .collect();
 
@@ -235,18 +262,21 @@ mod tests {
                 for _ in 0..THIN {
                     sampler.step();
                 }
+                let cells = |ts: &[crate::tessellation::Tessellation]| {
+                    ts.iter().map(|t| t.n_cells()).sum::<usize>() as f64
+                };
                 let state = [
-                    sampler
-                        .tessellations()
-                        .iter()
-                        .map(|t| t.n_cells())
-                        .sum::<usize>() as f64,
-                    sampler
-                        .tessellations()
-                        .iter()
-                        .map(|t| t.n_dims())
-                        .sum::<usize>() as f64,
-                    sampler.sigma_sq(),
+                    cells(sampler.tessellations()),
+                    if heteroscedastic {
+                        cells(sampler.variance_tessellations())
+                    } else {
+                        sampler
+                            .tessellations()
+                            .iter()
+                            .map(|t| t.n_dims())
+                            .sum::<usize>() as f64
+                    },
+                    sampler.noise_variances()[0],
                 ];
                 for (series, value) in draws.iter_mut().zip(state) {
                     series[kept] = value;
@@ -270,24 +300,33 @@ mod tests {
 
     #[test]
     fn unbroken_sampler_passes_the_small_sbc() {
-        let statistics = sbc_statistics(Breakage::None);
-        for (q, statistic) in statistics.iter().enumerate() {
-            assert!(*statistic < CRITICAL, "quantity {q}: {statistic}");
+        for model in [Model::Gaussian, Model::Heteroscedastic] {
+            let statistics = sbc_statistics(Breakage::None, model);
+            for (q, statistic) in statistics.iter().enumerate() {
+                assert!(*statistic < CRITICAL, "{model}, quantity {q}: {statistic}");
+            }
         }
+    }
+
+    fn assert_rejected(breakage: Breakage, model: Model) {
+        let statistics = sbc_statistics(breakage, model);
+        let max = statistics.iter().cloned().fold(0.0, f64::max);
+        assert!(max > CRITICAL, "{statistics:?}");
     }
 
     #[test]
     fn inflated_add_centre_is_rejected() {
-        let statistics = sbc_statistics(Breakage::InflatedAddCentre);
-        let max = statistics.iter().cloned().fold(0.0, f64::max);
-        assert!(max > CRITICAL, "{statistics:?}");
+        assert_rejected(Breakage::InflatedAddCentre, Model::Gaussian);
     }
 
     #[test]
     fn dropped_reverse_bounds_are_rejected() {
-        let statistics = sbc_statistics(Breakage::DroppedReverseBounds);
-        let max = statistics.iter().cloned().fold(0.0, f64::max);
-        assert!(max > CRITICAL, "{statistics:?}");
+        assert_rejected(Breakage::DroppedReverseBounds, Model::Gaussian);
+    }
+
+    #[test]
+    fn dropped_cell_normaliser_is_rejected() {
+        assert_rejected(Breakage::DroppedCellNormaliser, Model::Heteroscedastic);
     }
 
     #[test]

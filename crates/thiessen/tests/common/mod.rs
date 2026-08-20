@@ -31,6 +31,24 @@ impl TestRng {
         (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
     }
 
+    /// Gamma(shape, 1) for shape >= 1 by Marsaglia and Tsang (2000).
+    pub fn gamma(&mut self, shape: f64) -> f64 {
+        assert!(shape >= 1.0);
+        let d = shape - 1.0 / 3.0;
+        let c = 1.0 / (9.0 * d).sqrt();
+        loop {
+            let z = self.normal();
+            let v = (1.0 + c * z).powi(3);
+            if v <= 0.0 {
+                continue;
+            }
+            let u = self.uniform();
+            if u.ln() < 0.5 * z * z + d - d * v + d * v.ln() {
+                return d * v;
+            }
+        }
+    }
+
     pub fn poisson(&mut self, lambda: f64) -> usize {
         let target = self.uniform();
         let mut pmf = (-lambda).exp();
@@ -56,6 +74,29 @@ pub fn probit_fixture() -> (Config, Data, Vec<f64>) {
     let median = sorted[sorted.len() / 2];
     let labels = y.iter().map(|&v| f64::from(v >= median)).collect();
     (config.with_model(thiessen::Model::Probit), x, labels)
+}
+
+/// The fixed-seed fixture of the heteroscedastic model: the Gaussian
+/// fixture's design and mean with the noise scaled by 0.2 + 2 x_1, and
+/// m' = 5 variance tessellations.
+#[allow(dead_code)]
+pub fn heteroscedastic_fixture() -> (Config, Data, Vec<f64>) {
+    let (config, x, y) = fixture();
+    let y = y
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| {
+            let noise = 0.3 * (((i * 29) % 17) as f64 / 16.0 - 0.5);
+            v - noise + noise * (0.2 + 2.0 * x.row(i)[0])
+        })
+        .collect();
+    (
+        config
+            .with_model(thiessen::Model::Heteroscedastic)
+            .with_m_var(5),
+        x,
+        y,
+    )
 }
 
 #[allow(dead_code)]

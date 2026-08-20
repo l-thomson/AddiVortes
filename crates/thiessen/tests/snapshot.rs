@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{fixture, probit_fixture, SEED};
+use common::{fixture, heteroscedastic_fixture, probit_fixture, SEED};
 use thiessen::{Data, Fitted};
 
 /// Rows of the fixture at which f(x) is snapshotted.
@@ -18,6 +18,10 @@ const SNAPSHOT: &str = concat!(
 const PROBIT_SNAPSHOT: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/snapshots/snapshot__probit_chain.snap"
+);
+const HETEROSCEDASTIC_SNAPSHOT: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/snapshots/snapshot__heteroscedastic_chain.snap"
 );
 
 fn points(x: &Data) -> Data {
@@ -47,6 +51,20 @@ fn render_probit(model: &Fitted, x: &Data) -> String {
     out
 }
 
+/// One line per draw: f(x) then s^2(x) at each point.
+fn render_heteroscedastic(model: &Fitted, x: &Data) -> String {
+    let draws = model.predict_draws(&points(x)).unwrap();
+    let variances = model.predict_variance(&points(x)).unwrap();
+    let mut out = String::from("f(x0) f(x17) f(x33) s2(x0) s2(x17) s2(x33)\n");
+    for (f, v) in draws.iter().zip(&variances) {
+        out.push_str(&format!(
+            "{:?} {:?} {:?} {:?} {:?} {:?}\n",
+            f[0], f[1], f[2], v[0], v[1], v[2]
+        ));
+    }
+    out
+}
+
 #[cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))]
 #[test]
 fn reference_target_chain_is_bit_exact() {
@@ -61,6 +79,14 @@ fn reference_target_probit_chain_is_bit_exact() {
     let (config, x, y) = probit_fixture();
     let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
     insta::assert_snapshot!("probit_chain", render_probit(&model, &x));
+}
+
+#[cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))]
+#[test]
+fn reference_target_heteroscedastic_chain_is_bit_exact() {
+    let (config, x, y) = heteroscedastic_fixture();
+    let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
+    insta::assert_snapshot!("heteroscedastic_chain", render_heteroscedastic(&model, &x));
 }
 
 fn stored_columns(path: &str, n_columns: usize) -> Vec<Vec<f64>> {
@@ -96,6 +122,18 @@ fn probit_posterior_summaries_match_the_stored_chain() {
     let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
     let rendered = render_probit(&model, &x);
     let live = parse_columns(rendered.split_once('\n').unwrap().1, 3);
+    for (a, b) in live.iter().zip(&columns) {
+        assert_close_mean_and_sd(a, b);
+    }
+}
+
+#[test]
+fn heteroscedastic_posterior_summaries_match_the_stored_chain() {
+    let columns = stored_columns(HETEROSCEDASTIC_SNAPSHOT, 6);
+    let (config, x, y) = heteroscedastic_fixture();
+    let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
+    let rendered = render_heteroscedastic(&model, &x);
+    let live = parse_columns(rendered.split_once('\n').unwrap().1, 6);
     for (a, b) in live.iter().zip(&columns) {
         assert_close_mean_and_sd(a, b);
     }

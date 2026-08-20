@@ -34,6 +34,14 @@ says "Sampled values changed" with the reason.
   with the model statements and parameter correspondence tables;
   `benchmarks/upstream/binary_variant.R` for the informational comparison
   against the authors' script.
+- Heteroscedastic model (`Model::Heteroscedastic`): a multiplicative
+  ensemble of `m_var` inverse-gamma variance tessellations with the
+  (nu', lambda') prior matching of HBART; SBC and Geweke tests at two
+  sizes, a broken-sampler fixture dropping the inverse-gamma cell
+  normaliser, a prior-matching test, a simulation-recovery test and a
+  fixed-seed snapshot; `benchmarks/upstream/heteroscedastic_variant.R`
+  for the informational comparison against the authors' script. The
+  Geweke tests thin at 45 for every model.
 
 - Gaussian AddiVortes model: `fit`, the `Sampler` step API, and `Fitted`
   with prediction, interval, likelihood and ensemble-summary methods.
