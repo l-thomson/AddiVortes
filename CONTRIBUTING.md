@@ -16,9 +16,10 @@ Every pull request must pass, and CI enforces:
     RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --locked
     cargo deny check advisories licenses bans sources
 
-The full-size statistical suite runs nightly; run it locally with
+Each gate also runs with `--features experimental`. The full-size
+statistical suite runs nightly; run it locally with
 
-    cargo nextest run --locked --run-ignored all
+    cargo nextest run --locked --features experimental --run-ignored all
 
 The full-size calibration tests write ranks and samples under
 `target/calibration` (override with `CALIBRATION_DIR`);
@@ -37,6 +38,30 @@ Regenerate snapshots with `cargo insta review` (or
 `INSTA_UPDATE=always cargo test`) on `x86_64-unknown-linux-gnu` only. A
 pull request that regenerates a snapshot carries a minor version bump and
 a changelog line "Sampled values changed" with the reason.
+
+## Stable and experimental
+
+The published method is stable: the models and components of Stone and
+Gosling (2025) and of CRAN AddiVortes. Everything else is experimental
+and is compiled only with the `experimental` Cargo feature, under
+`#[cfg(feature = "experimental")]`, with a row in
+[docs/experimental.md](docs/experimental.md). Experimental items meet the
+same test bar (known answer where one exists, calibration at two sizes,
+snapshot, documentation) and are outside the semver promise.
+
+Commits adding or changing experimental items use the scope
+`feat(experimental):` or `fix(experimental):`; their changelog lines start
+with "(experimental)". A sampled-value change to an experimental item
+takes the "Sampled values changed" line but does not force a minor bump.
+Release notes carry the sentence "Options behind the `experimental`
+feature are outside the semver promise; see docs/experimental.md".
+
+An item graduates when it has met the full bar, has a citable write-up
+with a DOI stating the model, priors, calibration and recovery evidence,
+has shipped behind the feature for one minor release, and its tracking
+issue has no open questions. The graduation pull request removes the
+`cfg` gate, moves the table row to graduated, and is a minor version
+bump.
 
 ## Pull requests
 

@@ -20,6 +20,11 @@ include = [
     "examples/**",
 ]
 
+[features]
+# Components and models beyond Stone and Gosling (2025) and CRAN AddiVortes;
+# outside the semver promise (docs/experimental.md).
+experimental = []
+
 [dependencies]
 libm = "0.2"
 rand = { version = "0.9", default-features = false }
@@ -36,3 +41,4 @@ serde_json = { version = "1.0.100", features = ["float_roundtrip"] }
 
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
