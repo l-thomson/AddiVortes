@@ -62,9 +62,59 @@ pub(crate) fn gamma(shape: f64, scale: f64, rng: &mut Rng) -> f64 {
         .sample(rng)
 }
 
+/// Standard normal draw restricted to z >= a (Robert 1995, Statistics and
+/// Computing 5, 121-125): plain rejection from N(0, 1) for a < 0.45,
+/// otherwise rejection from the exponential with rate
+/// (a + sqrt(a^2 + 4)) / 2 shifted to a, whose acceptance rate does not
+/// fall as a grows.
+pub(crate) fn truncated_standard_normal_above(a: f64, rng: &mut Rng) -> f64 {
+    if a < 0.45 {
+        loop {
+            let z = standard_normal(rng);
+            if z >= a {
+                return z;
+            }
+        }
+    }
+    let alpha = 0.5 * (a + (a * a + 4.0).sqrt());
+    loop {
+        // 1 - u lies in (0, 1], so the logarithm is finite.
+        let z = a - libm::log(1.0 - uniform(rng)) / alpha;
+        let rho = libm::exp(-0.5 * (z - alpha) * (z - alpha));
+        if uniform(rng) <= rho {
+            return z;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn truncated_normal_moments_on_both_branches() {
+        // E[Z | Z >= a] = phi(a) / (1 - Phi(a)).
+        let mean_above = |a: f64| {
+            let phi = (-0.5 * a * a).exp() / (2.0 * std::f64::consts::PI).sqrt();
+            phi / (0.5 * libm::erfc(a * std::f64::consts::FRAC_1_SQRT_2))
+        };
+        let mut rng = chain_rng(9);
+        let n = 200_000;
+        for a in [-1.5, 0.0, 0.44, 0.46, 2.0, 6.0] {
+            let mut sum = 0.0;
+            for _ in 0..n {
+                let z = truncated_standard_normal_above(a, &mut rng);
+                assert!(z >= a);
+                sum += z;
+            }
+            let mean = sum / n as f64;
+            assert!(
+                (mean - mean_above(a)).abs() < 0.01,
+                "a = {a}: {mean} vs {}",
+                mean_above(a)
+            );
+        }
+    }
 
     #[test]
     fn same_seed_same_stream() {

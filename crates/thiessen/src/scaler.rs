@@ -34,6 +34,23 @@ impl Scaler {
     /// Fit on validated data; returns the scaler, scaled X and scaled y.
     pub(crate) fn fit(x: &Data, y: &[f64]) -> (Self, Data, Vec<f64>) {
         let (y_min, y_max) = min_max(y.iter().copied());
+        let scaler = Self::with_y_range(x, y_min, y_max);
+        let x_scaled = scaler.scale_x(x);
+        let y_scaled = y.iter().map(|&v| scaler.scale_y(v)).collect();
+        (scaler, x_scaled, y_scaled)
+    }
+
+    /// Fit the covariate maps on validated data with the identity map on
+    /// the response (training range [-0.5, 0.5]); returns the scaler and
+    /// scaled X. Used by the probit model, whose latent response is on a
+    /// fixed scale.
+    pub(crate) fn fit_x(x: &Data) -> (Self, Data) {
+        let scaler = Self::with_y_range(x, -0.5, 0.5);
+        let x_scaled = scaler.scale_x(x);
+        (scaler, x_scaled)
+    }
+
+    fn with_y_range(x: &Data, y_min: f64, y_max: f64) -> Self {
         let n = x.n_rows();
         let p = x.n_cols();
         let mut x_min = vec![0.0; p];
@@ -43,15 +60,12 @@ impl Scaler {
             x_min[col] = lo;
             x_max[col] = hi;
         }
-        let scaler = Self {
+        Self {
             y_min,
             y_max,
             x_min,
             x_max,
-        };
-        let x_scaled = scaler.scale_x(x);
-        let y_scaled = y.iter().map(|&v| scaler.scale_y(v)).collect();
-        (scaler, x_scaled, y_scaled)
+        }
     }
 
     /// Scale X columnwise; values outside the training range map outside
@@ -166,6 +180,25 @@ fn min_max(values: impl Iterator<Item = f64>) -> (f64, f64) {
 pub(crate) fn sigma_mu_sq(k: f64, m: usize) -> f64 {
     let s = 0.5 / (k * (m as f64).sqrt());
     s * s
+}
+
+/// sigma_mu^2 = (3 / (k sqrt m))^2 on the latent scale of the probit model
+/// (Chipman, George and McCulloch 2010, s. 4: the latent mean is confined
+/// to [-3, 3] with prior probability set by k; BART `pbart`).
+pub(crate) fn probit_sigma_mu_sq(k: f64, m: usize) -> f64 {
+    let s = 3.0 / (k * (m as f64).sqrt());
+    s * s
+}
+
+/// The (nu', lambda') of one of m' variance tessellations such that the
+/// product of m' independent Inv-Gamma(nu' / 2, nu' lambda' / 2) cell
+/// values has the mean nu lambda / (nu - 2) of the Gaussian model's
+/// sigma^2 ~ nu lambda / chi^2_nu: lambda' = lambda^(1 / m') and
+/// nu' = 2 / (1 - (1 - 2 / nu)^(1 / m')). Requires nu > 2.
+pub(crate) fn variance_cell_prior(nu: f64, lambda: f64, m_var: usize) -> (f64, f64) {
+    let root = 1.0 / m_var as f64;
+    let nu_prime = 2.0 / (1.0 - libm::pow(1.0 - 2.0 / nu, root));
+    (nu_prime, libm::pow(lambda, root))
 }
 
 /// sigma_hat for the sigma^2 prior: the residual standard deviation of the
@@ -299,6 +332,39 @@ mod tests {
             (0.5 / (3.0 * 200f64.sqrt())).powi(2),
             1e-18,
         );
+    }
+
+    #[test]
+    fn probit_sigma_mu_sq_closed_form() {
+        close(
+            probit_sigma_mu_sq(2.0, 50),
+            (3.0 / (2.0 * 50f64.sqrt())).powi(2),
+            1e-18,
+        );
+    }
+
+    #[test]
+    fn fit_x_leaves_the_response_map_as_the_identity() {
+        let x = Data::new(vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0], 3, 2).unwrap();
+        let (scaler, xs) = Scaler::fit_x(&x);
+        assert_eq!(xs.row(0), &[-0.5, -0.5]);
+        assert_eq!(scaler.scale_y(0.37), 0.37);
+        assert_eq!(scaler.unscale_y(-2.5), -2.5);
+        assert_eq!(scaler.y_range(), 1.0);
+    }
+
+    #[test]
+    fn variance_cell_prior_matches_the_mean_of_sigma_sq() {
+        // E[prod v_j] = (nu' lambda' / (nu' - 2))^m' = nu lambda / (nu - 2).
+        let (nu, lambda) = (6.0, 0.03);
+        for m_var in [1, 5, 40] {
+            let (nu_p, lambda_p) = variance_cell_prior(nu, lambda, m_var);
+            let product = (nu_p * lambda_p / (nu_p - 2.0)).powi(m_var as i32);
+            close(product, nu * lambda / (nu - 2.0), 1e-12);
+        }
+        let (nu_p, lambda_p) = variance_cell_prior(nu, lambda, 1);
+        close(nu_p, nu, 1e-12);
+        close(lambda_p, lambda, 1e-15);
     }
 
     #[test]

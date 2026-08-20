@@ -83,6 +83,20 @@ pub enum Error {
     /// The design matrix has no columns.
     #[error("design matrix has no columns")]
     NoFeatures,
+    /// A probit response value is not 0 or 1.
+    #[error("response value in row {row} is not 0 or 1")]
+    InvalidLabel {
+        /// Zero-based row.
+        row: usize,
+    },
+    /// A method has no meaning under the fitted model.
+    #[error("`{method}` is not defined under the {model} model")]
+    NotApplicable {
+        /// The method called.
+        method: String,
+        /// The fitted model.
+        model: crate::Model,
+    },
 }
 
 /// `Result<T, Error>`.
@@ -162,6 +176,17 @@ mod tests {
                     reason: "no draws".into(),
                 },
                 "invalid saved model: no draws",
+            ),
+            (
+                Error::InvalidLabel { row: 4 },
+                "response value in row 4 is not 0 or 1",
+            ),
+            (
+                Error::NotApplicable {
+                    method: "prediction_interval".into(),
+                    model: crate::Model::Probit,
+                },
+                "`prediction_interval` is not defined under the probit model",
             ),
         ];
         for (error, message) in cases {

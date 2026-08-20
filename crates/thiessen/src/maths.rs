@@ -23,6 +23,22 @@ pub(crate) fn normal_cdf(z: f64) -> f64 {
     0.5 * erfc(-z * std::f64::consts::FRAC_1_SQRT_2)
 }
 
+/// Standard normal quantile Phi^-1(p), p in (0, 1), by bisection on
+/// [`normal_cdf`] over [-40, 40] (where Phi is 0 or 1 to double precision).
+pub(crate) fn normal_quantile(p: f64) -> f64 {
+    debug_assert!(p > 0.0 && p < 1.0);
+    let (mut lo, mut hi) = (-40.0_f64, 40.0_f64);
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        if normal_cdf(mid) < p {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    0.5 * (lo + hi)
+}
+
 /// Regularised lower incomplete gamma function P(a, x), a > 0, x >= 0:
 /// series for x < a + 1, continued fraction otherwise (Press et al. 2007,
 /// s. 6.2).
@@ -120,6 +136,14 @@ mod tests {
         close(normal_cdf(0.0), 0.5, 1e-15);
         close(normal_cdf(1.959_963_984_540_054), 0.975, 1e-12);
         close(normal_cdf(-3.0), 0.001_349_898_031_630_09, 1e-12);
+    }
+
+    #[test]
+    fn normal_quantile_inverts_the_cdf() {
+        close(normal_quantile(0.5), 0.0, 1e-12);
+        close(normal_quantile(0.975), 1.959_963_984_540_054, 1e-9);
+        close(normal_quantile(0.001_349_898_031_630_09), -3.0, 1e-9);
+        close(normal_cdf(normal_quantile(0.3)), 0.3, 1e-12);
     }
 
     #[test]

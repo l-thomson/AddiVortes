@@ -1,6 +1,8 @@
 //! Bayesian additive Voronoi tessellations (AddiVortes; Stone and Gosling
-//! 2025, JCGS 34(3):859-871): the Gaussian model, a Gibbs sampler with a
-//! step API, `fit` and `predict`.
+//! 2025, JCGS 34(3):859-871): the Gaussian, probit and heteroscedastic
+//! models, a Gibbs sampler with a step API, `fit` and `predict`. The model
+//! is chosen by [`Config::model`]; each model's statement, priors and
+//! prediction semantics are in the [`models`] module documentation.
 //!
 //! # Example
 //!
@@ -63,10 +65,12 @@ mod broken;
 mod cells;
 mod config;
 mod data;
+mod ensemble;
 mod error;
 mod fitted;
 mod maths;
-mod models;
+mod model;
+pub mod models;
 mod moves;
 mod rng;
 mod sampler;
@@ -77,7 +81,8 @@ pub use config::Config;
 pub use data::{Data, Warning};
 pub use error::{Error, Result};
 pub use fitted::{Fitted, Interval, Posterior};
-pub use models::gaussian::fit;
+pub use model::Model;
+pub use models::fit;
 pub use rng::chain_seed;
 pub use sampler::Sampler;
 pub use scaler::Scaler;

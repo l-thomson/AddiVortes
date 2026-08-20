@@ -10,6 +10,19 @@ says "Sampled values changed" with the reason.
 
 ### Added
 
+- `Model::{Gaussian, Probit, Heteroscedastic}` on `Config` and `Fitted`,
+  with the per-model fields `Config::offset` (probit) and `Config::m_var`
+  (heteroscedastic). The sampler composes a mean ensemble with one of
+  three noise models: the global sigma^2 draw, the Albert-Chib latent
+  refresh with unit variance, or a multiplicative ensemble of
+  inverse-gamma variance tessellations. The Gaussian chain for a fixed
+  seed is unchanged.
+- `Fitted::model`, `Fitted::predict_latent`, `Fitted::predict_variance`;
+  `Sampler::variance_tessellations`, `Sampler::noise_variances`;
+  `Posterior::variance_tessellations`; `Error::InvalidLabel` and
+  `Error::NotApplicable`. Saved Gaussian models from earlier builds load
+  unchanged.
+
 - Gaussian AddiVortes model: `fit`, the `Sampler` step API, and `Fitted`
   with prediction, interval, likelihood and ensemble-summary methods.
 - `Config::prior_only`: sampling with the likelihood switched off, so

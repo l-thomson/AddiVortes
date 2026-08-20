@@ -67,7 +67,7 @@ impl Prior {
     }
 
     /// One centre coordinate, N(0, sigma_c^2), scaled space.
-    fn coordinate(&self, rng: &mut Rng) -> f64 {
+    pub(crate) fn coordinate(&self, rng: &mut Rng) -> f64 {
         self.sigma_c * standard_normal(rng)
     }
 }
