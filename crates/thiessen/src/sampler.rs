@@ -44,6 +44,10 @@ pub struct Sampler {
     /// Calibrated scale of the prior sigma^2 ~ nu lambda / chi^2_nu.
     lambda: f64,
     kept: Posterior,
+    /// Test-only acceptance defect; `Breakage::None` on every constructed
+    /// sampler.
+    #[cfg(test)]
+    pub(crate) breakage: crate::broken::Breakage,
 }
 
 impl Sampler {
@@ -162,6 +166,8 @@ impl Sampler {
             sigma_mu_sq,
             lambda,
             kept: Posterior::empty(),
+            #[cfg(test)]
+            breakage: crate::broken::Breakage::None,
         })
     }
 
@@ -227,10 +233,21 @@ impl Sampler {
         if proposed_stats.all_occupied() {
             let current_stats =
                 CellStats::accumulate(cells, &residuals, &self.precision, current.n_cells());
-            let log_alpha = proposed_stats.log_marginal(self.sigma_mu_sq)
+            #[allow(unused_mut)]
+            let mut log_alpha = proposed_stats.log_marginal(self.sigma_mu_sq)
                 - current_stats.log_marginal(self.sigma_mu_sq)
                 + proposal.log_structure_ratio
                 + moves::log_selection_ratio(m, current, &proposal.tessellation, &self.prior);
+            #[cfg(test)]
+            {
+                log_alpha += crate::broken::log_alpha_shift(
+                    self.breakage,
+                    m,
+                    current,
+                    &proposal.tessellation,
+                    &self.prior,
+                );
+            }
             debug_assert!(!log_alpha.is_nan());
             let u = rng::uniform(&mut self.rng);
             if maths::ln(u) < log_alpha {

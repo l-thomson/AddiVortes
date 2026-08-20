@@ -21,6 +21,8 @@ says "Sampled values changed" with the reason.
   the Gaussian model at two sizes: small in `cargo test`, full in the
   nightly suite with an R evaluation (SBC package ECDF difference
   bands).
+- Broken-sampler fixtures under `cfg(test)`, each rejected by the small
+  SBC configuration.
 
 ### Changed
 
