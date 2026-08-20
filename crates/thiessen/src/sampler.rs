@@ -519,10 +519,27 @@ impl Sampler {
     /// One sweep with the structural moves disabled: the noise update, then
     /// every mean tessellation's cell means | rest. On a fixed tessellation
     /// the chain is the conjugate Gibbs sampler of the known-answer tests.
-    fn conjugate_sweep(&mut self) {
+    pub(crate) fn conjugate_sweep(&mut self) {
         self.update_noise();
         self.mean
             .conjugate_sweep(&self.y, &self.precision, &mut self.rng);
+    }
+
+    /// Replace mean tessellation `j` by `t`, whose cell means must be zero,
+    /// and reset the running fit to zero.
+    pub(crate) fn fix_mean_tessellation(&mut self, j: usize, t: Tessellation) {
+        debug_assert!(t.mus.iter().all(|&m| m == 0.0));
+        let x = self.x.clone();
+        self.mean.set_tessellation(j, &x, t, 0.0);
+    }
+
+    /// The cell index of every training row under mean tessellation `j`.
+    pub(crate) fn mean_cells(&self, j: usize) -> &[usize] {
+        &self.mean.assignments()[j].cells
+    }
+
+    pub(crate) fn mean_sigma_mu_sq(&self) -> f64 {
+        self.mean.family().sigma_mu_sq
     }
 
     pub(crate) fn variance_ensemble(&self) -> Option<&Ensemble<InverseGammaCells>> {
@@ -895,12 +912,11 @@ mod tests {
                 dims: vec![0],
                 mus: vec![0.0; b],
             };
-            let x_scaled = sampler.x.clone();
-            sampler.mean.set_tessellation(0, &x_scaled, fixed, 0.0);
+            sampler.fix_mean_tessellation(0, fixed);
 
-            let stats = FixedCells::accumulate(&sampler.mean.assignments()[0].cells, &y, b);
+            let stats = FixedCells::accumulate(sampler.mean_cells(0), &y, b);
             assert!(stats.n.iter().all(|&c| c > 0.0));
-            let sigma_mu_sq = sampler.mean.family().sigma_mu_sq;
+            let sigma_mu_sq = sampler.mean_sigma_mu_sq();
             let (ref_sigma_sq, ref_mus) =
                 quadrature_reference(&stats, sampler.config.nu, lambda, sigma_mu_sq);
 

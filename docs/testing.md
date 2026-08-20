@@ -31,11 +31,23 @@ regeneration procedure is in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 In `tests/known_answer.rs` and unit tests. Cases with
 an independent answer: the conjugate Gibbs chain on a fixed tessellation
-against quadrature over the exact posterior; prior-only draws against an
-independent rejection sampler of the truncated structural prior
-(two-sample chi-squared, alpha 0.001); degenerate inputs against the
-documented error or behaviour. They detect mispriced conditionals; they
-do not exercise the structural moves against data.
+against quadrature over the exact posterior (the Gaussian model's
+sigma^2 and cell means; the probit model's cell means under
+N(mu; 0, sigma_mu^2) Phi(mu)^n1 (1 - Phi(mu))^n0); prior-only draws
+against an independent rejection sampler of the truncated structural
+prior (two-sample chi-squared, alpha 0.001); degenerate inputs against
+the documented error or behaviour. They detect mispriced conditionals;
+they do not exercise the structural moves against data.
+
+### Simulation recovery
+
+In `tests/probit.rs` (and the Gaussian case in `src/sampler.rs`). A
+known generating process at a stated size: the Brier score of the
+posterior-mean probabilities within 0.03 of the Bayes score, probability
+RMSE below 0.15, and calibration in the large within 4 binomial standard
+errors. These detect a fit that is calibrated against its own prior but
+useless against a plausible truth; the tolerances are loose by design
+and are not evidence of correctness.
 
 ### Upstream comparison
 

@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{fixture, SEED};
+use common::{fixture, probit_fixture, SEED};
 use thiessen::{Data, Fitted};
 
 /// Rows of the fixture at which f(x) is snapshotted.
@@ -14,6 +14,10 @@ const POINTS: [usize; 3] = [0, 17, 33];
 const SNAPSHOT: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/snapshots/snapshot__gaussian_chain.snap"
+);
+const PROBIT_SNAPSHOT: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/snapshots/snapshot__probit_chain.snap"
 );
 
 fn points(x: &Data) -> Data {
@@ -33,6 +37,16 @@ fn render(model: &Fitted, x: &Data) -> String {
     out
 }
 
+/// One line per draw: the latent mean c + f(x) at each point.
+fn render_probit(model: &Fitted, x: &Data) -> String {
+    let draws = model.predict_latent(&points(x)).unwrap();
+    let mut out = String::from("z(x0) z(x17) z(x33)\n");
+    for f in &draws {
+        out.push_str(&format!("{:?} {:?} {:?}\n", f[0], f[1], f[2]));
+    }
+    out
+}
+
 #[cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))]
 #[test]
 fn reference_target_chain_is_bit_exact() {
@@ -41,21 +55,31 @@ fn reference_target_chain_is_bit_exact() {
     insta::assert_snapshot!("gaussian_chain", render(&model, &x));
 }
 
+#[cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))]
 #[test]
-fn posterior_summaries_match_the_stored_chain() {
-    let stored = std::fs::read_to_string(SNAPSHOT)
+fn reference_target_probit_chain_is_bit_exact() {
+    let (config, x, y) = probit_fixture();
+    let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
+    insta::assert_snapshot!("probit_chain", render_probit(&model, &x));
+}
+
+fn stored_columns(path: &str, n_columns: usize) -> Vec<Vec<f64>> {
+    let stored = std::fs::read_to_string(path)
         .expect("stored snapshot; regenerate on the reference target first");
     let body = stored
         .splitn(3, "---\n")
         .nth(2)
         .expect("snapshot body after the insta header");
-    let columns = parse_columns(body);
-    assert_eq!(columns.len(), 4);
+    parse_columns(body, n_columns)
+}
 
+#[test]
+fn posterior_summaries_match_the_stored_chain() {
+    let columns = stored_columns(SNAPSHOT, 4);
     let (config, x, y) = fixture();
     let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
     let rendered = render(&model, &x);
-    let live = parse_columns(rendered.split_once('\n').unwrap().1);
+    let live = parse_columns(rendered.split_once('\n').unwrap().1, 4);
 
     for (a, b) in live.iter().zip(&columns) {
         assert_close_mean_and_sd(a, b);
@@ -65,8 +89,20 @@ fn posterior_summaries_match_the_stored_chain() {
     }
 }
 
-fn parse_columns(body: &str) -> Vec<Vec<f64>> {
-    let mut columns = vec![Vec::new(); 4];
+#[test]
+fn probit_posterior_summaries_match_the_stored_chain() {
+    let columns = stored_columns(PROBIT_SNAPSHOT, 3);
+    let (config, x, y) = probit_fixture();
+    let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
+    let rendered = render_probit(&model, &x);
+    let live = parse_columns(rendered.split_once('\n').unwrap().1, 3);
+    for (a, b) in live.iter().zip(&columns) {
+        assert_close_mean_and_sd(a, b);
+    }
+}
+
+fn parse_columns(body: &str, n_columns: usize) -> Vec<Vec<f64>> {
+    let mut columns = vec![Vec::new(); n_columns];
     for line in body.lines().skip(1).filter(|l| !l.trim().is_empty()) {
         for (c, v) in line.split_whitespace().enumerate() {
             columns[c].push(v.parse::<f64>().unwrap());

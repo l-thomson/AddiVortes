@@ -22,6 +22,13 @@ says "Sampled values changed" with the reason.
   `Posterior::variance_tessellations`; `Error::InvalidLabel` and
   `Error::NotApplicable`. Saved Gaussian models from earlier builds load
   unchanged.
+- Probit model (`Model::Probit`): Albert-Chib augmentation, sigma_mu =
+  3 / (k sqrt m) on the latent scale, offset Phi^-1(ybar) by default;
+  known-answer test by quadrature, SBC and Geweke tests at two sizes, a
+  simulation-recovery test and a fixed-seed snapshot; `docs/models.md`
+  with the model statements and parameter correspondence tables;
+  `benchmarks/upstream/binary_variant.R` for the informational comparison
+  against the authors' script.
 
 - Gaussian AddiVortes model: `fit`, the `Sampler` step API, and `Fitted`
   with prediction, interval, likelihood and ensemble-summary methods.
