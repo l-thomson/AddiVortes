@@ -41,11 +41,13 @@ they do not exercise the structural moves against data.
 
 ### Simulation recovery
 
-In `tests/probit.rs` (and the Gaussian case in `src/sampler.rs`). A
-known generating process at a stated size: the Brier score of the
-posterior-mean probabilities within 0.03 of the Bayes score, probability
-RMSE below 0.15, and calibration in the large within 4 binomial standard
-errors. These detect a fit that is calibrated against its own prior but
+In `tests/probit.rs` and `tests/heteroscedastic.rs` (and the Gaussian
+case in `src/sampler.rs`). A known generating process at a stated size:
+for the probit model the Brier score of the posterior-mean probabilities
+within 0.03 of the Bayes score, probability RMSE below 0.15, and
+calibration in the large within 4 binomial standard errors; for the
+heteroscedastic model the RMSE of f below 0.35 and of ln s^2 below 0.6
+on a heteroscedastic Friedman function. These detect a fit that is calibrated against its own prior but
 useless against a plausible truth; the tolerances are loose by design
 and are not evidence of correctness.
 
@@ -76,11 +78,12 @@ not proof.
 
 ### Tests of tests
 
-In `src/broken.rs`, with `cargo-mutants` in the nightly suite. Two
+In `src/broken.rs`, with `cargo-mutants` in the nightly suite. Three
 mispriced acceptance ratios under `cfg(test)` (an inflated add-centre
-ratio, and the add-dimension selection ratio without its reverse-bound
-folding, the defect upstream corrected in 0.6.8) must each be rejected
-by the small SBC gate. The nightly mutation report is informational.
+ratio; the add-dimension selection ratio without its reverse-bound
+folding, the defect upstream corrected in 0.6.8; and the variance
+ensemble's centre moves without the inverse-gamma cell normaliser) must
+each be rejected by the small SBC gate. The nightly mutation report is informational.
 
 ### Binding contracts
 
@@ -95,7 +98,8 @@ Every size, alpha and critical value is stated next to the test that
 uses it, in the source. Current gate sizes: SBC small 160 simulations,
 19 kept draws, chi-squared over 20 rank bins; Geweke small 2000
 marginal-conditional draws against 800 successive-conditional keeps at
-thinning 15; upstream comparison k = 4 (a two-sided 6e-5 level per
+thinning 45, which leaves the lag-one autocorrelation of every quantity
+below 0.1; upstream comparison k = 4 (a two-sided 6e-5 level per
 summary); broken-sampler SBC 400 simulations.
 
 ## Running the full suite locally

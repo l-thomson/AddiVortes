@@ -13,6 +13,7 @@ use crate::model::Model;
 use crate::sampler::Sampler;
 
 pub mod gaussian;
+pub mod heteroscedastic;
 pub mod probit;
 
 /// Fit the model named by `config.model`: validate, run `burn_in` sweeps,
@@ -30,7 +31,7 @@ pub fn fit(config: &Config, x: &Data, y: &[f64], seed: u64) -> Result<Fitted> {
     match config.model {
         Model::Gaussian => gaussian::fit(config, x, y, seed),
         Model::Probit => probit::fit(config, x, y, seed),
-        Model::Heteroscedastic => run(config, x, y, seed),
+        Model::Heteroscedastic => heteroscedastic::fit(config, x, y, seed),
     }
 }
 

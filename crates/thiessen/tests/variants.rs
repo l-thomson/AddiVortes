@@ -8,6 +8,7 @@
 //!
 //! ```text
 //! (cd benchmarks/upstream && Rscript binary_variant.R)
+//! (cd benchmarks/upstream && Rscript heteroscedastic_variant.R)
 //! cargo test --release --test variants -- --ignored --nocapture
 //! ```
 
@@ -119,4 +120,41 @@ fn probit_friedman_against_the_binary_script() {
     assert_eq!(script.len(), ours.len());
     assert!(ours.iter().all(|(_, v, _)| v.is_finite()));
     report("probit_friedman", &script, &ours);
+}
+
+/// Both sides: m = 50, m' = 20, 200 burn-in sweeps, 1000 kept draws,
+/// nu = 6, q = 0.85, k = 3, sigma_c = 0.8, omega = 3, lambda_c = 5.
+#[test]
+#[ignore = "informational; needs the output of benchmarks/upstream/heteroscedastic_variant.R"]
+fn heteroscedastic_friedman_against_the_script() {
+    let (x, y) = parse_data(&format!("{DIR}/heteroscedastic_friedman_data.csv"));
+    let script = parse_summary(&format!(
+        "{DIR}/heteroscedastic_friedman_script_summary.csv"
+    ));
+    let config = Config::new()
+        .with_model(Model::Heteroscedastic)
+        .with_m(50)
+        .with_m_var(20)
+        .with_burn_in(200)
+        .with_draws(1000);
+    let fitted = fit(&config, &x, &y, 11).unwrap();
+    let points = [0usize, 49, 99, 149, 199];
+    let rows: Vec<&[f64]> = points.iter().map(|&r| x.row(r)).collect();
+    let test = Data::from_rows(&rows).unwrap();
+    let f_draws = fitted.predict_draws(&test).unwrap();
+    let s2_draws = fitted.predict_variance(&test).unwrap();
+    let mut ours: Vec<(String, f64, f64)> = Vec::new();
+    for (prefix, draws) in [("f_mean", &f_draws), ("s2_mean", &s2_draws)] {
+        for (i, &row) in points.iter().enumerate() {
+            let series: Vec<f64> = draws.iter().map(|d| d[i]).collect();
+            ours.push((
+                format!("{prefix}_r{row}"),
+                mean(&series),
+                mcse_mean(&series),
+            ));
+        }
+    }
+    assert_eq!(script.len(), ours.len());
+    assert!(ours.iter().all(|(_, v, _)| v.is_finite()));
+    report("heteroscedastic_friedman", &script, &ours);
 }

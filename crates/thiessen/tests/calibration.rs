@@ -24,22 +24,48 @@ const GAUSSIAN_QUANTITIES: [&str; 7] = ["sigma_sq", "cells", "dims", "f_a", "f_b
 /// Quantities of the probit model: no sigma^2; f is the latent mean
 /// c + f(x); y_mean is the share of ones.
 const PROBIT_QUANTITIES: [&str; 6] = ["cells", "dims", "f_a", "f_b", "f_c", "y_mean"];
+/// Quantities of the heteroscedastic model: those of the mean ensemble,
+/// the total cells over the variance ensemble, and s^2 at the three rows.
+const HETEROSCEDASTIC_QUANTITIES: [&str; 10] = [
+    "cells", "dims", "f_a", "f_b", "f_c", "vcells", "s2_a", "s2_b", "s2_c", "y_mean",
+];
 const F_ROWS: [usize; 3] = [10, 25, 40];
 
 /// Significance 0.01 per test family, Bonferroni-split across the
-/// quantities of the Gaussian model: alpha' = 0.01 / 6 for SBC, 0.01 / 7
-/// for Geweke. The same critical values apply to models with fewer
-/// quantities, where they are conservative.
-const SBC_CHI2_DF19: f64 = 42.198;
-const SBC_CHI2_DF99: f64 = 145.404;
-const GEWEKE_CHI2_DF7: f64 = 23.440;
-const GEWEKE_CHI2_DF3: f64 = 15.510;
-const GEWEKE_ALPHA: f64 = 0.01 / 7.0;
+/// quantities. Gaussian: alpha' = 0.01 / 6 for SBC (chi^2_19 42.198,
+/// chi^2_99 145.404), 0.01 / 7 for Geweke (chi^2_7 23.440, chi^2_3
+/// 15.510). The probit model has fewer quantities and uses the Gaussian
+/// values, which are then conservative. Heteroscedastic: 0.01 / 9 for
+/// SBC (43.488, 147.655), 0.01 / 10 for Geweke (24.322, 16.266).
+struct Gates {
+    sbc_chi2_df19: f64,
+    sbc_chi2_df99: f64,
+    geweke_chi2_df7: f64,
+    geweke_chi2_df3: f64,
+    geweke_alpha: f64,
+}
+
+const GAUSSIAN_GATES: Gates = Gates {
+    sbc_chi2_df19: 42.198,
+    sbc_chi2_df99: 145.404,
+    geweke_chi2_df7: 23.440,
+    geweke_chi2_df3: 15.510,
+    geweke_alpha: 0.01 / 7.0,
+};
+
+const HETEROSCEDASTIC_GATES: Gates = Gates {
+    sbc_chi2_df19: 43.488,
+    sbc_chi2_df99: 147.655,
+    geweke_chi2_df7: 24.322,
+    geweke_chi2_df3: 16.266,
+    geweke_alpha: 0.01 / 10.0,
+};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
     Gaussian,
     Probit,
+    Heteroscedastic,
 }
 
 /// One model under test: the pinned-prior configuration and the test
@@ -52,13 +78,20 @@ struct Model {
     rows: Vec<[f64; 2]>,
     quantities: &'static [&'static str],
     n_sbc: usize,
+    gates: Gates,
 }
 
-/// One prior draw of the ensemble, engine-free: the test's own sampler.
+/// One tessellation of a prior draw: active columns, row-major centres,
+/// cell values.
+type DrawnTessellation = (Vec<usize>, Vec<f64>, Vec<f64>);
+
+/// One prior draw of the ensembles, engine-free: the test's own sampler.
 struct PriorDraw {
-    /// Per tessellation: active columns, row-major centres, cell means.
-    tessellations: Vec<(Vec<usize>, Vec<f64>, Vec<f64>)>,
+    tessellations: Vec<DrawnTessellation>,
     sigma_sq: f64,
+    /// The variance tessellations of the heteroscedastic model; empty
+    /// otherwise.
+    variance: Vec<DrawnTessellation>,
 }
 
 /// The Gaussian model at the calibration size: n = 50, p = 2, m = 3,
@@ -87,6 +120,7 @@ fn gaussian_model() -> Model {
         rows,
         quantities: &GAUSSIAN_QUANTITIES,
         n_sbc: 6,
+        gates: GAUSSIAN_GATES,
     }
 }
 
@@ -107,6 +141,24 @@ fn probit_model() -> Model {
     }
 }
 
+/// The heteroscedastic model at the calibration size: the Gaussian
+/// model's rows, structural prior and lambda, with m' = 2 variance
+/// tessellations (nu' = 2 / (1 - (2 / 3)^(1 / 2)), lambda' = 0.2).
+fn heteroscedastic_model() -> Model {
+    let gaussian = gaussian_model();
+    Model {
+        kind: Kind::Heteroscedastic,
+        config: gaussian
+            .config
+            .with_model(thiessen::Model::Heteroscedastic)
+            .with_m_var(2),
+        quantities: &HETEROSCEDASTIC_QUANTITIES,
+        n_sbc: 9,
+        gates: HETEROSCEDASTIC_GATES,
+        ..gaussian
+    }
+}
+
 fn normal_cdf(z: f64) -> f64 {
     0.5 * libm::erfc(-z * std::f64::consts::FRAC_1_SQRT_2)
 }
@@ -114,7 +166,7 @@ fn normal_cdf(z: f64) -> f64 {
 impl Model {
     fn sigma_mu(&self) -> f64 {
         let scale = match self.kind {
-            Kind::Gaussian => 0.5,
+            Kind::Gaussian | Kind::Heteroscedastic => 0.5,
             Kind::Probit => 3.0,
         };
         scale / (self.config.k * (self.config.m as f64).sqrt())
@@ -124,10 +176,23 @@ impl Model {
         self.config.offset.unwrap_or(0.0)
     }
 
+    /// (nu', lambda') of one variance cell.
+    fn variance_cell_prior(&self) -> (f64, f64) {
+        let root = 1.0 / self.config.m_var as f64;
+        (
+            2.0 / (1.0 - (1.0 - 2.0 / self.config.nu).powf(root)),
+            self.lambda.powf(root),
+        )
+    }
+
     /// One tessellation from the prior truncated to full occupancy, by
-    /// rejection: structure first, means after acceptance (occupancy does
-    /// not involve the means).
-    fn prior_tessellation(&self, rng: &mut TestRng) -> (Vec<usize>, Vec<f64>, Vec<f64>) {
+    /// rejection: structure first, cell values after acceptance (occupancy
+    /// does not involve the values).
+    fn prior_tessellation(
+        &self,
+        rng: &mut TestRng,
+        value: &dyn Fn(&mut TestRng) -> f64,
+    ) -> DrawnTessellation {
         let p = self.x.n_cols();
         let theta = self.config.omega.unwrap_or(3.0_f64.min(p as f64)) / p as f64;
         loop {
@@ -153,34 +218,49 @@ impl Model {
                 occupied[nearest(row, &dims, &centres, d)] = true;
             }
             if occupied.iter().all(|&o| o) {
-                let mus: Vec<f64> = (0..b).map(|_| self.sigma_mu() * rng.normal()).collect();
-                return (dims, centres, mus);
+                let values: Vec<f64> = (0..b).map(|_| value(rng)).collect();
+                return (dims, centres, values);
             }
         }
     }
 
-    /// theta ~ prior: m truncated tessellations and, under the Gaussian
-    /// model, sigma^2 from nu lambda / chi^2_nu (nu = 6: the chi-squared
-    /// is a sum of three exponentials); the probit model's latent variance
-    /// is 1.
+    /// theta ~ prior: m truncated mean tessellations; under the Gaussian
+    /// model sigma^2 from nu lambda / chi^2_nu (nu = 6: the chi-squared is
+    /// a sum of three exponentials); under the heteroscedastic model m'
+    /// truncated variance tessellations with Inv-Gamma(nu' / 2,
+    /// nu' lambda' / 2) cell values; the probit model's latent variance is
+    /// 1.
     fn prior_draw(&self, rng: &mut TestRng) -> PriorDraw {
+        let sigma_mu = self.sigma_mu();
         let tessellations = (0..self.config.m)
-            .map(|_| self.prior_tessellation(rng))
+            .map(|_| self.prior_tessellation(rng, &|rng| sigma_mu * rng.normal()))
             .collect();
         let sigma_sq = match self.kind {
             Kind::Gaussian => {
                 let chi_sq = -2.0 * (rng.uniform().ln() + rng.uniform().ln() + rng.uniform().ln());
                 self.config.nu * self.lambda / chi_sq
             }
-            Kind::Probit => 1.0,
+            Kind::Probit | Kind::Heteroscedastic => 1.0,
+        };
+        let variance = match self.kind {
+            Kind::Heteroscedastic => {
+                let (nu, lambda) = self.variance_cell_prior();
+                (0..self.config.m_var)
+                    .map(|_| {
+                        self.prior_tessellation(rng, &|rng| 0.5 * nu * lambda / rng.gamma(0.5 * nu))
+                    })
+                    .collect()
+            }
+            Kind::Gaussian | Kind::Probit => Vec::new(),
         };
         PriorDraw {
             tessellations,
             sigma_sq,
+            variance,
         }
     }
 
-    /// The ensemble value at training row `i`.
+    /// The mean ensemble value at training row `i`.
     fn f_at(&self, draw: &PriorDraw, i: usize) -> f64 {
         draw.tessellations
             .iter()
@@ -188,14 +268,29 @@ impl Model {
             .sum()
     }
 
-    /// y | theta: f + sigma e, or labels Bernoulli(Phi(c + f)).
+    /// The variance of y_i given f at training row `i`.
+    fn variance_at(&self, draw: &PriorDraw, i: usize) -> f64 {
+        match self.kind {
+            Kind::Heteroscedastic => draw
+                .variance
+                .iter()
+                .map(|(dims, centres, values)| {
+                    values[nearest(&self.rows[i], dims, centres, dims.len())]
+                })
+                .product(),
+            Kind::Gaussian | Kind::Probit => draw.sigma_sq,
+        }
+    }
+
+    /// y | theta: f + s e, or labels Bernoulli(Phi(c + f)).
     fn generate_y(&self, draw: &PriorDraw, rng: &mut TestRng) -> Vec<f64> {
-        let sigma = draw.sigma_sq.sqrt();
         (0..self.x.n_rows())
             .map(|i| {
                 let f = self.f_at(draw, i);
                 match self.kind {
-                    Kind::Gaussian => f + sigma * rng.normal(),
+                    Kind::Gaussian | Kind::Heteroscedastic => {
+                        f + self.variance_at(draw, i).sqrt() * rng.normal()
+                    }
                     Kind::Probit => f64::from(rng.uniform() < normal_cdf(self.offset() + f)),
                 }
             })
@@ -213,6 +308,11 @@ impl Model {
         out.push(cells as f64);
         out.push(dims as f64);
         out.extend(F_ROWS.iter().map(|&r| self.offset() + self.f_at(draw, r)));
+        if self.kind == Kind::Heteroscedastic {
+            let vcells: usize = draw.variance.iter().map(|(_, _, v)| v.len()).sum();
+            out.push(vcells as f64);
+            out.extend(F_ROWS.iter().map(|&r| self.variance_at(draw, r)));
+        }
         out.push(y.iter().sum::<f64>() / y.len() as f64);
         out
     }
@@ -230,6 +330,16 @@ impl Model {
         out.push(cells as f64);
         out.push(dims as f64);
         out.extend(F_ROWS.iter().map(|&r| fit[r]));
+        if self.kind == Kind::Heteroscedastic {
+            let vcells: usize = sampler
+                .variance_tessellations()
+                .iter()
+                .map(|t| t.n_cells())
+                .sum();
+            let variances = sampler.noise_variances();
+            out.push(vcells as f64);
+            out.extend(F_ROWS.iter().map(|&r| variances[r]));
+        }
         out.push(y.iter().sum::<f64>() / y.len() as f64);
         out
     }
@@ -241,7 +351,7 @@ impl Model {
         let variances = sampler.noise_variances();
         for ((slot, f), v) in y.iter_mut().zip(&fit).zip(&variances) {
             *slot = match self.kind {
-                Kind::Gaussian => f + v.sqrt() * rng.normal(),
+                Kind::Gaussian | Kind::Heteroscedastic => f + v.sqrt() * rng.normal(),
                 Kind::Probit => f64::from(rng.uniform() < normal_cdf(*f)),
             };
         }
@@ -337,7 +447,12 @@ fn rank_uniformity(ranks: &[usize], kept: usize) -> f64 {
         .sum()
 }
 
-fn assert_uniform(model: &Model, ranks: &[Vec<usize>], kept: usize, critical: f64) {
+fn assert_uniform(model: &Model, ranks: &[Vec<usize>], kept: usize) {
+    let critical = if kept == 19 {
+        model.gates.sbc_chi2_df19
+    } else {
+        model.gates.sbc_chi2_df99
+    };
     for (q, series) in ranks.iter().enumerate() {
         let statistic = rank_uniformity(series, kept);
         assert!(
@@ -353,14 +468,21 @@ fn assert_uniform(model: &Model, ranks: &[Vec<usize>], kept: usize, critical: f6
 fn sbc_small_ranks_are_uniform() {
     let model = gaussian_model();
     let ranks = sbc_ranks(&model, 160, 19, 15, 150, 401);
-    assert_uniform(&model, &ranks, 19, SBC_CHI2_DF19);
+    assert_uniform(&model, &ranks, 19);
 }
 
 #[test]
 fn sbc_small_ranks_are_uniform_probit() {
     let model = probit_model();
     let ranks = sbc_ranks(&model, 160, 19, 15, 150, 402);
-    assert_uniform(&model, &ranks, 19, SBC_CHI2_DF19);
+    assert_uniform(&model, &ranks, 19);
+}
+
+#[test]
+fn sbc_small_ranks_are_uniform_heteroscedastic() {
+    let model = heteroscedastic_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 403);
+    assert_uniform(&model, &ranks, 19);
 }
 
 /// Files first, so a failed gate still leaves the R evaluation its input.
@@ -373,7 +495,7 @@ fn sbc_full(model: &Model, file: &str, seed: u64) {
         }
     }
     write_csv(file, &lines);
-    assert_uniform(model, &ranks, 99, SBC_CHI2_DF99);
+    assert_uniform(model, &ranks, 99);
 }
 
 #[test]
@@ -388,6 +510,16 @@ fn sbc_full_ranks_are_uniform_probit() {
     sbc_full(&probit_model(), "sbc_ranks_probit.csv", 402);
 }
 
+#[test]
+#[ignore = "full size, nightly"]
+fn sbc_full_ranks_are_uniform_heteroscedastic() {
+    sbc_full(
+        &heteroscedastic_model(),
+        "sbc_ranks_heteroscedastic.csv",
+        403,
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Geweke joint-distribution test
 // ---------------------------------------------------------------------------
@@ -396,7 +528,9 @@ fn sbc_full_ranks_are_uniform_probit() {
 /// quantity (Geweke 2004). The successive-conditional chain alternates
 /// y | theta (through `set_response`) with theta | y (one sweep of the
 /// kernel under test), discards `discard` transitions and keeps every
-/// `thin`-th of the next `n_sc * thin`.
+/// `thin`-th of the next `n_sc * thin`. The Kolmogorov-Smirnov critical
+/// value assumes independent draws; thinning 45 leaves the lag-one
+/// autocorrelation of every quantity below 0.1 for each model.
 fn geweke_samples(
     model: &Model,
     n_mc: usize,
@@ -489,27 +623,39 @@ fn chi_squared_binned(a: &[f64], b: &[f64], lo: usize, hi: usize) -> f64 {
 }
 
 fn assert_simulators_agree(model: &Model, mc: &[Vec<f64>], sc: &[Vec<f64>]) {
+    let gates = &model.gates;
     for (q, name) in model.quantities.iter().enumerate() {
         match *name {
             // Total cells over m = 3 tessellations, bins <=5 to >=12;
-            // total dimensions, bins 3 to 6.
+            // total dimensions, bins 3 to 6; total variance cells over
+            // m' = 2 tessellations, bins <=2 to >=9.
             "cells" => {
                 let statistic = chi_squared_binned(&mc[q], &sc[q], 5, 12);
                 assert!(
-                    statistic < GEWEKE_CHI2_DF7,
-                    "cells: chi-squared {statistic}, critical {GEWEKE_CHI2_DF7}"
+                    statistic < gates.geweke_chi2_df7,
+                    "cells: chi-squared {statistic}, critical {}",
+                    gates.geweke_chi2_df7
                 );
             }
             "dims" => {
                 let statistic = chi_squared_binned(&mc[q], &sc[q], 3, 6);
                 assert!(
-                    statistic < GEWEKE_CHI2_DF3,
-                    "dims: chi-squared {statistic}, critical {GEWEKE_CHI2_DF3}"
+                    statistic < gates.geweke_chi2_df3,
+                    "dims: chi-squared {statistic}, critical {}",
+                    gates.geweke_chi2_df3
+                );
+            }
+            "vcells" => {
+                let statistic = chi_squared_binned(&mc[q], &sc[q], 2, 9);
+                assert!(
+                    statistic < gates.geweke_chi2_df7,
+                    "vcells: chi-squared {statistic}, critical {}",
+                    gates.geweke_chi2_df7
                 );
             }
             _ => {
                 let d = ks_statistic(&mc[q], &sc[q]);
-                let c = (-(GEWEKE_ALPHA / 2.0).ln() / 2.0).sqrt();
+                let c = (-(gates.geweke_alpha / 2.0).ln() / 2.0).sqrt();
                 let critical = c
                     * ((mc[q].len() + sc[q].len()) as f64 / (mc[q].len() * sc[q].len()) as f64)
                         .sqrt();
@@ -522,20 +668,27 @@ fn assert_simulators_agree(model: &Model, mc: &[Vec<f64>], sc: &[Vec<f64>]) {
 #[test]
 fn geweke_small_simulators_agree() {
     let model = gaussian_model();
-    let (mc, sc) = geweke_samples(&model, 2000, 800, 15, 200, 907);
+    let (mc, sc) = geweke_samples(&model, 2000, 800, 45, 200, 907);
     assert_simulators_agree(&model, &mc, &sc);
 }
 
 #[test]
 fn geweke_small_simulators_agree_probit() {
     let model = probit_model();
-    let (mc, sc) = geweke_samples(&model, 2000, 800, 15, 200, 908);
+    let (mc, sc) = geweke_samples(&model, 2000, 800, 45, 200, 908);
+    assert_simulators_agree(&model, &mc, &sc);
+}
+
+#[test]
+fn geweke_small_simulators_agree_heteroscedastic() {
+    let model = heteroscedastic_model();
+    let (mc, sc) = geweke_samples(&model, 2000, 800, 45, 200, 909);
     assert_simulators_agree(&model, &mc, &sc);
 }
 
 /// Files first, so a failed gate still leaves the R evaluation its input.
 fn geweke_full(model: &Model, file: &str, seed: u64) {
-    let (mc, sc) = geweke_samples(model, 20_000, 5000, 20, 500, seed);
+    let (mc, sc) = geweke_samples(model, 20_000, 5000, 45, 500, seed);
     let mut lines = vec!["quantity,simulator,value".to_string()];
     for (q, name) in model.quantities.iter().enumerate() {
         for v in &mc[q] {
@@ -559,6 +712,16 @@ fn geweke_full_simulators_agree() {
 #[ignore = "full size, nightly"]
 fn geweke_full_simulators_agree_probit() {
     geweke_full(&probit_model(), "geweke_samples_probit.csv", 908);
+}
+
+#[test]
+#[ignore = "full size, nightly"]
+fn geweke_full_simulators_agree_heteroscedastic() {
+    geweke_full(
+        &heteroscedastic_model(),
+        "geweke_samples_heteroscedastic.csv",
+        909,
+    );
 }
 
 fn write_csv(name: &str, lines: &[String]) {

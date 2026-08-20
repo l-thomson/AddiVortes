@@ -256,7 +256,7 @@ impl Sampler {
     /// tessellation in turn a structural move, accept or reject, and the
     /// cell means | rest.
     pub fn step(&mut self) {
-        self.update_noise();
+        self.update_noise(true);
         self.mean.sweep(
             &self.x,
             &self.y,
@@ -267,7 +267,10 @@ impl Sampler {
         );
     }
 
-    fn update_noise(&mut self) {
+    /// The noise model's update; `structural` enables the variance
+    /// ensemble's structural moves, which the conjugate sweep of the
+    /// known-answer tests disables.
+    fn update_noise(&mut self, structural: bool) {
         let prior_only = self.config.prior_only;
         match &mut self.noise {
             // sigma^2 | y, F ~ Inv-Gamma((nu + n) / 2, (nu lambda + sum r_i^2) / 2)
@@ -320,14 +323,21 @@ impl Sampler {
                     .zip(self.mean.total())
                     .map(|(y, f)| y - f)
                     .collect();
-                variance.sweep(
-                    &self.x,
-                    &residuals,
-                    &self.precision,
-                    &mut self.rng,
+                if structural {
+                    variance.sweep(
+                        &self.x,
+                        &residuals,
+                        &self.precision,
+                        &mut self.rng,
+                        #[cfg(test)]
+                        self.breakage,
+                    );
+                } else {
                     #[cfg(test)]
-                    self.breakage,
-                );
+                    variance.conjugate_sweep(&residuals, &self.precision, &mut self.rng);
+                    #[cfg(not(test))]
+                    unreachable!("the conjugate sweep exists only under test");
+                }
                 if !prior_only {
                     for (w, &s) in self.precision.iter_mut().zip(variance.total()) {
                         *w = 1.0 / s;
@@ -520,7 +530,7 @@ impl Sampler {
     /// every mean tessellation's cell means | rest. On a fixed tessellation
     /// the chain is the conjugate Gibbs sampler of the known-answer tests.
     pub(crate) fn conjugate_sweep(&mut self) {
-        self.update_noise();
+        self.update_noise(false);
         self.mean
             .conjugate_sweep(&self.y, &self.precision, &mut self.rng);
     }
@@ -902,11 +912,23 @@ mod tests {
             .map(|i| ((i * 7) % 13) as f64 / 26.0 - 0.25)
             .collect();
         let x = Data::new(xs, n, 1).unwrap();
-        let config = Config::new().with_m(1);
         let lambda = 0.02;
-        for (centres, seed) in [(vec![-0.35, 0.0, 0.3], 21_u64), (vec![0.0], 22)] {
+        // With m' = 1 and a single-cell variance tessellation the
+        // heteroscedastic model is the Gaussian model: its one cell value
+        // is sigma^2 under the same inverse-gamma prior.
+        let configs = [
+            Config::new().with_m(1),
+            Config::new()
+                .with_m(1)
+                .with_model(Model::Heteroscedastic)
+                .with_m_var(1),
+        ];
+        for (config, (centres, seed)) in configs
+            .iter()
+            .flat_map(|c| [(vec![-0.35, 0.0, 0.3], 21_u64), (vec![0.0], 22)].map(|case| (c, case)))
+        {
             let b = centres.len();
-            let mut sampler = Sampler::pinned_prior(&config, &x, &y, lambda, seed).unwrap();
+            let mut sampler = Sampler::pinned_prior(config, &x, &y, lambda, seed).unwrap();
             let fixed = Tessellation {
                 centres,
                 dims: vec![0],
@@ -928,7 +950,7 @@ mod tests {
             let mut mus: Vec<Vec<f64>> = vec![Vec::with_capacity(kept); b];
             for _ in 0..kept {
                 sampler.conjugate_sweep();
-                sigma_sq.push(sampler.sigma_sq());
+                sigma_sq.push(sampler.noise_variances()[0]);
                 for (k, series) in mus.iter_mut().enumerate() {
                     series.push(sampler.tessellations()[0].mus[k]);
                 }
