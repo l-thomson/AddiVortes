@@ -10,6 +10,11 @@ says "Sampled values changed" with the reason.
 
 ### Added
 
+- Cargo feature `experimental` for components and models beyond the
+  published method, outside the semver promise; `Error::RequiresFeature`
+  and `FromStr` for `Model`; the stability contract in the crate-root
+  documentation and `docs/experimental.md`.
+
 - `Model::{Gaussian, Probit, Heteroscedastic}` on `Config` and `Fitted`,
   with the per-model fields `Config::offset` (probit) and `Config::m_var`
   (heteroscedastic). The sampler composes a mean ensemble with one of

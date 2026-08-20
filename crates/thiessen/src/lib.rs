@@ -40,6 +40,27 @@
 //! Monte Carlo error. The testing strategy, from unit tests to
 //! simulation-based calibration, is `docs/testing.md` in the repository.
 //!
+//! Configurations using options behind the `experimental` feature are
+//! deterministic under the same contract and carry fixed-seed snapshots on
+//! the reference target, but their sampled values may change in any
+//! release, including a patch, with a changelog line. Enabling the feature
+//! does not change the draws of a configuration that uses no experimental
+//! option.
+//!
+//! # Stability
+//!
+//! The stable surface is the method as published: the models and
+//! components of Stone and Gosling (2025) and of CRAN AddiVortes. It
+//! follows semantic versioning. Everything else the crate adds is
+//! experimental: compiled only with the Cargo feature `experimental`
+//! (`thiessen = { version = "...", features = ["experimental"] }`), shown
+//! on docs.rs with a feature banner, tested to the same standard, and
+//! outside the semver promise, whether gated here or badged in a binding.
+//! A configuration naming an experimental field or [`Model`] variant fails
+//! to deserialise in a build without the feature; for a variant the error
+//! names the feature. The table of experimental items and their status is
+//! `docs/experimental.md` in the repository.
+//!
 //! # Input data
 //!
 //! `x` is a numeric row-major matrix with at least one column; the response
@@ -56,6 +77,7 @@
 //! Python and R packages encode a d-level factor as d - 1 indicator
 //! columns. This section corresponds to rOpenSci general standard G2 and
 //! Bayesian standard BS2.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 #![deny(rustdoc::broken_intra_doc_links)]

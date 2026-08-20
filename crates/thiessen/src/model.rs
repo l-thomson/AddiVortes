@@ -1,5 +1,9 @@
 //! The model discriminator shared by `Config`, `Sampler` and `Fitted`.
 
+use std::str::FromStr;
+
+use crate::error::{invalid, Error};
+
 /// The observation model. Selected on [`Config`](crate::Config) and stored
 /// on the fitted model; the sampler's verbs and the prediction surface keep
 /// their signatures and change meaning as documented per method.
@@ -10,9 +14,13 @@
 /// - `Heteroscedastic`: y = f(x) + s(x) e, e ~ N(0, 1), s^2(x) the product
 ///   of `m_var` variance tessellations with inverse-gamma cell values
 ///   (the structure of HBART, Pratola et al. 2020).
+///
+/// Serialises as the snake-case name. The name of a variant behind the
+/// `experimental` feature is rejected in a build without it with
+/// [`Error::RequiresFeature`].
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(try_from = "String", into = "String")]
 pub enum Model {
     /// Gaussian noise with one global variance.
     #[default]
@@ -22,6 +30,10 @@ pub enum Model {
     /// Gaussian noise with a covariate-dependent variance.
     Heteroscedastic,
 }
+
+/// Names of the variants compiled only with the `experimental` feature.
+#[cfg(not(feature = "experimental"))]
+const EXPERIMENTAL: &[&str] = &[];
 
 impl Model {
     /// Whether the model draws a global sigma^2.
@@ -33,15 +45,55 @@ impl Model {
     pub(crate) fn has_variance_ensemble(self) -> bool {
         matches!(self, Model::Heteroscedastic)
     }
+
+    fn name(self) -> &'static str {
+        match self {
+            Model::Gaussian => "gaussian",
+            Model::Probit => "probit",
+            Model::Heteroscedastic => "heteroscedastic",
+        }
+    }
 }
 
 impl std::fmt::Display for Model {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Model::Gaussian => "gaussian",
-            Model::Probit => "probit",
-            Model::Heteroscedastic => "heteroscedastic",
-        })
+        f.write_str(self.name())
+    }
+}
+
+impl FromStr for Model {
+    type Err = Error;
+
+    /// # Errors
+    ///
+    /// [`Error::RequiresFeature`] for the name of a gated variant;
+    /// [`Error::InvalidHyperparameter`] for any other unknown name.
+    fn from_str(s: &str) -> Result<Self, Error> {
+        match s {
+            "gaussian" => Ok(Model::Gaussian),
+            "probit" => Ok(Model::Probit),
+            "heteroscedastic" => Ok(Model::Heteroscedastic),
+            #[cfg(not(feature = "experimental"))]
+            _ if EXPERIMENTAL.contains(&s) => Err(Error::RequiresFeature {
+                item: format!("model `{s}`"),
+                feature: "experimental",
+            }),
+            _ => Err(invalid("model", format!("unknown model `{s}`"))),
+        }
+    }
+}
+
+impl TryFrom<String> for Model {
+    type Error = Error;
+
+    fn try_from(s: String) -> Result<Self, Error> {
+        s.parse()
+    }
+}
+
+impl From<Model> for String {
+    fn from(model: Model) -> Self {
+        model.name().to_owned()
     }
 }
 
@@ -62,5 +114,28 @@ mod tests {
         );
         assert!(serde_json::from_str::<Model>("\"Probit\"").is_err());
         assert_eq!(Model::Probit.to_string(), "probit");
+        assert_eq!("gaussian".parse::<Model>().unwrap(), Model::Gaussian);
+        assert!(matches!(
+            "cauchy".parse::<Model>(),
+            Err(Error::InvalidHyperparameter { .. })
+        ));
+    }
+
+    #[cfg(not(feature = "experimental"))]
+    #[test]
+    fn gated_names_name_the_feature() {
+        for name in EXPERIMENTAL {
+            assert!(matches!(
+                name.parse::<Model>(),
+                Err(Error::RequiresFeature {
+                    feature: "experimental",
+                    ..
+                })
+            ));
+            let message = serde_json::from_str::<Model>(&format!("\"{name}\""))
+                .unwrap_err()
+                .to_string();
+            assert!(message.contains("experimental"), "{message}");
+        }
     }
 }

@@ -104,6 +104,12 @@ is the product of `m_var` variance tessellations with inverse-gamma cell
 values, the structure of HBART (Pratola, Chipman, George and McCulloch
 2020).
 
+## Experimental models
+
+Models behind the `experimental` Cargo feature are stated here under
+their own headings as they land; their status is kept only in the table
+in [experimental.md](experimental.md).
+
 ## References
 
 - Albert, J. H. and Chib, S. (1993). Bayesian analysis of binary and

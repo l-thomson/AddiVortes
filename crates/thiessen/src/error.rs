@@ -97,6 +97,14 @@ pub enum Error {
         /// The fitted model.
         model: crate::Model,
     },
+    /// An option is compiled only with a Cargo feature this build lacks.
+    #[error("{item} requires the `{feature}` feature")]
+    RequiresFeature {
+        /// The option named as the caller supplied it.
+        item: String,
+        /// The Cargo feature.
+        feature: &'static str,
+    },
 }
 
 /// `Result<T, Error>`.
@@ -180,6 +188,13 @@ mod tests {
             (
                 Error::InvalidLabel { row: 4 },
                 "response value in row 4 is not 0 or 1",
+            ),
+            (
+                Error::RequiresFeature {
+                    item: "model `robust`".into(),
+                    feature: "experimental",
+                },
+                "model `robust` requires the `experimental` feature",
             ),
             (
                 Error::NotApplicable {

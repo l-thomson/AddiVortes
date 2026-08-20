@@ -69,6 +69,9 @@ draws; the full contract is in the crate-root documentation
 `Config::model` selects the Gaussian, probit or heteroscedastic model;
 their statements, priors and parameter correspondence with CRAN
 AddiVortes and the BART family are in [docs/models.md](docs/models.md).
+Components and models beyond the published method are compiled only with
+the `experimental` Cargo feature and are outside the semver promise; see
+[docs/experimental.md](docs/experimental.md).
 
 ## Testing
 
