@@ -48,6 +48,8 @@ says "Sampled values changed" with the reason.
   bands).
 - Broken-sampler fixtures under `cfg(test)`, each rejected by the small
   SBC configuration.
+- `Config::paper()`: the paper's settings, lambda_c = 25. The default
+  lambda_c is 5 for every model, following CRAN AddiVortes >= 0.6.8.
 - Upstream comparison: posterior summaries against CRAN AddiVortes 0.6.9
   on fixed datasets, within 4 combined Monte Carlo standard errors.
 
