@@ -46,7 +46,8 @@ Gosling (2025) and of CRAN AddiVortes. Everything else is experimental
 and is compiled only with the `experimental` Cargo feature, under
 `#[cfg(feature = "experimental")]`, with a row in
 [docs/experimental.md](docs/experimental.md). Experimental items meet the
-same test bar (known answer where one exists, calibration at two sizes,
+same acceptance criteria as the published models (known answer where one
+exists, SBC and Geweke calibration at two sizes, simulation recovery,
 snapshot, documentation) and are outside the semver promise.
 
 Commits adding or changing experimental items use the scope
@@ -56,12 +57,14 @@ takes the "Sampled values changed" line but does not force a minor bump.
 Release notes carry the sentence "Options behind the `experimental`
 feature are outside the semver promise; see docs/experimental.md".
 
-An item graduates when it has met the full bar, has a citable write-up
-with a DOI stating the model, priors, calibration and recovery evidence,
-has shipped behind the feature for one minor release, and its tracking
-issue has no open questions. The graduation pull request removes the
-`cfg` gate, moves the table row to graduated, and is a minor version
-bump.
+An item is stabilised when it has met the acceptance criteria, has
+shipped behind the feature for one minor release, has a stabilisation
+report on its tracking issue (what changed during that release, the
+open questions closed, the stable configuration surface), and has a page
+under `docs/` stating the model, priors, and the calibration and recovery
+evidence, linked from `docs/models.md`. The stabilisation pull request
+removes the `cfg` gate, marks the table row stabilised with the version,
+and is a minor version bump.
 
 ## Pull requests
 
