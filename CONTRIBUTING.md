@@ -20,6 +20,11 @@ The full-size statistical suite runs nightly; run it locally with
 
     cargo nextest run --locked --run-ignored all
 
+The full-size calibration tests write ranks and samples under
+`target/calibration` (override with `CALIBRATION_DIR`);
+`benchmarks/calibration/evaluate.R` turns them into rank ECDF difference
+and comparison plots, as the nightly `calibration` job does.
+
 ## Reproducibility and snapshots
 
 The reproducibility contract is in the crate-root documentation
