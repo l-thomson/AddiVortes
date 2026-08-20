@@ -19,9 +19,10 @@
 use crate::maths;
 use crate::rng::{standard_normal, Rng};
 
-/// Per-cell (W_k, S_k) accumulated in ascending observation order.
+/// Per-cell (n_k, W_k, S_k) accumulated in ascending observation order.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct CellStats {
+    pub count: Vec<usize>,
     pub weight: Vec<f64>,
     pub sum: Vec<f64>,
 }
@@ -35,18 +36,22 @@ impl CellStats {
         precision: &[f64],
         b: usize,
     ) -> Self {
+        let mut count = vec![0_usize; b];
         let mut weight = vec![0.0; b];
         let mut sum = vec![0.0; b];
         for ((&cell, &r), &w) in cells.iter().zip(residuals).zip(precision) {
+            count[cell] += 1;
             weight[cell] += w;
             sum[cell] += w * r;
         }
-        Self { weight, sum }
+        Self { count, weight, sum }
     }
 
-    /// Whether every cell holds at least one observation.
+    /// Whether every cell holds at least one observation. Counted, not
+    /// weighed: under prior-only sampling every precision is zero and the
+    /// occupancy rule must not change.
     pub(crate) fn all_occupied(&self) -> bool {
-        self.weight.iter().all(|&w| w > 0.0)
+        self.count.iter().all(|&c| c > 0)
     }
 
     /// The T-dependent part of the integrated log-likelihood.
