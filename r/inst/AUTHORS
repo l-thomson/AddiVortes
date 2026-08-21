@@ -31,6 +31,11 @@ getrandom 0.3.4
   license: MIT OR Apache-2.0
   repository: https://github.com/rust-random/getrandom
 
+itoa 1.0.18
+  authors: David Tolnay <dtolnay@gmail.com>
+  license: MIT OR Apache-2.0
+  repository: https://github.com/dtolnay/itoa
+
 lazy_static 1.5.0
   authors: Marvin Löbel <loebel.marvin@gmail.com>
   license: MIT OR Apache-2.0
@@ -45,6 +50,11 @@ libm 0.2.16
   authors: Alex Crichton <alex@alexcrichton.com>, Amanieu d'Antras <amanieu@gmail.com>, Jorge Aparicio <japaricious@gmail.com>, Trevor Gross <tg@trevorgross.com>
   license: MIT
   repository: https://github.com/rust-lang/compiler-builtins
+
+memchr 2.8.3
+  authors: Andrew Gallant <jamslam@gmail.com>, bluss
+  license: Unlicense OR MIT
+  repository: https://github.com/BurntSushi/memchr
 
 num-traits 0.2.19
   authors: The Rust Project Developers
@@ -121,6 +131,11 @@ serde_derive 1.0.229
   license: MIT OR Apache-2.0
   repository: https://github.com/serde-rs/serde
 
+serde_json 1.0.151
+  authors: Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>
+  license: MIT OR Apache-2.0
+  repository: https://github.com/serde-rs/json
+
 syn 2.0.119
   authors: David Tolnay <dtolnay@gmail.com>
   license: MIT OR Apache-2.0
@@ -165,4 +180,9 @@ zerocopy-derive 0.8.56
   authors: not declared
   license: BSD-2-Clause OR Apache-2.0 OR MIT
   repository: https://github.com/google/zerocopy
+
+zmij 1.0.23
+  authors: David Tolnay <dtolnay@gmail.com>
+  license: MIT
+  repository: https://github.com/dtolnay/zmij
 

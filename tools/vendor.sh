@@ -46,6 +46,11 @@ rm -f vendor.tar.xz
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='2000-01-01 00:00Z' \
   -cJf vendor.tar.xz core vendor
 
+# The determinism test compares against the core's committed chain, which
+# the package tarball does not otherwise carry.
+cp "$root/crates/thiessen/tests/snapshots/snapshot__gaussian_chain.snap" \
+  "$root/r/tests/testthat/core-gaussian-chain.txt"
+
 sed -i "s|^Config/thiessen/core-version: .*|Config/thiessen/core-version: $version|" \
   "$root/r/DESCRIPTION"
 

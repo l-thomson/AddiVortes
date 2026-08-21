@@ -19,6 +19,7 @@ use crate::data::{self, Data, Warning};
 use crate::ensemble::Ensemble;
 use crate::error::{Error, Result};
 use crate::fitted::{Fitted, Posterior};
+use crate::geometry::Geometry;
 use crate::maths;
 use crate::model::Model;
 use crate::moves::Prior;
@@ -35,7 +36,7 @@ enum Noise {
     /// P(y = 1 | x) = Phi(c + f(x)).
     Unit { labels: Vec<f64>, offset: f64 },
     /// The variance ensemble, whose total at each observation is s^2(x_i).
-    Ensemble(Ensemble<InverseGammaCells>),
+    Ensemble(Box<Ensemble<InverseGammaCells>>),
 }
 
 /// The sampler state for one chain. Construct with [`Sampler::new`], advance
@@ -79,8 +80,10 @@ impl Sampler {
     ///
     /// [`Config::validate`], then the data checks: row counts, at least two
     /// observations, finite values, non-constant response and columns,
-    /// omega <= p, and under the probit model `InvalidLabel` for a response
-    /// value outside {0, 1}.
+    /// omega <= p, `metric` naming every column with each sphere's
+    /// longitude last, `InvalidCategoryCode` for a non-integer value in a
+    /// categorical column, and under the probit model `InvalidLabel` for
+    /// a response value outside {0, 1}.
     pub fn new(config: &Config, x: &Data, y: &[f64], seed: u64) -> Result<Self> {
         Self::build(config, x, y, seed, None)
     }
@@ -132,6 +135,8 @@ impl Sampler {
         let p = x.n_cols();
         let omega = config.omega_for(p);
         data::validate_fit(x, y, omega)?;
+        let geometry = Geometry::fit(&config.metric, x)?;
+        let laws = geometry.laws(x, config.sigma_c)?;
         if config.model == Model::Probit {
             if let Some(row) = y.iter().position(|&v| v != 0.0 && v != 1.0) {
                 return Err(Error::InvalidLabel { row });
@@ -149,12 +154,12 @@ impl Sampler {
                 (Scaler::identity(p), x.clone(), y.to_vec(), lambda, 1.0)
             }
             (Model::Probit, None) => {
-                let (scaler, x_scaled) = Scaler::fit_x(x);
+                let (scaler, x_scaled) = Scaler::fit_x(x, &geometry);
                 (scaler, x_scaled, y.to_vec(), 1.0, 1.0)
             }
             (_, Some(lambda)) => (Scaler::identity(p), x.clone(), y.to_vec(), lambda, lambda),
             (_, None) => {
-                let (scaler, x_scaled, y_scaled) = Scaler::fit(x, y);
+                let (scaler, x_scaled, y_scaled) = Scaler::fit(x, y, &geometry);
                 let sigma_hat = scaler::sigma_hat(&x_scaled, &y_scaled);
                 let lambda = scaler::calibrate_lambda(config.nu, config.q, sigma_hat);
                 (scaler, x_scaled, y_scaled, lambda, sigma_hat * sigma_hat)
@@ -168,7 +173,8 @@ impl Sampler {
             p,
             omega,
             lambda_c: config.lambda_c,
-            sigma_c: config.sigma_c,
+            geometry,
+            laws,
         };
         let mut rng = rng::chain_rng(seed);
         let mean_y = y_scaled.iter().sum::<f64>() / n as f64;
@@ -182,7 +188,7 @@ impl Sampler {
         };
         let mean = Ensemble::new(
             GaussianCells { sigma_mu_sq },
-            prior,
+            prior.clone(),
             &x_scaled,
             config.m,
             cell_value,
@@ -206,7 +212,7 @@ impl Sampler {
                     scaler::variance_cell_prior(config.nu, lambda, config.m_var);
                 // Every variance cell starts at sigma^2 ^ (1 / m') so the
                 // product starts at the initial sigma^2.
-                Noise::Ensemble(Ensemble::new(
+                Noise::Ensemble(Box::new(Ensemble::new(
                     InverseGammaCells {
                         nu,
                         lambda: lambda_prime,
@@ -218,7 +224,7 @@ impl Sampler {
                     libm::pow(sigma_sq, 1.0 / config.m_var as f64),
                     sigma_sq,
                     &mut rng,
-                ))
+                )))
             }
         };
         // Zero precision removes the likelihood from every conditional:
@@ -487,10 +493,11 @@ impl Sampler {
         let offset = self.offset();
         let probit = matches!(self.noise, Noise::Unit { .. });
         let mut mean_prediction = vec![0.0; n];
+        let geometry = self.mean.geometry();
         for draw in self.kept.tessellations() {
             for (i, slot) in mean_prediction.iter_mut().enumerate() {
                 let row = self.x.row(i);
-                let f: f64 = draw.iter().map(|t| t.value_at(row)).sum();
+                let f: f64 = draw.iter().map(|t| t.value_at(row, geometry)).sum();
                 *slot += if probit {
                     maths::normal_cdf(f + offset)
                 } else {
@@ -514,12 +521,14 @@ impl Sampler {
             .sum::<f64>()
             / n as f64)
             .sqrt();
+        let categories = self.mean.geometry().categories().to_vec();
         Ok(Fitted::new(
             self.config,
             self.scaler,
             self.kept,
             self.warnings,
             in_sample_rmse,
+            categories,
         ))
     }
 }
@@ -618,12 +627,13 @@ mod tests {
         let mut sampler = Sampler::new(&small(), &x, &y, 3).unwrap();
         for _ in 0..15 {
             sampler.step();
+            let g = sampler.mean.geometry();
             for i in 0..40 {
                 let row = sampler.x.row(i);
                 let sum: f64 = sampler
                     .tessellations()
                     .iter()
-                    .map(|t| t.value_at(row))
+                    .map(|t| t.value_at(row, g))
                     .sum();
                 assert!((sum - sampler.mean.total()[i]).abs() < 1e-9);
             }
@@ -632,7 +642,7 @@ mod tests {
                 .iter()
                 .zip(sampler.mean.assignments())
             {
-                assert_eq!(*a, Assignment::full(&sampler.x, t));
+                assert_eq!(*a, Assignment::full(&sampler.x, t, g));
             }
         }
     }
@@ -645,18 +655,19 @@ mod tests {
         for _ in 0..15 {
             sampler.step();
             let variance = sampler.variance_ensemble().unwrap();
+            let g = variance.geometry();
             for i in 0..40 {
                 let row = sampler.x.row(i);
                 let product: f64 = variance
                     .tessellations()
                     .iter()
-                    .map(|t| t.value_at(row))
+                    .map(|t| t.value_at(row, g))
                     .product();
                 assert!((product - variance.total()[i]).abs() < 1e-9 * product);
                 assert!((1.0 / variance.total()[i] - sampler.precision[i]).abs() < 1e-9);
             }
             for (t, a) in variance.tessellations().iter().zip(variance.assignments()) {
-                assert_eq!(*a, Assignment::full(&sampler.x, t));
+                assert_eq!(*a, Assignment::full(&sampler.x, t, g));
             }
         }
     }

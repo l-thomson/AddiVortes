@@ -5,6 +5,7 @@
 use crate::config::Config;
 use crate::data::{self, Data, Warning};
 use crate::error::{Error, Result};
+use crate::geometry::Geometry;
 use crate::maths;
 use crate::model::Model;
 use crate::scaler::Scaler;
@@ -141,6 +142,8 @@ pub struct Fitted {
     posterior: Posterior,
     warnings: Vec<Warning>,
     in_sample_rmse: f64,
+    /// Levels of each categorical column; empty for the other columns.
+    categories: Vec<Vec<f64>>,
 }
 
 #[derive(serde::Deserialize)]
@@ -150,6 +153,8 @@ struct FittedParts {
     posterior: Posterior,
     warnings: Vec<Warning>,
     in_sample_rmse: f64,
+    #[serde(default)]
+    categories: Vec<Vec<f64>>,
 }
 
 impl TryFrom<FittedParts> for Fitted {
@@ -161,6 +166,13 @@ impl TryFrom<FittedParts> for Fitted {
         };
         parts.config.validate()?;
         let p = parts.scaler.n_cols();
+        // A save from before categorical levels were stored carries none.
+        let categories = if parts.categories.is_empty() {
+            vec![Vec::new(); p]
+        } else {
+            parts.categories
+        };
+        Geometry::with_categories(&parts.config.metric, p, &categories)?;
         let uses_covariates = |draws: &[Vec<Tessellation>]| {
             draws
                 .iter()
@@ -216,6 +228,7 @@ impl TryFrom<FittedParts> for Fitted {
             posterior: parts.posterior,
             warnings: parts.warnings,
             in_sample_rmse: parts.in_sample_rmse,
+            categories,
         })
     }
 }
@@ -236,6 +249,7 @@ impl Fitted {
         posterior: Posterior,
         warnings: Vec<Warning>,
         in_sample_rmse: f64,
+        categories: Vec<Vec<f64>>,
     ) -> Self {
         Self {
             config,
@@ -243,6 +257,7 @@ impl Fitted {
             posterior,
             warnings,
             in_sample_rmse,
+            categories,
         }
     }
 
@@ -263,7 +278,7 @@ impl Fitted {
     ///
     /// # Errors
     ///
-    /// `FeatureCountMismatch`, `NonFiniteFeature`.
+    /// `FeatureCountMismatch`, `NonFiniteFeature`, `InvalidCategoryCode`.
     pub fn predict(&self, x: &Data) -> Result<Vec<f64>> {
         Ok(column_means(&self.predict_draws(x)?, x.n_rows()))
     }
@@ -273,7 +288,7 @@ impl Fitted {
     ///
     /// # Errors
     ///
-    /// `FeatureCountMismatch`, `NonFiniteFeature`.
+    /// `FeatureCountMismatch`, `NonFiniteFeature`, `InvalidCategoryCode`.
     pub fn predict_draws(&self, x: &Data) -> Result<Vec<Vec<f64>>> {
         let mut latent = self.predict_latent(x)?;
         if self.config.model == Model::Probit {
@@ -292,9 +307,11 @@ impl Fitted {
     ///
     /// # Errors
     ///
-    /// `FeatureCountMismatch`, `NonFiniteFeature`.
+    /// `FeatureCountMismatch`, `NonFiniteFeature`, `InvalidCategoryCode`.
     pub fn predict_latent(&self, x: &Data) -> Result<Vec<Vec<f64>>> {
         data::validate_predict(x, self.scaler.n_cols())?;
+        let geometry = self.geometry()?;
+        geometry.check_codes(x)?;
         let x_scaled = self.scaler.scale_x(x);
         let n = x.n_rows();
         let offset = self.offset();
@@ -306,12 +323,18 @@ impl Fitted {
                 (0..n)
                     .map(|i| {
                         let row = x_scaled.row(i);
-                        let sum: f64 = draw.iter().map(|t| t.value_at(row)).sum();
+                        let sum: f64 = draw.iter().map(|t| t.value_at(row, &geometry)).sum();
                         self.scaler.unscale_y(sum) + offset
                     })
                     .collect()
             })
             .collect())
+    }
+
+    /// The column structure of the fit, from the configuration and the
+    /// stored categorical levels.
+    fn geometry(&self) -> Result<Geometry> {
+        Geometry::with_categories(&self.config.metric, self.scaler.n_cols(), &self.categories)
     }
 
     /// The variance of y given f at each row of `x` for every kept draw,
@@ -323,7 +346,7 @@ impl Fitted {
     /// # Errors
     ///
     /// `NotApplicable` under the probit model; `FeatureCountMismatch`,
-    /// `NonFiniteFeature`.
+    /// `NonFiniteFeature`, `InvalidCategoryCode`.
     pub fn predict_variance(&self, x: &Data) -> Result<Vec<Vec<f64>>> {
         data::validate_predict(x, self.scaler.n_cols())?;
         let n = x.n_rows();
@@ -336,6 +359,8 @@ impl Fitted {
                 .map(|s| vec![s * range_sq; n])
                 .collect()),
             Model::Heteroscedastic => {
+                let geometry = self.geometry()?;
+                geometry.check_codes(x)?;
                 let x_scaled = self.scaler.scale_x(x);
                 Ok(self
                     .posterior
@@ -345,7 +370,10 @@ impl Fitted {
                         (0..n)
                             .map(|i| {
                                 let row = x_scaled.row(i);
-                                draw.iter().map(|t| t.value_at(row)).product::<f64>() * range_sq
+                                draw.iter()
+                                    .map(|t| t.value_at(row, &geometry))
+                                    .product::<f64>()
+                                    * range_sq
                             })
                             .collect()
                     })
@@ -770,7 +798,11 @@ mod tests {
         // s^2 is the product of the variance cell values times the range squared.
         let draw0 = &model.posterior().variance_tessellations()[0];
         let x_scaled = model.scaler().scale_x(&x);
-        let product: f64 = draw0.iter().map(|t| t.value_at(x_scaled.row(4))).product();
+        let g = model.geometry().unwrap();
+        let product: f64 = draw0
+            .iter()
+            .map(|t| t.value_at(x_scaled.row(4), &g))
+            .product();
         let range = model.scaler().y_range();
         assert!((variance[0][4] - product * range * range).abs() < 1e-12 * variance[0][4]);
         let pi = model.prediction_interval(&x, 0.9).unwrap();

@@ -17,8 +17,9 @@ $(SHLIB): $(STATLIB)
 $(STATLIB):
 	mkdir -p "$(CARGOTMP)/libgcc_mock"
 	touch "$(CARGOTMP)/libgcc_mock/libgcc_eh.a"
-	if [ ! -d "$(VENDOR_DIR)" ] && [ -f rust/vendor.tar.xz ]; then \
+	if [ ! -d rust/core ] && [ -f rust/vendor.tar.xz ]; then \
 	  tar xf rust/vendor.tar.xz -C rust; \
+	  touch rust/.unpacked; \
 	fi
 	if [ -d "$(VENDOR_DIR)" ]; then \
 	  cp rust/vendor-config.toml "$(CARGOTMP)/config.toml"; \
@@ -34,7 +35,9 @@ $(STATLIB):
 
 rust_clean: $(SHLIB)
 	rm -Rf "$(CARGOTMP)" "$(TARGET_DIR)"
-	if [ -f rust/vendor.tar.xz ]; then rm -Rf "$(VENDOR_DIR)" rust/core; fi
+	if [ -f rust/.unpacked ]; then \
+	  rm -Rf "$(VENDOR_DIR)" rust/core rust/.unpacked; \
+	fi
 
 clean:
 	rm -Rf $(SHLIB) $(STATLIB) $(OBJECTS) "$(TARGET_DIR)" "$(CARGOTMP)"

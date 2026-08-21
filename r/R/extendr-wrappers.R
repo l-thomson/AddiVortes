@@ -10,3 +10,23 @@
 #' core_version()
 #' @export
 core_version <- function() .Call(wrap__core_version)
+
+core_defaults <- function() .Call(wrap__core_defaults)
+
+core_validate <- function(config_json) .Call(wrap__core_validate, config_json)
+
+core_fit <- function(config_json, x, y, seed_value) {
+  .Call(wrap__core_fit, config_json, x, y, seed_value)
+}
+
+core_predict <- function(state_json, x) .Call(wrap__core_predict, state_json, x)
+
+core_predict_draws <- function(state_json, x, kind) {
+  .Call(wrap__core_predict_draws, state_json, x, kind)
+}
+
+core_interval <- function(state_json, x, kind, level) {
+  .Call(wrap__core_interval, state_json, x, kind, level)
+}
+
+core_sigma <- function(state_json) .Call(wrap__core_sigma, state_json)

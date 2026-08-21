@@ -15,13 +15,16 @@ __pycache__/
 /r/src/*.o
 /r/src/*.so
 /r/src/*.dll
-/r/src/rust/core
 /r/src/rust/vendor
 /r/src/rust/vendor.tar.xz
 /r/src/.cargo
+/r/src/rust/.unpacked
 /r/src/Makevars.win
-/r/*.Rcheck
 /r/docs
+
+# R build and check output, wherever the command is run from
+*.Rcheck/
+/*.tar.gz
 
 # Publisher PDFs; never tracked.
 /maths

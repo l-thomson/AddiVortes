@@ -2,6 +2,7 @@
 //! consuming `with_*` setters and a data-free `validate()`.
 
 use crate::error::{invalid, Result};
+use crate::geometry::Metric;
 use crate::model::Model;
 
 /// Configuration of an AddiVortes fit: the observation model, the
@@ -70,6 +71,10 @@ pub struct Config {
     /// Heteroscedastic model only: the number m' of variance
     /// tessellations. Default 40.
     pub m_var: usize,
+    /// The metric of each covariate column, one entry per column in
+    /// column order; empty, the default, is [`Metric::Euclidean`] on every
+    /// column. Checked against the design at fit.
+    pub metric: Vec<Metric>,
 }
 
 impl Default for Config {
@@ -89,6 +94,7 @@ impl Default for Config {
             prior_only: false,
             offset: None,
             m_var: 40,
+            metric: Vec::new(),
         }
     }
 }
@@ -203,6 +209,13 @@ impl Config {
         self
     }
 
+    /// The metric of each covariate column.
+    #[must_use]
+    pub fn with_metric(mut self, metric: Vec<Metric>) -> Self {
+        self.metric = metric;
+        self
+    }
+
     /// The omega in force for p covariates: the field, or min(3, p).
     pub(crate) fn omega_for(&self, p: usize) -> f64 {
         self.omega.unwrap_or_else(|| 3.0_f64.min(p as f64))
@@ -212,8 +225,9 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// `InvalidHyperparameter` naming the field. The omega <= p check needs
-    /// the data and runs at the fit boundary.
+    /// `InvalidHyperparameter` naming the field. The omega <= p check and
+    /// the `metric` length check need the data and run at the fit
+    /// boundary.
     pub fn validate(&self) -> Result<()> {
         self.validate_shared()?;
         match self.model {
@@ -362,5 +376,14 @@ mod tests {
         let partial: Config = serde_json::from_str(r#"{"m": 7}"#).unwrap();
         assert_eq!(partial, Config::new().with_m(7));
         assert!(serde_json::from_str::<Config>(r#"{"lambda_C": 5}"#).is_err());
+    }
+
+    #[test]
+    fn metric_serialises_by_name() {
+        let config =
+            Config::new().with_metric(vec![Metric::Euclidean, Metric::Spherical { sphere: 1 }]);
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains(r#""metric":["euclidean",{"spherical":{"sphere":1}}]"#));
+        assert_eq!(serde_json::from_str::<Config>(&json).unwrap(), config);
     }
 }

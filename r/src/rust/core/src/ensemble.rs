@@ -8,6 +8,7 @@
 
 use crate::cells::{CellFamily, Partial, Stats};
 use crate::data::Data;
+use crate::geometry::Geometry;
 use crate::maths;
 use crate::moves::{self, Prior};
 use crate::rng::{self, Rng};
@@ -41,7 +42,7 @@ impl<F: CellFamily> Ensemble<F> {
         let tessellations: Vec<Tessellation> = (0..m)
             .map(|_| {
                 let dim = rng::uniform_index(prior.p, rng);
-                let centre = prior.coordinate(rng);
+                let centre = prior.coordinate(dim, rng);
                 Tessellation {
                     centres: vec![centre],
                     dims: vec![dim],
@@ -51,7 +52,7 @@ impl<F: CellFamily> Ensemble<F> {
             .collect();
         let assignments = tessellations
             .iter()
-            .map(|t| Assignment::full(x, t))
+            .map(|t| Assignment::full(x, t, &prior.geometry))
             .collect();
         Self {
             family,
@@ -69,6 +70,10 @@ impl<F: CellFamily> Ensemble<F> {
 
     pub(crate) fn tessellations(&self) -> &[Tessellation] {
         &self.tessellations
+    }
+
+    pub(crate) fn geometry(&self) -> &Geometry {
+        &self.prior.geometry
     }
 
     pub(crate) fn total(&self) -> &[f64] {
@@ -126,8 +131,12 @@ impl<F: CellFamily> Ensemble<F> {
 
         let m = moves::select(current, &self.prior, rng);
         let proposal = moves::propose(m, current, &self.prior, rng);
-        let proposed_assignment =
-            self.assignments[j].updated(x, &proposal.tessellation, proposal.delta);
+        let proposed_assignment = self.assignments[j].updated(
+            x,
+            &proposal.tessellation,
+            proposal.delta,
+            &self.prior.geometry,
+        );
         let proposed_stats = self.family.accumulate(
             &proposed_assignment.cells,
             &partials,
@@ -207,7 +216,7 @@ impl<F: CellFamily> Ensemble<F> {
     /// Replace tessellation `j` and rebuild its cache; the caller resets
     /// the total.
     pub(crate) fn set_tessellation(&mut self, j: usize, x: &Data, t: Tessellation, total: f64) {
-        self.assignments[j] = Assignment::full(x, &t);
+        self.assignments[j] = Assignment::full(x, &t, &self.prior.geometry);
         self.tessellations[j] = t;
         self.total.iter_mut().for_each(|v| *v = total);
     }
