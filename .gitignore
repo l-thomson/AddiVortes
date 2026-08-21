@@ -15,6 +15,10 @@ __pycache__/
 /r/src/*.o
 /r/src/*.so
 /r/src/*.dll
+# Ignored so that a scan of the tree finds the crate name `thiessen` once;
+# the core is tracked all the same, and the r-source job stages it by force
+# to compare it against the workspace core.
+/r/src/rust/core
 /r/src/rust/vendor
 /r/src/rust/vendor.tar.xz
 /r/src/.cargo
