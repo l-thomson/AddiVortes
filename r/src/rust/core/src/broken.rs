@@ -333,7 +333,12 @@ mod tests {
     fn dropped_cell_normaliser_shifts_the_centre_moves_only() {
         use crate::moves::{Move, Prior};
         use crate::tessellation::Tessellation;
-        let prior = Prior::euclidean(2, 1.0, 2.0, 0.8);
+        let prior = Prior {
+            p: 2,
+            omega: 1.0,
+            lambda_c: 2.0,
+            sigma_c: 0.8,
+        };
         let t = |b: usize| Tessellation {
             centres: vec![0.0; b],
             dims: vec![0],

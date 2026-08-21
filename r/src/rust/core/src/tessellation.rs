@@ -3,7 +3,6 @@
 
 use crate::data::Data;
 use crate::error::{Error, Result};
-use crate::geometry::Geometry;
 
 /// One tessellation: b centres in a d-dimensional subspace of the scaled
 /// covariate space, one cell mean per centre.
@@ -46,18 +45,24 @@ impl Tessellation {
         &self.centres[k * d..(k + 1) * d]
     }
 
-    /// Squared distance under `geometry` from `row` (a full p-length scaled
-    /// row) to centre `k` over the active covariates.
-    pub(crate) fn key(&self, row: &[f64], k: usize, geometry: &Geometry) -> f64 {
-        geometry.key(row, &self.dims, self.centre(k))
+    /// Squared Euclidean distance from `row` (a full p-length scaled row) to
+    /// centre `k` over the active covariates.
+    pub(crate) fn key(&self, row: &[f64], k: usize) -> f64 {
+        let centre = self.centre(k);
+        let mut key = 0.0;
+        for (&dim, &c) in self.dims.iter().zip(centre) {
+            let diff = row[dim] - c;
+            key += diff * diff;
+        }
+        key
     }
 
     /// The nearest centre to `row` and its key; ties go to the lowest index.
-    pub(crate) fn nearest(&self, row: &[f64], geometry: &Geometry) -> (usize, f64) {
+    pub(crate) fn nearest(&self, row: &[f64]) -> (usize, f64) {
         let mut best = f64::INFINITY;
         let mut best_cell = 0;
         for k in 0..self.n_cells() {
-            let key = self.key(row, k, geometry);
+            let key = self.key(row, k);
             if key < best {
                 best = key;
                 best_cell = k;
@@ -68,8 +73,8 @@ impl Tessellation {
 
     /// The value of the tessellation at `row`: the mean of the cell `row`
     /// falls in.
-    pub(crate) fn value_at(&self, row: &[f64], geometry: &Geometry) -> f64 {
-        self.mus[self.nearest(row, geometry).0]
+    pub(crate) fn value_at(&self, row: &[f64]) -> f64 {
+        self.mus[self.nearest(row).0]
     }
 }
 
@@ -146,12 +151,12 @@ pub(crate) struct Assignment {
 
 impl Assignment {
     /// Assignment of every row of `x` under `t`, computed in full.
-    pub(crate) fn full(x: &Data, t: &Tessellation, geometry: &Geometry) -> Self {
+    pub(crate) fn full(x: &Data, t: &Tessellation) -> Self {
         let n = x.n_rows();
         let mut cells = Vec::with_capacity(n);
         let mut keys = Vec::with_capacity(n);
         for i in 0..n {
-            let (cell, key) = t.nearest(x.row(i), geometry);
+            let (cell, key) = t.nearest(x.row(i));
             cells.push(cell);
             keys.push(key);
         }
@@ -163,21 +168,15 @@ impl Assignment {
     /// same inputs. With dims unchanged an untouched centre's key against
     /// any observation is unchanged, so only pairs involving the touched
     /// centre are recomputed.
-    pub(crate) fn updated(
-        &self,
-        x: &Data,
-        new: &Tessellation,
-        delta: Delta,
-        geometry: &Geometry,
-    ) -> Self {
+    pub(crate) fn updated(&self, x: &Data, new: &Tessellation, delta: Delta) -> Self {
         let n = x.n_rows();
         match delta {
-            Delta::Full => Self::full(x, new, geometry),
+            Delta::Full => Self::full(x, new),
             Delta::CentreAdded => {
                 let added = new.n_cells() - 1;
                 let mut out = self.clone();
                 for i in 0..n {
-                    let key = new.key(x.row(i), added, geometry);
+                    let key = new.key(x.row(i), added);
                     if key < out.keys[i] {
                         out.keys[i] = key;
                         out.cells[i] = added;
@@ -190,11 +189,11 @@ impl Assignment {
                 for i in 0..n {
                     let row = x.row(i);
                     if self.cells[i] == moved {
-                        let (cell, key) = new.nearest(row, geometry);
+                        let (cell, key) = new.nearest(row);
                         out.cells[i] = cell;
                         out.keys[i] = key;
                     } else {
-                        let key = new.key(row, moved, geometry);
+                        let key = new.key(row, moved);
                         // Strict comparison keeps the lowest-index tie rule:
                         // `moved` wins only when nearer than the incumbent
                         // or equal with a lower index.
@@ -210,7 +209,7 @@ impl Assignment {
                 let mut out = self.clone();
                 for i in 0..n {
                     if self.cells[i] == removed {
-                        let (cell, key) = new.nearest(x.row(i), geometry);
+                        let (cell, key) = new.nearest(x.row(i));
                         out.cells[i] = cell;
                         out.keys[i] = key;
                     } else if self.cells[i] > removed {
@@ -252,37 +251,28 @@ mod tests {
 
     #[test]
     fn nearest_is_lowest_index_on_ties() {
-        let g = Geometry::euclidean(1);
         let t = Tessellation {
             centres: vec![0.0, 0.0, 1.0],
             dims: vec![0],
             mus: vec![1.0, 2.0, 3.0],
         };
-        assert_eq!(t.nearest(&[0.0], &g), (0, 0.0));
-        assert_eq!(t.nearest(&[0.75], &g), (2, 0.0625));
-        assert_eq!(t.value_at(&[0.75], &g), 3.0);
+        assert_eq!(t.nearest(&[0.0]), (0, 0.0));
+        assert_eq!(t.nearest(&[0.75]), (2, 0.0625));
+        assert_eq!(t.value_at(&[0.75]), 3.0);
         assert_eq!(t.n_cells(), 3);
         assert_eq!(t.n_dims(), 1);
     }
 
     #[test]
     fn incremental_updates_equal_full_recompute() {
-        use crate::geometry::Metric;
         let mut rng = chain_rng(11);
-        for round in 0..400 {
+        for _ in 0..200 {
             let p = 1 + uniform_index(4, &mut rng);
             let d = 1 + uniform_index(p, &mut rng);
             let b = 1 + uniform_index(5, &mut rng);
             let x = random_data(2 + uniform_index(30, &mut rng), p, &mut rng);
-            // Even rounds Euclidean; odd rounds every column spherical on
-            // one sphere, the coordinates already within the radian ranges.
-            let g = if round % 2 == 0 {
-                Geometry::euclidean(p)
-            } else {
-                Geometry::new(&vec![Metric::Spherical { sphere: 0 }; p], p).unwrap()
-            };
             let t = random_tessellation(p, b, d, &mut rng);
-            let cache = Assignment::full(&x, &t, &g);
+            let cache = Assignment::full(&x, &t);
 
             let mut added = t.clone();
             added
@@ -290,8 +280,8 @@ mod tests {
                 .extend((0..d).map(|_| 0.5 * standard_normal(&mut rng)));
             added.mus.push(0.0);
             assert_eq!(
-                cache.updated(&x, &added, Delta::CentreAdded, &g),
-                Assignment::full(&x, &added, &g)
+                cache.updated(&x, &added, Delta::CentreAdded),
+                Assignment::full(&x, &added)
             );
 
             let moved_index = uniform_index(b, &mut rng);
@@ -300,8 +290,8 @@ mod tests {
                 *v = 0.5 * standard_normal(&mut rng);
             }
             assert_eq!(
-                cache.updated(&x, &moved, Delta::CentreMoved(moved_index), &g),
-                Assignment::full(&x, &moved, &g)
+                cache.updated(&x, &moved, Delta::CentreMoved(moved_index)),
+                Assignment::full(&x, &moved)
             );
 
             if b >= 2 {
@@ -312,8 +302,8 @@ mod tests {
                     .drain(removed_index * d..(removed_index + 1) * d);
                 removed.mus.remove(removed_index);
                 assert_eq!(
-                    cache.updated(&x, &removed, Delta::CentreRemoved(removed_index), &g),
-                    Assignment::full(&x, &removed, &g)
+                    cache.updated(&x, &removed, Delta::CentreRemoved(removed_index)),
+                    Assignment::full(&x, &removed)
                 );
             }
         }

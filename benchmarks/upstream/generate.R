@@ -19,9 +19,13 @@ dir.create(fixture_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Per-draw f at the given rows, caller scale: the loop of
 # predict.AddiVortes without the summarising, through the exported
-# cellIndices.
+# cellIndices. Non-Euclidean columns stay on the caller's scale, as in
+# predict.AddiVortes.
 f_draws_at <- function(fit, x_new) {
-  x_scaled <- sweep(sweep(as.matrix(x_new), 2, fit$xCentres), 2, fit$xRanges, "/")
+  x_new <- as.matrix(x_new)
+  x_scaled <- sweep(sweep(x_new, 2, fit$xCentres), 2, fit$xRanges, "/")
+  metric_aug <- rep(fit$metric_red, fit$member_red)
+  x_scaled[, metric_aug != 0] <- x_new[, metric_aug != 0]
   draws <- length(fit$posteriorTess)
   out <- matrix(0, draws, nrow(x_new))
   for (s in seq_len(draws)) {
@@ -100,5 +104,23 @@ fit <- AddiVortes(y, x, m = 200, totalMCMCIter = 1200, mcmcBurnIn = 200,
   showProgress = FALSE
 )
 summarise_fit(fit, x, c(1, 8, 15, 22, 30), "attitude")
+
+# globe: n = 200 points on the sphere, latitude then longitude in radians,
+# a smooth function of position with sigma = 0.5, fitted with the
+# great-circle metric (metric = "S").
+set.seed(21)
+n <- 200
+lat <- runif(n, -pi / 2, pi / 2)
+lon <- runif(n, -pi, pi)
+x <- cbind(lat = lat, lon = lon)
+y <- 5 * cos(lat) * cos(lon) + 3 * sin(lat) + rnorm(n, sd = 0.5)
+write.csv(data.frame(x, y = y), file.path(fixture_dir, "globe_data.csv"),
+  row.names = FALSE, quote = FALSE
+)
+set.seed(9)
+fit <- AddiVortes(y, x, m = 200, totalMCMCIter = 1200, mcmcBurnIn = 200,
+  metric = "S", showProgress = FALSE
+)
+summarise_fit(fit, x, c(1, 50, 100, 150, 200), "globe")
 
 cat("fixtures written to", normalizePath(fixture_dir), "\n")

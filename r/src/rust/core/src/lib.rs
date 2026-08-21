@@ -72,14 +72,11 @@
 //! of the design is valid; the sigma^2 prior then calibrates from the
 //! response standard deviation. More columns than rows fits and returns
 //! [`Warning::MoreFeaturesThanObservations`]. At predict the column count
-//! must match the fitted model; an empty matrix is valid. Each column has
-//! a [`Metric`] ([`Config::metric`]): Euclidean columns are min-max scaled
-//! over their training range; spherical columns are coordinates in
-//! radians, a sphere's latitudes then its longitude, and are not scaled.
-//! Categorical covariates are encoded by the caller before they reach the
-//! crate; the Python and R packages encode a d-level factor as d - 1
-//! Euclidean indicator columns. This section corresponds to rOpenSci
-//! general standard G2 and Bayesian standard BS2.
+//! must match the fitted model; an empty matrix is valid. Categorical
+//! covariates are encoded by the caller before they reach the crate; the
+//! Python and R packages encode a d-level factor as d - 1 indicator
+//! columns. This section corresponds to rOpenSci general standard G2 and
+//! Bayesian standard BS2.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -93,7 +90,6 @@ mod data;
 mod ensemble;
 mod error;
 mod fitted;
-mod geometry;
 mod maths;
 mod model;
 pub mod models;
@@ -110,7 +106,6 @@ pub use config::Config;
 pub use data::{Data, Warning};
 pub use error::{Error, Result};
 pub use fitted::{Fitted, Interval, Posterior};
-pub use geometry::Metric;
 pub use model::Model;
 pub use models::fit;
 pub use rng::chain_seed;

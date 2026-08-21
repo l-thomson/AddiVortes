@@ -1,13 +1,11 @@
 //! The affine maps between the caller's scale and the sampler's scaled space,
 //! and the prior calibration computed once at fit.
 //!
-//! Scaled space: y on [-0.5, 0.5] over its training range; every Euclidean
-//! column of X min-max scaled to [-0.5, 0.5] over its training range;
-//! columns of the other metrics left on the caller's scale.
+//! Scaled space: y on [-0.5, 0.5] over its training range; every column of
+//! X min-max scaled to [-0.5, 0.5] over its training range.
 
 use crate::data::Data;
 use crate::error::{Error, Result};
-use crate::geometry::Geometry;
 use crate::maths;
 
 /// The fitted scaling, stored on the fitted model and applied to every
@@ -34,9 +32,9 @@ impl Scaler {
     }
 
     /// Fit on validated data; returns the scaler, scaled X and scaled y.
-    pub(crate) fn fit(x: &Data, y: &[f64], geometry: &Geometry) -> (Self, Data, Vec<f64>) {
+    pub(crate) fn fit(x: &Data, y: &[f64]) -> (Self, Data, Vec<f64>) {
         let (y_min, y_max) = min_max(y.iter().copied());
-        let scaler = Self::with_y_range(x, y_min, y_max, geometry);
+        let scaler = Self::with_y_range(x, y_min, y_max);
         let x_scaled = scaler.scale_x(x);
         let y_scaled = y.iter().map(|&v| scaler.scale_y(v)).collect();
         (scaler, x_scaled, y_scaled)
@@ -46,20 +44,18 @@ impl Scaler {
     /// the response (training range [-0.5, 0.5]); returns the scaler and
     /// scaled X. Used by the probit model, whose latent response is on a
     /// fixed scale.
-    pub(crate) fn fit_x(x: &Data, geometry: &Geometry) -> (Self, Data) {
-        let scaler = Self::with_y_range(x, -0.5, 0.5, geometry);
+    pub(crate) fn fit_x(x: &Data) -> (Self, Data) {
+        let scaler = Self::with_y_range(x, -0.5, 0.5);
         let x_scaled = scaler.scale_x(x);
         (scaler, x_scaled)
     }
 
-    /// Columns the geometry leaves unscaled take the identity range
-    /// [-0.5, 0.5].
-    fn with_y_range(x: &Data, y_min: f64, y_max: f64, geometry: &Geometry) -> Self {
+    fn with_y_range(x: &Data, y_min: f64, y_max: f64) -> Self {
         let n = x.n_rows();
         let p = x.n_cols();
-        let mut x_min = vec![-0.5; p];
-        let mut x_max = vec![0.5; p];
-        for col in (0..p).filter(|&col| geometry.scaled(col)) {
+        let mut x_min = vec![0.0; p];
+        let mut x_max = vec![0.0; p];
+        for col in 0..p {
             let (lo, hi) = min_max((0..n).map(|r| x.values()[r * p + col]));
             x_min[col] = lo;
             x_max[col] = hi;
@@ -113,16 +109,12 @@ impl Scaler {
         self.y_max
     }
 
-    /// Per-column lower end of the range mapped to -0.5: the training
-    /// minimum of a Euclidean column, -0.5 for a column the metric leaves
-    /// unscaled.
+    /// Per-column training minima.
     pub fn x_min(&self) -> &[f64] {
         &self.x_min
     }
 
-    /// Per-column upper end of the range mapped to 0.5: the training
-    /// maximum of a Euclidean column, 0.5 for a column the metric leaves
-    /// unscaled.
+    /// Per-column training maxima.
     pub fn x_max(&self) -> &[f64] {
         &self.x_max
     }
@@ -314,7 +306,7 @@ mod tests {
     fn scaling_maps_training_range_to_half_unit_interval() {
         let x = Data::new(vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0], 3, 2).unwrap();
         let y = vec![0.0, 5.0, 10.0];
-        let (scaler, xs, ys) = Scaler::fit(&x, &y, &Geometry::euclidean(2));
+        let (scaler, xs, ys) = Scaler::fit(&x, &y);
         assert_eq!(ys, vec![-0.5, 0.0, 0.5]);
         assert_eq!(xs.row(0), &[-0.5, -0.5]);
         assert_eq!(xs.row(2), &[0.5, 0.5]);
@@ -322,17 +314,6 @@ mod tests {
         assert_eq!(scaler.y_range(), 10.0);
         let outside = Data::new(vec![4.0, 0.0], 1, 2).unwrap();
         assert_eq!(scaler.scale_x(&outside).row(0), &[1.0, -1.0]);
-    }
-
-    #[test]
-    fn unscaled_columns_keep_the_caller_scale() {
-        use crate::geometry::Metric;
-        let x = Data::new(vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0], 3, 2).unwrap();
-        let g = Geometry::new(&[Metric::Spherical { sphere: 0 }, Metric::Euclidean], 2).unwrap();
-        let (scaler, xs, _) = Scaler::fit(&x, &[0.0, 5.0, 10.0], &g);
-        assert_eq!(xs.row(0), &[1.0, -0.5]);
-        assert_eq!(xs.row(2), &[3.0, 0.5]);
-        assert_eq!((scaler.x_min()[0], scaler.x_max()[0]), (-0.5, 0.5));
     }
 
     #[test]
@@ -365,7 +346,7 @@ mod tests {
     #[test]
     fn fit_x_leaves_the_response_map_as_the_identity() {
         let x = Data::new(vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0], 3, 2).unwrap();
-        let (scaler, xs) = Scaler::fit_x(&x, &Geometry::euclidean(2));
+        let (scaler, xs) = Scaler::fit_x(&x);
         assert_eq!(xs.row(0), &[-0.5, -0.5]);
         assert_eq!(scaler.scale_y(0.37), 0.37);
         assert_eq!(scaler.unscale_y(-2.5), -2.5);

@@ -99,6 +99,36 @@ pub fn heteroscedastic_fixture() -> (Config, Data, Vec<f64>) {
     )
 }
 
+/// The fixed-seed fixture on one sphere: the Gaussian fixture's rows as
+/// latitude in [-pi / 4, pi / 4] and longitude in [-pi, pi), the response
+/// a smooth function of position with the fixture's noise.
+#[allow(dead_code)]
+pub fn spherical_fixture() -> (Config, Data, Vec<f64>) {
+    use std::f64::consts::PI;
+    let (config, x, _) = fixture();
+    let rows: Vec<[f64; 2]> = (0..x.n_rows())
+        .map(|i| {
+            let r = x.row(i);
+            [(r[0] - 0.5) * PI / 2.0, (r[1] - 0.5) * 2.0 * PI]
+        })
+        .collect();
+    let y = rows
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            r[0].cos() * r[1].cos() + 0.5 * r[0].sin() + 0.3 * (((i * 29) % 17) as f64 / 16.0 - 0.5)
+        })
+        .collect();
+    (
+        config.with_metric(vec![
+            thiessen::Metric::Spherical { sphere: 0 },
+            thiessen::Metric::Spherical { sphere: 0 },
+        ]),
+        Data::from_rows(&rows).unwrap(),
+        y,
+    )
+}
+
 #[allow(dead_code)]
 pub fn fixture() -> (Config, Data, Vec<f64>) {
     let n = 48;
