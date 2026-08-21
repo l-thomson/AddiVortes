@@ -156,6 +156,7 @@ centre index.
 |------------------------------|---------------------------|----------------------------------|-----------------------------|---------------------------------------------------------------|
 | `Euclidean`                  | `"E"` (default)           | squared Euclidean                | min-max to [-0.5, 0.5]      | N(0, sigma_c^2)                                               |
 | `Spherical { sphere }`       | `"S"`, `members = sphere` | squared great-circle angle       | radians, unscaled           | N(mid, sd^2), sd = range / (2 Phi^-1(0.75)); longitude wrapped to [-pi, pi] |
+| `Categorical`                | `"C"`, `cat.onehot = FALSE` | 2 / n^2 per mismatching column | integer level codes, unscaled | uniform over the n training levels                          |
 
 Spherical: the columns declared for a sphere are its latitudes and,
 last, its longitude, the coordinate with period 2 pi (upstream moves the
@@ -175,6 +176,20 @@ non-Euclidean columns; the longitude is wrapped by upstream's
 Columns of a sphere are separate covariates for the dimension prior and
 the structural moves, as upstream.
 
+Categorical: the levels of a column are its distinct training values, so
+0-based and 1-based codes both serve (upstream uses `as.numeric(factor)`,
+1..n, and takes n as the largest code); a code unseen in training is a
+mismatch against every centre. The weight 2 / n^2 is the mismatch weight
+of Eskin et al. (2002) as upstream states it (Eskin's distance proper is
+2 / (n^2 + 2)). CRAN AddiVortes 0.6.9 evaluates `2 / (ncat * ncat)` in
+integer arithmetic, which is 0 for n >= 2, so its `metric = "C"` assigns
+every row to the first centre on categorical columns; no comparison
+fixture exists until that is corrected. Upstream's default path,
+`cat.onehot = TRUE`, encodes a factor as d - 1 indicators taking values
+{0, `catScaling`}; the bindings' indicator columns are Euclidean and
+min-max scaled, which is `catScaling = 1` without upstream's clamp of
+centre proposals to [0, `catScaling`].
+
 ## Experimental models
 
 Models behind the `experimental` Cargo feature are stated here under
@@ -186,6 +201,9 @@ in [experimental.md](experimental.md).
 - Albert, J. H. and Chib, S. (1993). Bayesian analysis of binary and
   polychotomous response data. Journal of the American Statistical
   Association 88(422), 669-679.
+- Eskin, E., Arnold, A., Prerau, M., Portnoy, L. and Stolfo, S. (2002).
+  A geometric framework for unsupervised anomaly detection. In
+  Applications of Data Mining in Computer Security, 77-101. Springer.
 - Chipman, H. A., George, E. I. and McCulloch, R. E. (2010). BART:
   Bayesian additive regression trees. Annals of Applied Statistics 4(1),
   266-298.

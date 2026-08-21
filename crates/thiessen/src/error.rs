@@ -89,6 +89,14 @@ pub enum Error {
         /// Zero-based row.
         row: usize,
     },
+    /// A value in a categorical column is not an integer level code.
+    #[error("design value at row {row}, column {col} is not an integer level code")]
+    InvalidCategoryCode {
+        /// Zero-based row.
+        row: usize,
+        /// Zero-based column.
+        col: usize,
+    },
     /// A method has no meaning under the fitted model.
     #[error("`{method}` is not defined under the {model} model")]
     NotApplicable {
@@ -188,6 +196,10 @@ mod tests {
             (
                 Error::InvalidLabel { row: 4 },
                 "response value in row 4 is not 0 or 1",
+            ),
+            (
+                Error::InvalidCategoryCode { row: 4, col: 1 },
+                "design value at row 4, column 1 is not an integer level code",
             ),
             (
                 Error::RequiresFeature {

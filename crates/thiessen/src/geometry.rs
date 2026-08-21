@@ -3,9 +3,9 @@
 //! columns, and the centre-coordinate law of each column.
 
 use crate::data::Data;
-use crate::error::{invalid, Result};
+use crate::error::{invalid, Error, Result};
 use crate::maths;
-use crate::rng::{standard_normal, Rng};
+use crate::rng::{standard_normal, uniform_index, Rng};
 
 /// The metric of one covariate column, [`Config::metric`](crate::Config::metric).
 /// Columns of different metrics combine additively: the key of a row
@@ -32,10 +32,18 @@ pub enum Metric {
         /// Sphere label; columns sharing a label form one sphere.
         sphere: usize,
     },
+    /// Integer level codes of a categorical covariate; the levels are the
+    /// distinct training values. A mismatch between the row and the
+    /// centre contributes 2 / n^2, n the number of levels (the Eskin et
+    /// al. 2002 weight; CRAN AddiVortes `metric = "C"` with
+    /// `cat.onehot = FALSE`). The column is not scaled; centre
+    /// coordinates are uniform over the levels. A non-integer value is
+    /// rejected at fit and predict.
+    Categorical,
 }
 
-/// The column structure of a fit: the metric of each column and the
-/// columns of each sphere.
+/// The column structure of a fit: the metric of each column, the columns
+/// of each sphere, and the levels of each categorical column.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Geometry {
     kinds: Vec<Metric>,
@@ -43,6 +51,11 @@ pub(crate) struct Geometry {
     spheres: Vec<Vec<usize>>,
     /// Sphere index of each spherical column.
     sphere_of: Vec<Option<usize>>,
+    /// Sorted distinct training values of each categorical column; empty
+    /// for the other columns.
+    categories: Vec<Vec<f64>>,
+    /// 2 / n^2 of each categorical column; 0 for the other columns.
+    weights: Vec<f64>,
 }
 
 impl Geometry {
@@ -52,17 +65,19 @@ impl Geometry {
             kinds: vec![Metric::Euclidean; p],
             spheres: Vec::new(),
             sphere_of: vec![None; p],
+            categories: vec![Vec::new(); p],
+            weights: vec![0.0; p],
         }
     }
 
-    /// The geometry of `metric` over p columns; an empty `metric` is p
-    /// Euclidean columns.
+    /// The geometry of `metric` over p columns with the categorical levels
+    /// still to be learnt; an empty `metric` is p Euclidean columns.
     ///
     /// # Errors
     ///
     /// `InvalidHyperparameter` for `metric` when it is neither empty nor
     /// of length p.
-    pub(crate) fn new(metric: &[Metric], p: usize) -> Result<Self> {
+    pub(crate) fn structure(metric: &[Metric], p: usize) -> Result<Self> {
         if metric.is_empty() {
             return Ok(Self::euclidean(p));
         }
@@ -96,7 +111,84 @@ impl Geometry {
             kinds: metric.to_vec(),
             spheres,
             sphere_of,
+            categories: vec![Vec::new(); p],
+            weights: vec![0.0; p],
         })
+    }
+
+    /// The geometry of `metric` over the training design `x`, learning
+    /// the levels of the categorical columns.
+    ///
+    /// # Errors
+    ///
+    /// [`Geometry::structure`]; `InvalidCategoryCode` for a non-integer
+    /// value in a categorical column.
+    pub(crate) fn fit(metric: &[Metric], x: &Data) -> Result<Self> {
+        let p = x.n_cols();
+        let mut geometry = Self::structure(metric, p)?;
+        geometry.check_codes(x)?;
+        for col in 0..p {
+            if geometry.kinds[col] == Metric::Categorical {
+                let mut levels: Vec<f64> = (0..x.n_rows()).map(|r| x.row(r)[col]).collect();
+                levels.sort_by(f64::total_cmp);
+                levels.dedup();
+                geometry.set_categories(col, levels);
+            }
+        }
+        Ok(geometry)
+    }
+
+    /// The geometry of a fitted model from its `metric` and the stored
+    /// levels of its categorical columns (empty for the others).
+    ///
+    /// # Errors
+    ///
+    /// [`Geometry::structure`]; `InvalidSavedModel` when the levels do
+    /// not match the metric.
+    pub(crate) fn with_categories(
+        metric: &[Metric],
+        p: usize,
+        categories: &[Vec<f64>],
+    ) -> Result<Self> {
+        let mut geometry = Self::structure(metric, p)?;
+        let bad = |reason: &str| Error::InvalidSavedModel {
+            reason: reason.into(),
+        };
+        if categories.len() != p {
+            return Err(bad("categorical levels must be stored for every column"));
+        }
+        for (col, levels) in categories.iter().enumerate() {
+            match geometry.kinds[col] {
+                Metric::Categorical => {
+                    if levels.is_empty()
+                        || levels.iter().any(|v| !v.is_finite() || v.fract() != 0.0)
+                        || levels.windows(2).any(|w| w[0] >= w[1])
+                    {
+                        return Err(bad(
+                            "a categorical column needs sorted, distinct integer levels",
+                        ));
+                    }
+                    geometry.set_categories(col, levels.clone());
+                }
+                _ if !levels.is_empty() => {
+                    return Err(bad("only categorical columns carry levels"));
+                }
+                _ => {}
+            }
+        }
+        Ok(geometry)
+    }
+
+    fn set_categories(&mut self, col: usize, levels: Vec<f64>) {
+        let n = levels.len() as f64;
+        self.weights[col] = 2.0 / (n * n);
+        self.categories[col] = levels;
+    }
+
+    /// The levels of each column, as [`Geometry::with_categories`] takes
+    /// them.
+    pub(crate) fn categories(&self) -> &[Vec<f64>] {
+        &self.categories
     }
 
     /// Whether column `col` is min-max scaled by the [`Scaler`](crate::Scaler).
@@ -104,11 +196,34 @@ impl Geometry {
         self.kinds[col] == Metric::Euclidean
     }
 
+    /// Every categorical value of `x` is an integer.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidCategoryCode` at the first offence, row-major.
+    pub(crate) fn check_codes(&self, x: &Data) -> Result<()> {
+        let categorical: Vec<usize> = (0..x.n_cols())
+            .filter(|&col| self.kinds[col] == Metric::Categorical)
+            .collect();
+        if categorical.is_empty() {
+            return Ok(());
+        }
+        for row in 0..x.n_rows() {
+            let values = x.row(row);
+            for &col in &categorical {
+                if values[col].fract() != 0.0 {
+                    return Err(Error::InvalidCategoryCode { row, col });
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Squared distance from `row` (a full p-length row) to a centre with
     /// coordinates `centre` on the columns `dims`, in `dims` order.
     pub(crate) fn key(&self, row: &[f64], dims: &[usize], centre: &[f64]) -> f64 {
         let mut key = 0.0;
-        if self.spheres.is_empty() {
+        if self.spheres.is_empty() && self.weights.iter().all(|&w| w == 0.0) {
             for (&dim, &c) in dims.iter().zip(centre) {
                 let diff = row[dim] - c;
                 key += diff * diff;
@@ -116,9 +231,17 @@ impl Geometry {
             return key;
         }
         for (&dim, &c) in dims.iter().zip(centre) {
-            if self.kinds[dim] == Metric::Euclidean {
-                let diff = row[dim] - c;
-                key += diff * diff;
+            match self.kinds[dim] {
+                Metric::Euclidean => {
+                    let diff = row[dim] - c;
+                    key += diff * diff;
+                }
+                Metric::Categorical => {
+                    if row[dim] != c {
+                        key += self.weights[dim];
+                    }
+                }
+                Metric::Spherical { .. } => {}
             }
         }
         for (s, cols) in self.spheres.iter().enumerate() {
@@ -140,7 +263,8 @@ impl Geometry {
 
     /// The centre-coordinate law of every column from the training design
     /// `x`: N(0, sigma_c^2) on Euclidean columns; on spherical columns
-    /// N(mid, sd^2) from the column's range, wrapped for a longitude.
+    /// N(mid, sd^2) from the column's range, wrapped for a longitude;
+    /// uniform over the levels on categorical columns.
     ///
     /// # Errors
     ///
@@ -155,6 +279,9 @@ impl Geometry {
                 Metric::Euclidean => Ok(CoordinateLaw::Normal {
                     mean: 0.0,
                     sd: sigma_c,
+                }),
+                Metric::Categorical => Ok(CoordinateLaw::Uniform {
+                    levels: self.categories[col].clone(),
                 }),
                 Metric::Spherical { .. } => {
                     let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
@@ -217,17 +344,19 @@ fn sphere_angle_sq(cols: &[usize], coordinate: &dyn Fn(usize) -> (f64, f64)) -> 
 }
 
 /// The prior and proposal law of one centre coordinate.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum CoordinateLaw {
     /// N(mean, sd^2).
     Normal { mean: f64, sd: f64 },
     /// N(mean, sd^2) wrapped to [-pi, pi].
     WrappedNormal { mean: f64, sd: f64 },
+    /// Uniform over `levels`.
+    Uniform { levels: Vec<f64> },
 }
 
 impl CoordinateLaw {
     pub(crate) fn draw(&self, rng: &mut Rng) -> f64 {
-        match *self {
+        match self {
             CoordinateLaw::Normal { mean, sd } => mean + sd * standard_normal(rng),
             CoordinateLaw::WrappedNormal { mean, sd } => {
                 let mut v = mean + sd * standard_normal(rng);
@@ -239,6 +368,7 @@ impl CoordinateLaw {
                 }
                 v
             }
+            CoordinateLaw::Uniform { levels } => levels[uniform_index(levels.len(), rng)],
         }
     }
 }
@@ -250,7 +380,7 @@ mod tests {
     use std::f64::consts::PI;
 
     fn sphere2() -> Geometry {
-        Geometry::new(
+        Geometry::structure(
             &[
                 Metric::Spherical { sphere: 0 },
                 Metric::Spherical { sphere: 0 },
@@ -266,10 +396,10 @@ mod tests {
 
     #[test]
     fn construction_and_validation() {
-        let g = Geometry::new(&[], 3).unwrap();
+        let g = Geometry::structure(&[], 3).unwrap();
         assert_eq!(g, Geometry::euclidean(3));
-        assert!(Geometry::new(&[Metric::Euclidean], 2).is_err());
-        let g = Geometry::new(
+        assert!(Geometry::structure(&[Metric::Euclidean], 2).is_err());
+        let g = Geometry::structure(
             &[
                 Metric::Spherical { sphere: 7 },
                 Metric::Euclidean,
@@ -321,14 +451,14 @@ mod tests {
 
     #[test]
     fn circle_takes_the_shorter_arc() {
-        let g = Geometry::new(&[Metric::Spherical { sphere: 0 }], 1).unwrap();
+        let g = Geometry::structure(&[Metric::Spherical { sphere: 0 }], 1).unwrap();
         close(g.key(&[PI - 0.25], &[0], &[-PI + 0.25]), 0.25);
         close(g.key(&[0.0], &[0], &[1.0]), 1.0);
     }
 
     #[test]
     fn mixed_columns_add() {
-        let g = Geometry::new(
+        let g = Geometry::structure(
             &[
                 Metric::Euclidean,
                 Metric::Spherical { sphere: 0 },
@@ -341,6 +471,63 @@ mod tests {
             g.key(&[0.5, 0.0, 0.0], &[0, 1, 2], &[0.0, 0.0, 1.0]),
             0.25 + 1.0,
         );
+    }
+
+    #[test]
+    fn categorical_levels_weights_and_codes() {
+        let metric = [Metric::Euclidean, Metric::Categorical, Metric::Categorical];
+        let x = Data::from_rows(&[
+            [0.1, 3.0, 1.0],
+            [0.2, 1.0, 2.0],
+            [0.3, 3.0, 1.0],
+            [0.4, 2.0, 1.0],
+        ])
+        .unwrap();
+        let g = Geometry::fit(&metric, &x).unwrap();
+        assert_eq!(
+            g.categories(),
+            &[vec![], vec![1.0, 2.0, 3.0], vec![1.0, 2.0]]
+        );
+        assert!(!g.scaled(1));
+        // Column 1 mismatch 2 / 9, column 2 mismatch 2 / 4, Euclidean part.
+        close(
+            g.key(&[0.5, 3.0, 1.0], &[0, 1, 2], &[0.0, 1.0, 1.0]),
+            0.25 + 2.0 / 9.0,
+        );
+        close(g.key(&[0.5, 3.0, 1.0], &[2, 1], &[2.0, 3.0]), 0.5);
+        close(g.key(&[0.5, 3.0, 1.0], &[1], &[3.0]), 0.0);
+        // An unseen code at predict is a mismatch against every centre.
+        close(g.key(&[0.5, 7.0, 1.0], &[1], &[3.0]), 2.0 / 9.0);
+        let bad = Data::from_rows(&[[0.1, 1.5, 1.0], [0.2, 1.0, 2.0]]).unwrap();
+        assert_eq!(
+            Geometry::fit(&metric, &bad).unwrap_err(),
+            Error::InvalidCategoryCode { row: 0, col: 1 }
+        );
+        assert_eq!(
+            g.check_codes(&bad).unwrap_err(),
+            Error::InvalidCategoryCode { row: 0, col: 1 }
+        );
+        // The stored levels rebuild the geometry; inconsistent levels do not.
+        assert_eq!(
+            Geometry::with_categories(&metric, 3, g.categories()).unwrap(),
+            g
+        );
+        assert!(Geometry::with_categories(&metric, 3, &[vec![], vec![], vec![1.0, 2.0]]).is_err());
+        assert!(Geometry::with_categories(&metric, 3, &[vec![1.0], vec![1.0], vec![1.0]]).is_err());
+        assert!(
+            Geometry::with_categories(&metric, 3, &[vec![], vec![2.0, 1.0], vec![1.0]]).is_err()
+        );
+        let mut rng = chain_rng(5);
+        let laws = g.laws(&x, 0.8).unwrap();
+        assert_eq!(
+            laws[1],
+            CoordinateLaw::Uniform {
+                levels: vec![1.0, 2.0, 3.0]
+            }
+        );
+        for _ in 0..100 {
+            assert!([1.0, 2.0, 3.0].contains(&laws[1].draw(&mut rng)));
+        }
     }
 
     #[test]
@@ -381,22 +568,32 @@ mod tests {
         use super::*;
         use proptest::prelude::*;
 
-        fn point() -> impl Strategy<Value = (f64, f64, f64)> {
-            (-PI / 2.0..PI / 2.0, -PI..PI, -1.0..1.0_f64)
+        fn point() -> impl Strategy<Value = (f64, f64, f64, i8)> {
+            (-PI / 2.0..PI / 2.0, -PI..PI, -1.0..1.0_f64, 0..4_i8)
         }
 
         // The key is a squared distance: its square root is a metric on
-        // the sphere, the Euclidean part and their sum.
+        // the sphere, the Euclidean part, the categorical part and their
+        // sum.
         proptest! {
             #[test]
             fn metric_axioms((a, b, c) in (point(), point(), point())) {
-                let g = Geometry::new(
-                    &[Metric::Euclidean, Metric::Spherical { sphere: 0 }, Metric::Spherical { sphere: 0 }],
-                    3,
-                ).unwrap();
-                let dims = [0, 1, 2];
-                let d = |u: (f64, f64, f64), v: (f64, f64, f64)| {
-                    g.key(&[u.2, u.0, u.1], &dims, &[v.2, v.0, v.1]).sqrt()
+                let metric = [
+                    Metric::Euclidean,
+                    Metric::Spherical { sphere: 0 },
+                    Metric::Spherical { sphere: 0 },
+                    Metric::Categorical,
+                ];
+                let levels = [vec![], vec![], vec![], vec![0.0, 1.0, 2.0, 3.0]];
+                let g = Geometry::with_categories(&metric, 4, &levels).unwrap();
+                let dims = [0, 1, 2, 3];
+                let d = |u: (f64, f64, f64, i8), v: (f64, f64, f64, i8)| {
+                    g.key(
+                        &[u.2, u.0, u.1, f64::from(u.3)],
+                        &dims,
+                        &[v.2, v.0, v.1, f64::from(v.3)],
+                    )
+                    .sqrt()
                 };
                 prop_assert!(d(a, b) >= 0.0);
                 prop_assert!(d(a, a) < 1e-7);

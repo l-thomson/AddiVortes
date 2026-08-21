@@ -36,7 +36,7 @@ enum Noise {
     /// P(y = 1 | x) = Phi(c + f(x)).
     Unit { labels: Vec<f64>, offset: f64 },
     /// The variance ensemble, whose total at each observation is s^2(x_i).
-    Ensemble(Ensemble<InverseGammaCells>),
+    Ensemble(Box<Ensemble<InverseGammaCells>>),
 }
 
 /// The sampler state for one chain. Construct with [`Sampler::new`], advance
@@ -81,8 +81,9 @@ impl Sampler {
     /// [`Config::validate`], then the data checks: row counts, at least two
     /// observations, finite values, non-constant response and columns,
     /// omega <= p, `metric` naming every column with each sphere's
-    /// longitude last, and under the probit model `InvalidLabel` for a
-    /// response value outside {0, 1}.
+    /// longitude last, `InvalidCategoryCode` for a non-integer value in a
+    /// categorical column, and under the probit model `InvalidLabel` for
+    /// a response value outside {0, 1}.
     pub fn new(config: &Config, x: &Data, y: &[f64], seed: u64) -> Result<Self> {
         Self::build(config, x, y, seed, None)
     }
@@ -134,7 +135,7 @@ impl Sampler {
         let p = x.n_cols();
         let omega = config.omega_for(p);
         data::validate_fit(x, y, omega)?;
-        let geometry = Geometry::new(&config.metric, p)?;
+        let geometry = Geometry::fit(&config.metric, x)?;
         let laws = geometry.laws(x, config.sigma_c)?;
         if config.model == Model::Probit {
             if let Some(row) = y.iter().position(|&v| v != 0.0 && v != 1.0) {
@@ -211,7 +212,7 @@ impl Sampler {
                     scaler::variance_cell_prior(config.nu, lambda, config.m_var);
                 // Every variance cell starts at sigma^2 ^ (1 / m') so the
                 // product starts at the initial sigma^2.
-                Noise::Ensemble(Ensemble::new(
+                Noise::Ensemble(Box::new(Ensemble::new(
                     InverseGammaCells {
                         nu,
                         lambda: lambda_prime,
@@ -223,7 +224,7 @@ impl Sampler {
                     libm::pow(sigma_sq, 1.0 / config.m_var as f64),
                     sigma_sq,
                     &mut rng,
-                ))
+                )))
             }
         };
         // Zero precision removes the likelihood from every conditional:
@@ -520,12 +521,14 @@ impl Sampler {
             .sum::<f64>()
             / n as f64)
             .sqrt();
+        let categories = self.mean.geometry().categories().to_vec();
         Ok(Fitted::new(
             self.config,
             self.scaler,
             self.kept,
             self.warnings,
             in_sample_rmse,
+            categories,
         ))
     }
 }

@@ -5,7 +5,9 @@
 
 mod common;
 
-use common::{fixture, heteroscedastic_fixture, probit_fixture, spherical_fixture, SEED};
+use common::{
+    categorical_fixture, fixture, heteroscedastic_fixture, probit_fixture, spherical_fixture, SEED,
+};
 use thiessen::{Data, Fitted};
 
 /// Rows of the fixture at which f(x) is snapshotted.
@@ -26,6 +28,10 @@ const HETEROSCEDASTIC_SNAPSHOT: &str = concat!(
 const SPHERICAL_SNAPSHOT: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/snapshots/snapshot__spherical_chain.snap"
+);
+const CATEGORICAL_SNAPSHOT: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/snapshots/snapshot__categorical_chain.snap"
 );
 
 fn points(x: &Data) -> Data {
@@ -101,6 +107,14 @@ fn reference_target_spherical_chain_is_bit_exact() {
     insta::assert_snapshot!("spherical_chain", render(&model, &x));
 }
 
+#[cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))]
+#[test]
+fn reference_target_categorical_chain_is_bit_exact() {
+    let (config, x, y) = categorical_fixture();
+    let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
+    insta::assert_snapshot!("categorical_chain", render(&model, &x));
+}
+
 fn stored_columns(path: &str, n_columns: usize) -> Vec<Vec<f64>> {
     let stored = std::fs::read_to_string(path)
         .expect("stored snapshot; regenerate on the reference target first");
@@ -143,6 +157,18 @@ fn probit_posterior_summaries_match_the_stored_chain() {
 fn spherical_posterior_summaries_match_the_stored_chain() {
     let columns = stored_columns(SPHERICAL_SNAPSHOT, 4);
     let (config, x, y) = spherical_fixture();
+    let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
+    let rendered = render(&model, &x);
+    let live = parse_columns(rendered.split_once('\n').unwrap().1, 4);
+    for (a, b) in live.iter().zip(&columns) {
+        assert_close_mean_and_sd(a, b);
+    }
+}
+
+#[test]
+fn categorical_posterior_summaries_match_the_stored_chain() {
+    let columns = stored_columns(CATEGORICAL_SNAPSHOT, 4);
+    let (config, x, y) = categorical_fixture();
     let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
     let rendered = render(&model, &x);
     let live = parse_columns(rendered.split_once('\n').unwrap().1, 4);

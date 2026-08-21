@@ -129,6 +129,26 @@ pub fn spherical_fixture() -> (Config, Data, Vec<f64>) {
     )
 }
 
+/// The fixed-seed fixture with a categorical column: the Gaussian
+/// fixture's first column and a four-level code in place of the second,
+/// the response shifted by level.
+#[allow(dead_code)]
+pub fn categorical_fixture() -> (Config, Data, Vec<f64>) {
+    let (config, x, y) = fixture();
+    let rows: Vec<[f64; 2]> = (0..x.n_rows())
+        .map(|i| [x.row(i)[0], ((i * 7) % 4) as f64])
+        .collect();
+    let y = y.iter().zip(&rows).map(|(&v, r)| v + 0.4 * r[1]).collect();
+    (
+        config.with_metric(vec![
+            thiessen::Metric::Euclidean,
+            thiessen::Metric::Categorical,
+        ]),
+        Data::from_rows(&rows).unwrap(),
+        y,
+    )
+}
+
 #[allow(dead_code)]
 pub fn fixture() -> (Config, Data, Vec<f64>) {
     let n = 48;
