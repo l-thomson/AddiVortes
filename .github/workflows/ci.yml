@@ -115,15 +115,21 @@ jobs:
         with:
           fetch-depth: 0
       # No published baseline before the first crates.io release; compare
-      # against the merge base instead.
+      # against the merge base instead. The baseline is a worktree outside
+      # the checkout rather than `baseline-rev`, which clones into it: the R
+      # package vendors a copy of the core, so a scan of either tree for the
+      # package named `thiessen` finds it twice. The baseline is read for the
+      # core crate's API, so the R package is removed from it, and
+      # `manifest-path` names the crate in this tree.
+      - run: |
+          git worktree add "${{ runner.temp }}/baseline" \
+            ${{ github.event.pull_request.base.sha }}
+          rm -rf "${{ runner.temp }}/baseline/r"
       # The default heuristic enables a feature named `experimental`.
       - uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2
         with:
-          # The published crate, named rather than searched for: the R
-          # package vendors a copy of it under r/src/rust/core, so a scan of
-          # the tree finds the name twice.
           manifest-path: crates/thiessen/Cargo.toml
-          baseline-rev: ${{ github.event.pull_request.base.sha }}
+          baseline-root: ${{ runner.temp }}/baseline
           feature-group: default-features
 
   coverage:
@@ -172,10 +178,13 @@ jobs:
         with:
           use-public-rspm: true
       - run: tools/vendor.sh
+      # Staged by force because the vendored core is ignored: an added file
+      # would otherwise be untracked, and so absent from a diff.
       - run: |
-          git diff --exit-code -- r/DESCRIPTION r/inst/AUTHORS \
-            r/src/rust/Cargo.lock r/src/rust/core \
-            r/tests/testthat/core-gaussian-chain.txt
+          paths="r/DESCRIPTION r/inst/AUTHORS r/src/rust/Cargo.lock \
+            r/src/rust/core r/tests/testthat/core-gaussian-chain.txt"
+          git add --force $paths
+          git diff --cached --exit-code -- $paths
       # The binding crate is outside the root workspace, so the fmt and
       # clippy jobs above do not reach it.
       - run: cargo fmt --check
