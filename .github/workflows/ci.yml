@@ -228,6 +228,28 @@ jobs:
       - run: mypy
         working-directory: python
 
+  py-docs:
+    name: py-docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # The examples run at build, so the package and both extras are needed.
+      - run: pip install -e ".[sklearn,arviz]" -r requirements-docs.txt
+        working-directory: python
+      - run: mkdocs build --strict
+        working-directory: python
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: py-docs
+          path: python/site
+
   py-test:
     name: py-test
     strategy:
@@ -253,7 +275,7 @@ jobs:
     name: alls-green
     if: always()
     needs: [fmt, clippy, test, deny, doc, semver, coverage, cff, py-lint, py-test,
-            r-source, r-check]
+            py-docs, r-source, r-check]
     runs-on: ubuntu-latest
     steps:
       - uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # release/v1

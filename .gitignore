@@ -4,6 +4,7 @@ target/
 # Python package working state
 /python/.venv*
 /python/dist
+/python/site
 /python/python/thiessen/*.so
 __pycache__/
 *.egg-info/

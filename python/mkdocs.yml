@@ -1,0 +1,61 @@
+site_name: thiessen
+site_description: Bayesian additive Voronoi tessellations (AddiVortes)
+repo_url: https://github.com/l-thomson/thiessen
+edit_uri: ""
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [python]
+          options:
+            docstring_style: numpy
+            show_source: false
+            show_root_heading: true
+            members_order: source
+            separate_signature: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: python
+          class: python
+          validator: !!python/name:markdown_exec.validator
+          format: !!python/name:markdown_exec.formatter
+
+nav:
+  - Quick start: index.md
+  - Models: models.md
+  - Priors and scaling: priors.md
+  - Input data: data.md
+  - scikit-learn: sklearn.md
+  - arviz: arviz.md
+  - Reproducibility: reproducibility.md
+  - Testing: testing.md
+  - API reference: api.md
+
+strict: true

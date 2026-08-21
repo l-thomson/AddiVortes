@@ -35,6 +35,12 @@ the core crate version the package builds against, which
   array or a boolean mask. A named column becomes d - 1 treatment-contrast
   indicators, the first level as reference, unless its `metric` entry is
   `'categorical'`, in which case it passes as integer level codes.
+- A documentation site built with mkdocs-material and mkdocstrings: quick
+  start, the model menu with parameter tables, priors and scaling with the
+  BART correspondence table, the input-data contract, the scikit-learn and
+  arviz pages, reproducibility, and the shared testing strategy. Every code
+  example is executed at build and `mkdocs build --strict` runs in CI. The
+  site is a CI artefact in this release; it is not deployed.
 - `FittedModel.to_inference_data(X, y)`, returning the arviz `DataTree` of
   the fit: `posterior` with `mu` per draw, `sigma` under the Gaussian model
   only, and the per-draw cell and dimension counts; `posterior_predictive`
