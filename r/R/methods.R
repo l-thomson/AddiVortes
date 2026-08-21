@@ -36,13 +36,7 @@ predict.thiessen <- function(object, newdata = NULL,
                              level = 0.95, ...) {
   type <- match.arg(type)
   interval <- match.arg(interval)
-  design <- if (is.null(newdata)) {
-    object$x
-  } else if (is.null(object$blueprint)) {
-    as_design(newdata, "newdata")
-  } else {
-    forge_design(object, newdata)
-  }
+  design <- predict_design(object, newdata)
   if (interval != "none" && type != "mean") {
     thiessen_abort("An interval is available for `type = \"mean\"` only.")
   }

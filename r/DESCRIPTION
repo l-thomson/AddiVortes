@@ -23,8 +23,14 @@ Imports:
     hardhat,
     jsonlite,
     rlang,
+    rstantools,
     stats
-Suggests: testthat (>= 3.0.0)
+Suggests:
+    bayesplot,
+    loo,
+    posterior,
+    testthat (>= 3.0.0),
+    tidybayes
 Roxygen: list(markdown = TRUE, load = "source")
 Config/testthat/edition: 3
 Config/thiessen/core-version: 0.2.0
