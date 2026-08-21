@@ -1,0 +1,63 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "thiessen"
+version = "0.1.0"
+description = "Bayesian additive Voronoi tessellations (AddiVortes)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE", "NOTICE"]
+authors = [{ name = "Leo Thomson", email = "leo@feasibly.co.uk" }]
+keywords = ["bayesian", "mcmc", "regression", "voronoi", "nonparametric"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Rust",
+  "Topic :: Scientific/Engineering :: Mathematics",
+  "Typing :: Typed",
+]
+dependencies = ["numpy>=1.22"]
+
+[project.optional-dependencies]
+sklearn = ["scikit-learn>=1.6"]
+arviz = ["arviz>=0.18"]
+
+[project.urls]
+Homepage = "https://github.com/l-thomson/thiessen"
+Repository = "https://github.com/l-thomson/thiessen"
+Changelog = "https://github.com/l-thomson/thiessen/blob/dev/CHANGELOG.md"
+
+[tool.maturin]
+module-name = "thiessen._native"
+python-source = "python"
+manifest-path = "Cargo.toml"
+features = ["pyo3/extension-module"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "W"]
+
+[tool.ruff.lint.pep8-naming]
+# `X` for the design is the scikit-learn convention.
+extend-ignore-names = ["X"]
+
+[tool.mypy]
+# No `python_version`: mypy no longer targets 3.9, and numpy's stubs need the
+# running interpreter. Ruff's `target-version` holds the 3.9 floor.
+files = ["python/thiessen"]
+strict = true
+
+[[tool.mypy.overrides]]
+module = "thiessen._native"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

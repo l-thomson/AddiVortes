@@ -6,6 +6,10 @@ version = 2
 allow = [
     "MIT",
     "Apache-2.0",
+    # target-lexicon, a build dependency of pyo3.
+    "Apache-2.0 WITH LLVM-exception",
+    # rust-numpy.
+    "BSD-2-Clause",
     "Unicode-3.0",
 ]
 
