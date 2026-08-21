@@ -11,7 +11,7 @@ Requires scikit-learn 1.6 or later, the `sklearn` extra.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Union
+from typing import Any, Literal, Union, overload
 
 import numpy as np
 import numpy.typing as npt
@@ -24,6 +24,7 @@ from ._arrays import _as_response
 from ._config import FIELDS, _config_json
 from ._encoding import Encoding, columns_of, resolve_mask
 from ._seed import SeedLike, _resolve_seed
+from .model import _emit_warnings
 
 __all__ = ["AddiVortesClassifier", "AddiVortesRegressor"]
 
@@ -31,58 +32,6 @@ MetricEntry = Union[str, "dict[str, dict[str, int]]"]
 
 #: Parameters that are not fields of the core's configuration.
 _NON_CONFIG = frozenset({"random_state", "categorical_features"})
-
-
-_COMMON_DOC = """    m : int, default=200
-        Ensemble size m of the mean function.
-    nu : float, default=6.0
-        sigma^2 prior degrees of freedom nu.
-    q : float, default=0.85
-        sigma^2 prior calibration quantile q, Pr(sigma < sigma_hat) = q.
-    k : float, default=3.0
-        Cell-mean prior spread k: sigma_mu = 0.5 / (k sqrt(m)) on the response
-        scaled to [-0.5, 0.5], or 3 / (k sqrt(m)) on the latent scale under
-        the probit model (Chipman, George and McCulloch, 2010, s. 4).
-    sigma_c : float, default=0.8
-        Centre-coordinate prior and proposal standard deviation sigma_c.
-    omega : float, default=None
-        Dimension-count prior parameter omega; omega / p is the prior
-        probability of including a covariate. `None` resolves to
-        min(3, n_features_in_) at fit, so the default is valid for any input.
-    lambda_c : float, default=5.0
-        Cell-count prior rate lambda_c: b - 1 ~ Poisson(lambda_c). The default
-        follows AddiVortes >= 0.6.8. Stone and Gosling (2025), s. 2.3, report
-        25; pass ``lambda_c=25`` for the paper's setting.
-    burn_in : int, default=200
-        Burn-in sweeps discarded.
-    draws : int, default=1000
-        Posterior draws kept.
-    thinning : int, default=1
-        Every `thinning`-th sweep after burn-in is kept.
-    prior_only : bool, default=False
-        Switch the likelihood off, so the chain draws from the prior.
-    metric : sequence, default=None
-        The metric of each input column: ``'euclidean'``, ``'categorical'``,
-        or ``{'spherical': {'sphere': k}}``. `None` is Euclidean throughout.
-    categorical_features : None, 'from_dtype' or array_like, default=None
-        The categorical columns. `None` takes the input as numeric; for a
-        column that needs encoding, either name it here or encode it yourself
-        with ``OneHotEncoder(drop='first')`` in a `ColumnTransformer`.
-        'from_dtype' reads the pandas categorical dtypes; an array of indices
-        or a boolean mask names the columns. A named column becomes d - 1
-        treatment-contrast indicators, the first level as reference, unless its
-        `metric` entry is ``'categorical'``, in which case it passes as
-        integer level codes.
-    random_state : int, Generator, RandomState or None, default=None
-        The seed. An integer passes through to the core unchanged, so
-        `AddiVortesRegressor(random_state=1)` and `Model(random_state=1)` draw
-        alike."""
-
-
-def _with_common(cls: type) -> type:
-    """Substitute the shared parameter documentation into a docstring."""
-    cls.__doc__ = (cls.__doc__ or "").replace("{common}", _COMMON_DOC)
-    return cls
 
 
 class _BaseAddiVortes(BaseEstimator):
@@ -189,6 +138,7 @@ class _BaseAddiVortes(BaseEstimator):
             _as_response(y),
             seed,
         )
+        _emit_warnings(self._fitted, stacklevel=4)
 
     def _model_name(self) -> str:
         raise NotImplementedError
@@ -207,56 +157,98 @@ class _BaseAddiVortes(BaseEstimator):
             self._fitted = _native.fitted_from_json(payload)
 
 
-@_with_common
 class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
     """AddiVortes regression.
 
-        Bayesian regression on a sum of Voronoi tessellations (Stone and Gosling,
-        2025). The posterior mean of f(x) is the prediction.
+    Bayesian regression on a sum of Voronoi tessellations (Stone and Gosling,
+    2025). The posterior mean of f(x) is the prediction.
 
-        Parameters
-        ----------
-        model : {'gaussian', 'heteroscedastic'}, default='gaussian'
-            The observation model. 'gaussian' draws one sigma^2 per sweep;
-            'heteroscedastic' carries an ensemble of variance tessellations, so
-            the residual variance varies with x. Binary responses need
-            `AddiVortesClassifier`.
-        m_var : int, default=40
-            Heteroscedastic model only: the number m' of variance tessellations.
-    {common}
+    Parameters
+    ----------
+    model : {'gaussian', 'heteroscedastic'}, default='gaussian'
+        The observation model. 'gaussian' draws one sigma^2 per sweep;
+        'heteroscedastic' carries an ensemble of variance tessellations, so
+        the residual variance varies with x. Binary responses need
+        `AddiVortesClassifier`.
+    m_var : int, default=40
+        Heteroscedastic model only: the number m' of variance tessellations.
+    m : int, default=200
+        Ensemble size m of the mean function.
+    nu : float, default=6.0
+        sigma^2 prior degrees of freedom nu.
+    q : float, default=0.85
+        sigma^2 prior calibration quantile q, Pr(sigma < sigma_hat) = q.
+    k : float, default=3.0
+        Cell-mean prior spread k: sigma_mu = 0.5 / (k sqrt(m)) on the response
+        scaled to [-0.5, 0.5], or 3 / (k sqrt(m)) on the latent scale under
+        the probit model (Chipman, George and McCulloch, 2010, s. 4).
+    sigma_c : float, default=0.8
+        Centre-coordinate prior and proposal standard deviation sigma_c.
+    omega : float, default=None
+        Dimension-count prior parameter omega; omega / p is the prior
+        probability of including a covariate. `None` resolves to
+        min(3, n_features_in_) at fit, so the default is valid for any input.
+    lambda_c : float, default=5.0
+        Cell-count prior rate lambda_c: b - 1 ~ Poisson(lambda_c). The default
+        follows AddiVortes >= 0.6.8. Stone and Gosling (2025), s. 2.3, report
+        25; pass ``lambda_c=25`` for the paper's setting.
+    burn_in : int, default=200
+        Burn-in sweeps discarded.
+    draws : int, default=1000
+        Posterior draws kept.
+    thinning : int, default=1
+        Every `thinning`-th sweep after burn-in is kept.
+    prior_only : bool, default=False
+        Switch the likelihood off, so the chain draws from the prior.
+    metric : sequence, default=None
+        The metric of each input column: ``'euclidean'``, ``'categorical'``,
+        or ``{'spherical': {'sphere': k}}``. `None` is Euclidean throughout.
+    categorical_features : None, 'from_dtype' or array_like, default=None
+        The categorical columns. `None` takes the input as numeric; for a
+        column that needs encoding, either name it here or encode it yourself
+        with ``OneHotEncoder(drop='first')`` in a `ColumnTransformer`.
+        'from_dtype' reads the pandas categorical dtypes; an array of indices
+        or a boolean mask names the columns. A named column becomes d - 1
+        treatment-contrast indicators, the first level as reference, unless its
+        `metric` entry is ``'categorical'``, in which case it passes as
+        integer level codes.
+    random_state : int, Generator, RandomState or None, default=None
+        The seed. An integer passes through to the core unchanged, so
+        `AddiVortesRegressor(random_state=1)` and `Model(random_state=1)` draw
+        alike.
 
-        Attributes
-        ----------
-        n_features_in_ : int
-            Number of features seen at fit.
-        feature_names_in_ : ndarray of shape (n_features_in_,)
-            Feature names seen at fit, when the input carried them.
-        random_state_ : int
-            The resolved seed.
+    Attributes
+    ----------
+    n_features_in_ : int
+        Number of features seen at fit.
+    feature_names_in_ : ndarray of shape (n_features_in_,)
+        Feature names seen at fit, when the input carried them.
+    random_state_ : int
+        The resolved seed.
 
-        See Also
-        --------
-        AddiVortesClassifier : The binary probit model.
+    See Also
+    --------
+    AddiVortesClassifier : The binary probit model.
 
-        Notes
-        -----
-        Partial dependence and individual conditional expectation come from
-        `sklearn.inspection`; this estimator implements nothing of its own.
+    Notes
+    -----
+    Partial dependence and individual conditional expectation come from
+    `sklearn.inspection`; this estimator implements nothing of its own.
 
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from thiessen.estimators import AddiVortesRegressor
-        >>> rng = np.random.default_rng(0)
-        >>> X = rng.uniform(size=(60, 2))
-        >>> y = 3.0 * (X[:, 0] - 0.4) ** 2 + 0.5 * X[:, 1]
-        >>> model = AddiVortesRegressor(m=10, burn_in=20, draws=40, random_state=1)
-        >>> model.fit(X, y).predict(X).shape
-        (60,)
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from thiessen.estimators import AddiVortesRegressor
+    >>> rng = np.random.default_rng(0)
+    >>> X = rng.uniform(size=(60, 2))
+    >>> y = 3.0 * (X[:, 0] - 0.4) ** 2 + 0.5 * X[:, 1]
+    >>> model = AddiVortesRegressor(m=10, burn_in=20, draws=40, random_state=1)
+    >>> model.fit(X, y).predict(X).shape
+    (60,)
 
-        The paper's cell-count prior is a keyword argument:
+    The paper's cell-count prior is a keyword argument:
 
-        >>> paper = AddiVortesRegressor(lambda_c=25, m=10, burn_in=20, draws=40)
+    >>> paper = AddiVortesRegressor(lambda_c=25, m=10, burn_in=20, draws=40)
     """
 
     def __init__(
@@ -330,6 +322,16 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
         self._fit_core(design, response)
         return self
 
+    @overload
+    def predict(
+        self, X: Any, return_std: Literal[False] = False
+    ) -> npt.NDArray[np.float64]: ...
+
+    @overload
+    def predict(
+        self, X: Any, return_std: Literal[True]
+    ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]: ...
+
     def predict(
         self, X: Any, return_std: bool = False
     ) -> npt.NDArray[np.float64] | tuple[npt.NDArray[np.float64], ...]:
@@ -377,45 +379,87 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
         )
 
 
-@_with_common
 class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
     """AddiVortes binary classification.
 
-        The probit model P(y = 1 | x) = Phi(c + f(x)) with Albert and Chib (1993)
-        augmentation. Two classes only.
+    The probit model P(y = 1 | x) = Phi(c + f(x)) with Albert and Chib (1993)
+    augmentation. Two classes only.
 
-        Parameters
-        ----------
-        offset : float, default=None
-            The offset c. `None` resolves to Phi^-1(ybar) at fit, the BART
-            `binaryOffset` default.
-    {common}
+    Parameters
+    ----------
+    offset : float, default=None
+        The offset c. `None` resolves to Phi^-1(ybar) at fit, the BART
+        `binaryOffset` default.
+    m : int, default=200
+        Ensemble size m of the mean function.
+    nu : float, default=6.0
+        sigma^2 prior degrees of freedom nu.
+    q : float, default=0.85
+        sigma^2 prior calibration quantile q, Pr(sigma < sigma_hat) = q.
+    k : float, default=3.0
+        Cell-mean prior spread k: sigma_mu = 0.5 / (k sqrt(m)) on the response
+        scaled to [-0.5, 0.5], or 3 / (k sqrt(m)) on the latent scale under
+        the probit model (Chipman, George and McCulloch, 2010, s. 4).
+    sigma_c : float, default=0.8
+        Centre-coordinate prior and proposal standard deviation sigma_c.
+    omega : float, default=None
+        Dimension-count prior parameter omega; omega / p is the prior
+        probability of including a covariate. `None` resolves to
+        min(3, n_features_in_) at fit, so the default is valid for any input.
+    lambda_c : float, default=5.0
+        Cell-count prior rate lambda_c: b - 1 ~ Poisson(lambda_c). The default
+        follows AddiVortes >= 0.6.8. Stone and Gosling (2025), s. 2.3, report
+        25; pass ``lambda_c=25`` for the paper's setting.
+    burn_in : int, default=200
+        Burn-in sweeps discarded.
+    draws : int, default=1000
+        Posterior draws kept.
+    thinning : int, default=1
+        Every `thinning`-th sweep after burn-in is kept.
+    prior_only : bool, default=False
+        Switch the likelihood off, so the chain draws from the prior.
+    metric : sequence, default=None
+        The metric of each input column: ``'euclidean'``, ``'categorical'``,
+        or ``{'spherical': {'sphere': k}}``. `None` is Euclidean throughout.
+    categorical_features : None, 'from_dtype' or array_like, default=None
+        The categorical columns. `None` takes the input as numeric; for a
+        column that needs encoding, either name it here or encode it yourself
+        with ``OneHotEncoder(drop='first')`` in a `ColumnTransformer`.
+        'from_dtype' reads the pandas categorical dtypes; an array of indices
+        or a boolean mask names the columns. A named column becomes d - 1
+        treatment-contrast indicators, the first level as reference, unless its
+        `metric` entry is ``'categorical'``, in which case it passes as
+        integer level codes.
+    random_state : int, Generator, RandomState or None, default=None
+        The seed. An integer passes through to the core unchanged, so
+        `AddiVortesRegressor(random_state=1)` and `Model(random_state=1)` draw
+        alike.
 
-        Attributes
-        ----------
-        classes_ : ndarray of shape (2,)
-            The class labels.
-        n_features_in_ : int
-            Number of features seen at fit.
-        feature_names_in_ : ndarray of shape (n_features_in_,)
-            Feature names seen at fit, when the input carried them.
-        random_state_ : int
-            The resolved seed.
+    Attributes
+    ----------
+    classes_ : ndarray of shape (2,)
+        The class labels.
+    n_features_in_ : int
+        Number of features seen at fit.
+    feature_names_in_ : ndarray of shape (n_features_in_,)
+        Feature names seen at fit, when the input carried them.
+    random_state_ : int
+        The resolved seed.
 
-        See Also
-        --------
-        AddiVortesRegressor : The Gaussian and heteroscedastic models.
+    See Also
+    --------
+    AddiVortesRegressor : The Gaussian and heteroscedastic models.
 
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from thiessen.estimators import AddiVortesClassifier
-        >>> rng = np.random.default_rng(0)
-        >>> X = rng.uniform(size=(60, 2))
-        >>> y = (X[:, 0] > 0.5).astype(int)
-        >>> model = AddiVortesClassifier(m=10, burn_in=20, draws=40, random_state=1)
-        >>> model.fit(X, y).predict_proba(X).shape
-        (60, 2)
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from thiessen.estimators import AddiVortesClassifier
+    >>> rng = np.random.default_rng(0)
+    >>> X = rng.uniform(size=(60, 2))
+    >>> y = (X[:, 0] > 0.5).astype(int)
+    >>> model = AddiVortesClassifier(m=10, burn_in=20, draws=40, random_state=1)
+    >>> model.fit(X, y).predict_proba(X).shape
+    (60, 2)
     """
 
     def __init__(

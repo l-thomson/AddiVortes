@@ -14,7 +14,7 @@ import pytest
 from thiessen import Model, ThiessenError, _native
 from thiessen.estimators import AddiVortesClassifier, AddiVortesRegressor
 
-SMALL = {"m": 8, "burn_in": 10, "draws": 20}
+from .conftest import SMALL
 
 PUBLISHED = ("gaussian", "probit", "heteroscedastic")
 

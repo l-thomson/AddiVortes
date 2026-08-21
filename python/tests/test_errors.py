@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from thiessen import Model, ThiessenError, _native
 
-SMALL = {"m": 8, "burn_in": 10, "draws": 20}
+from .conftest import SMALL
 
 
 def test_the_exception_is_a_value_error():

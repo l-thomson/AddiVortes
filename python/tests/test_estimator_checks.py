@@ -10,8 +10,10 @@ from __future__ import annotations
 from sklearn.utils.estimator_checks import parametrize_with_checks
 from thiessen.estimators import AddiVortesClassifier, AddiVortesRegressor
 
+from .conftest import Sweep
+
 #: Large enough that the suite's accuracy thresholds are met.
-SMALL = {"m": 20, "burn_in": 30, "draws": 60}
+SMALL: Sweep = {"m": 20, "burn_in": 30, "draws": 60}
 
 EXPECTED_FAILURES: dict[str, str] = {}
 

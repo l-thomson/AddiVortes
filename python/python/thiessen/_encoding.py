@@ -42,7 +42,7 @@ def columns_of(x: Any) -> list[npt.NDArray[Any]]:
 
 
 def _dtype_mask(x: Any, n_features: int) -> npt.NDArray[np.bool_]:
-    """The columns a pandas categorical dtype declares."""
+    """Return the columns a pandas categorical dtype declares."""
     dtypes = getattr(x, "dtypes", None)
     if dtypes is None:
         raise ValueError(
