@@ -15,8 +15,8 @@ core_defaults <- function() .Call(wrap__core_defaults)
 
 core_validate <- function(config_json) .Call(wrap__core_validate, config_json)
 
-core_fit <- function(config_json, x, y, seed_value) {
-  .Call(wrap__core_fit, config_json, x, y, seed_value)
+core_fit <- function(config_json, x, y, seed_value, report, updates) {
+  .Call(wrap__core_fit, config_json, x, y, seed_value, report, updates)
 }
 
 core_predict <- function(state_json, x) .Call(wrap__core_predict, state_json, x)

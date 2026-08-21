@@ -75,12 +75,37 @@ fn core_validate(config_json: &str) -> Result<()> {
 }
 
 /// Fit the model of the configuration and return the fit and the quantities
-/// the print, summary, fitted and residuals methods report.
+/// the print, summary, fitted and residuals methods report. `report`, an R
+/// function or `NULL`, is called `updates` times over the sweep schedule.
 #[extendr]
-fn core_fit(config_json: &str, x: RMatrix<f64>, y: &[f64], seed_value: f64) -> Result<List> {
+fn core_fit(
+    config_json: &str,
+    x: RMatrix<f64>,
+    y: &[f64],
+    seed_value: f64,
+    report: Robj,
+    updates: i32,
+) -> Result<List> {
     let config = config(config_json)?;
     let data = design(&x)?;
-    let fitted = thiessen::fit(&config, &data, y, seed(seed_value)?).map_err(core_error)?;
+    let seed = seed(seed_value)?;
+    let fitted = match report.as_function() {
+        Some(report) => {
+            let updates = updates.max(1) as usize;
+            let mut emitted = 0_usize;
+            thiessen::fit_with_progress(&config, &data, y, seed, |completed, total| {
+                // `updates` calls spread evenly over `total` sweeps. A
+                // failing handler must not lose a completed fit, so the
+                // result of the call is discarded.
+                while (emitted + 1) * total <= completed * updates {
+                    emitted += 1;
+                    let _ = report.call(pairlist!());
+                }
+            })
+        }
+        None => thiessen::fit(&config, &data, y, seed),
+    }
+    .map_err(core_error)?;
     let fitted_values = fitted.predict(&data).map_err(core_error)?;
     let warnings: Vec<String> = fitted.warnings().iter().map(ToString::to_string).collect();
     Ok(list!(

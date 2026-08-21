@@ -20,6 +20,16 @@
 #' `stats::update()` works on a fit: the call is stored, so
 #' `update(fit, seed = 2)` refits with that argument replaced.
 #'
+#' Progress over the sweep schedule is signalled with progressr, so a
+#' session reports it after `progressr::handlers()` and nothing is printed
+#' by default. The draws do not depend on whether a handler is set.
+#'
+#' A fit is a plain R object holding the sampler state, so [saveRDS()]
+#' writes one and a later session reads it without a refit. A fit written by
+#' a build with the core's `experimental` feature and read by a build
+#' without it errors with the condition class `thiessen_error`, naming the
+#' feature, at the first call that needs the state.
+#'
 #' @param x A numeric matrix of covariates, one row per observation, or a
 #'   data frame. A numeric vector is taken as one column.
 #' @param formula A two-sided formula. The left side names the response and
@@ -162,8 +172,10 @@ new_fit <- function(design, y, control, seed, call, blueprint = NULL,
     )
   }
   resolved <- resolve_seed(seed, call = call_env)
+  progress <- progress_reporter(control)
   fit <- core_call(
-    core_fit(config_json(control), design, y, resolved),
+    core_fit(config_json(control), design, y, resolved, progress$report,
+             progress$updates),
     call = call_env
   )
   for (warning in fit$warnings) {

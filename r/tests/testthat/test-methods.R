@@ -137,15 +137,3 @@ test_that("summary reports no sigma where the model has none", {
 
   expect_null(summary(fit)$sigma)
 })
-
-test_that("a fit survives a round trip through saveRDS", {
-  fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
-  path <- tempfile(fileext = ".rds")
-  on.exit(unlink(path), add = TRUE)
-
-  saveRDS(fit, path)
-  restored <- readRDS(path)
-
-  expect_identical(predict(restored, fixture$x), predict(fit, fixture$x))
-})

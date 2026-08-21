@@ -64,6 +64,16 @@ level as the zero, as \code{glm} treats one.
 
 \code{stats::update()} works on a fit: the call is stored, so
 \code{update(fit, seed = 2)} refits with that argument replaced.
+
+Progress over the sweep schedule is signalled with progressr, so a
+session reports it after \code{progressr::handlers()} and nothing is printed
+by default. The draws do not depend on whether a handler is set.
+
+A fit is a plain R object holding the sampler state, so \code{\link[=saveRDS]{saveRDS()}}
+writes one and a later session reads it without a refit. A fit written by
+a build with the core's \code{experimental} feature and read by a build
+without it errors with the condition class \code{thiessen_error}, naming the
+feature, at the first call that needs the state.
 }
 \examples{
 n <- 60
