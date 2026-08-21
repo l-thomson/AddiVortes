@@ -141,10 +141,30 @@ fn core_interval(
     }))
 }
 
+/// Pointwise log-likelihood, one row per draw.
+#[extendr]
+fn core_log_lik(state_json: &str, x: RMatrix<f64>, y: &[f64]) -> Result<RMatrix<f64>> {
+    let draws = state(state_json)?
+        .log_likelihood(&design(&x)?, y)
+        .map_err(core_error)?;
+    Ok(draw_matrix(&draws))
+}
+
 /// sigma per kept draw; empty outside the Gaussian model.
 #[extendr]
 fn core_sigma(state_json: &str) -> Result<Vec<f64>> {
     Ok(state(state_json)?.sigma())
+}
+
+/// The per-draw ensemble summaries and the covariate inclusion shares.
+#[extendr]
+fn core_diagnostics(state_json: &str) -> Result<List> {
+    let fitted = state(state_json)?;
+    Ok(list!(
+        cell_count = fitted.cell_counts(),
+        dimension_count = fitted.dimension_counts(),
+        inclusion = fitted.variable_inclusion_proportions()
+    ))
 }
 
 extendr_module! {
@@ -157,4 +177,6 @@ extendr_module! {
     fn core_predict_draws;
     fn core_interval;
     fn core_sigma;
+    fn core_log_lik;
+    fn core_diagnostics;
 }

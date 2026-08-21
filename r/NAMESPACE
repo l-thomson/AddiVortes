@@ -2,19 +2,37 @@
 
 S3method(fitted,thiessen)
 S3method(nobs,thiessen)
+S3method(posterior::as_draws_array,thiessen)
+S3method(posterior::as_draws_df,thiessen)
+S3method(posterior::nchains,thiessen)
+S3method(posterior::ndraws,thiessen)
 S3method(predict,thiessen)
 S3method(print,summary.thiessen)
 S3method(print,thiessen)
 S3method(print,thiessen_control)
 S3method(residuals,thiessen)
+S3method(rstantools::log_lik,thiessen)
+S3method(rstantools::posterior_epred,thiessen)
+S3method(rstantools::posterior_predict,thiessen)
+S3method(rstantools::predictive_interval,thiessen)
 S3method(sigma,thiessen)
 S3method(summary,thiessen)
 S3method(thiessen,data.frame)
 S3method(thiessen,default)
 S3method(thiessen,formula)
 export(core_version)
+export(log_lik)
+export(posterior_epred)
+export(posterior_predict)
+export(predictive_interval)
 export(thiessen)
 export(thiessen_control)
+importFrom(rstantools,
+  log_lik,
+  posterior_epred,
+  posterior_predict,
+  predictive_interval
+)
 importFrom(stats,
   fitted,
   nobs,

@@ -13,6 +13,15 @@
   `metric`, factors pass as integer level codes and each factor column must
   declare `"categorical"`. A two-level factor response becomes 0 and 1 with
   the first level as the zero.
+* Methods on the established generics: `posterior::as_draws_df()`,
+  `as_draws_array()`, `ndraws()` and `nchains()`, registered on demand so
+  posterior is needed only by a session that calls them, with R-hat and
+  effective sample sizes coming from `posterior::summarise_draws()`; and
+  `posterior_predict()`, `posterior_epred()`, `log_lik()` and
+  `predictive_interval()` from rstantools, re-exported so no
+  `library(rstantools)` is needed. `loo::loo()` runs on `log_lik()`. The
+  draws carry `mu[i]`, `sigma` under the Gaussian model only, and the
+  per-draw `cell_count` and `dimension_count`.
 * The call is stored on a fit, so `stats::update()` refits with an argument
   replaced.
 * `seed = NULL` draws the chain's seed from R's stream, so `set.seed()`

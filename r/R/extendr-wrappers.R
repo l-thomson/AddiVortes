@@ -30,3 +30,11 @@ core_interval <- function(state_json, x, kind, level) {
 }
 
 core_sigma <- function(state_json) .Call(wrap__core_sigma, state_json)
+
+core_log_lik <- function(state_json, x, y) {
+  .Call(wrap__core_log_lik, state_json, x, y)
+}
+
+core_diagnostics <- function(state_json) {
+  .Call(wrap__core_diagnostics, state_json)
+}
