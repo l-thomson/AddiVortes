@@ -6,9 +6,10 @@ test_that("the diagnostics carry one row per draw", {
 
   expect_identical(
     names(diagnostics),
-    c("draw", "sigma", "cell_count", "dimension_count")
+    c("chain", "draw", "sigma", "cell_count", "dimension_count")
   )
   expect_identical(nrow(diagnostics), 20L)
+  expect_identical(diagnostics$chain, rep(1L, 20L))
   expect_identical(diagnostics$draw, 1:20)
   expect_true(all(diagnostics$sigma > 0))
   expect_true(all(diagnostics$cell_count >= 1))

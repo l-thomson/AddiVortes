@@ -9,11 +9,18 @@
 \usage{
 thiessen(x, ...)
 
-\method{thiessen}{default}(x, y, control = thiessen_control(), seed = NULL, ...)
+\method{thiessen}{default}(x, y, control = thiessen_control(), seed = NULL, chains = 1, ...)
 
-\method{thiessen}{data.frame}(x, y, control = thiessen_control(), seed = NULL, ...)
+\method{thiessen}{data.frame}(x, y, control = thiessen_control(), seed = NULL, chains = 1, ...)
 
-\method{thiessen}{formula}(formula, data, control = thiessen_control(), seed = NULL, ...)
+\method{thiessen}{formula}(
+  formula,
+  data,
+  control = thiessen_control(),
+  seed = NULL,
+  chains = 1,
+  ...
+)
 }
 \arguments{
 \item{x}{A numeric matrix of covariates, one row per observation, or a
@@ -32,6 +39,11 @@ R's stream, so \code{\link[=set.seed]{set.seed()}} governs; a whole number in \v
 passes to the core unchanged, so the same value reproduces the same
 draws for a given package version and platform.}
 
+\item{chains}{The number of chains to run, a whole number. Each chain
+has its own seed, derived from \code{seed} in the core, and the draws of the
+chains are pooled. Two or more chains give the convergence
+diagnostics; one chain does not.}
+
 \item{formula}{A two-sided formula. The left side names the response and
 the right side the covariates, \code{.} for every remaining column.}
 
@@ -39,7 +51,8 @@ the right side the covariates, \code{.} for every remaining column.}
 }
 \value{
 An object of class \code{"thiessen"}: a list with the fitted state,
-the resolved configuration, the number of kept draws, the seed used,
+the resolved configuration, the number of chains and of kept draws, the
+convergence diagnostics where two or more chains ran, the seed used,
 the design, the response, the fitted values, the residuals, the
 hardhat blueprint where one applies, and the call.
 }
@@ -64,6 +77,15 @@ level as the zero, as \code{glm} treats one.
 
 \code{stats::update()} works on a fit: the call is stored, so
 \code{update(fit, seed = 2)} refits with that argument replaced.
+
+With \code{chains} of two or more, the chains are run in turn with the seeds
+the core derives from \code{seed}, their draws are pooled, and the fit carries
+rank-normalised split R-hat and the bulk and tail effective sample sizes
+of sigma and of the mean function at up to twenty training rows
+(\code{posterior::summarise_draws()}). A fit warns, and \code{print()} and
+\code{summary()} repeat the warning, where R-hat exceeds 1.01 or an effective
+sample size falls below 400 (Vehtari and others, 2021). A fit of one
+chain says so instead.
 
 Progress over the sweep schedule is signalled with progressr, so a
 session reports it after \code{progressr::handlers()} and nothing is printed
@@ -95,4 +117,9 @@ additive regression trees. \emph{The Annals of Applied Statistics} 4(1),
 Stone, A. and Gosling, J. P. (2025). AddiVortes: (Bayesian) additive
 Voronoi tessellations. \emph{Journal of Computational and Graphical
 Statistics} 34(3), 859-871. \doi{10.1080/10618600.2024.2414104}
+
+Vehtari, A., Gelman, A., Simpson, D., Carpenter, B. and Buerkner, P.-C.
+(2021). Rank-normalization, folding, and localization: an improved R-hat
+for assessing convergence of MCMC. \emph{Bayesian Analysis} 16(2), 667-718.
+\doi{10.1214/20-BA1221}
 }

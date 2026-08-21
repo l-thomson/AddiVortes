@@ -10,11 +10,11 @@ thiessen_diagnostics(object)
 \item{object}{An object of class \code{"thiessen"}.}
 }
 \value{
-A data frame with one row per kept draw and the columns \code{draw},
-the draw's index; \code{sigma}, the residual standard deviation, under the
-Gaussian model only; \code{cell_count}, the mean cells per mean
-tessellation; and \code{dimension_count}, the mean active covariates per
-mean tessellation.
+A data frame with one row per kept draw and the columns \code{chain},
+the chain the draw comes from; \code{draw}, its index within that chain;
+\code{sigma}, the residual standard deviation, under the Gaussian model
+only; \code{cell_count}, the mean cells per mean tessellation; and
+\code{dimension_count}, the mean active covariates per mean tessellation.
 }
 \description{
 The trace of the quantities the sampler records once per kept draw. For a

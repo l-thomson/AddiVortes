@@ -100,16 +100,32 @@ as_design <- function(x, argument = "x", call = rlang::caller_env()) {
   x
 }
 
+#' Resolve the number of chains of a fit
+#'
+#' @param chains A whole number of chains.
+#' @param call The calling environment to report.
+#' @return An integer.
+#' @noRd
+resolve_chains <- function(chains, call = rlang::caller_env()) {
+  if (!is.numeric(chains) || length(chains) != 1L || is.na(chains) ||
+        chains < 1 || chains != trunc(chains)) {
+    thiessen_abort("`chains` must be a whole number of at least 1.",
+                   call = call)
+  }
+  as.integer(chains)
+}
+
 #' A function the core calls to signal progress, and the number of calls
 #'
 #' Progress is signalled with progressr, so a session reports it only after
 #' `progressr::handlers()`; nothing is printed by default.
 #'
 #' @param control An object of class `"thiessen_control"`.
+#' @param chains The number of chains the fit runs.
 #' @return A list of the function the core calls and the number of calls.
 #' @noRd
-progress_reporter <- function(control) {
-  sweeps <- control$burn_in + control$draws * control$thinning
+progress_reporter <- function(control, chains = 1L) {
+  sweeps <- chains * (control$burn_in + control$draws * control$thinning)
   updates <- min(sweeps, 100L)
   report <- progressr::progressor(steps = updates)
   list(report = function() report(), updates = as.integer(updates))

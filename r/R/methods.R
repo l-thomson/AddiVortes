@@ -151,6 +151,11 @@ print.thiessen <- function(x, ...) {
     x$control$m, x$n_draws, x$control$burn_in, x$control$thinning
   ))
   cat(sprintf("In-sample RMSE %.4g, seed %.0f\n", x$in_sample_rmse, x$seed))
+  cat(convergence_line(x), "\n", sep = "")
+  message <- convergence_message(x$convergence)
+  if (!is.null(message)) {
+    cat("Warning: ", message, "\n", sep = "")
+  }
   invisible(x)
 }
 
@@ -161,8 +166,9 @@ print.thiessen <- function(x, ...) {
 #'
 #' @return An object of class `"summary.thiessen"`: a list of the model, the
 #'   dimensions of the fit, the sweep schedule, the in-sample root mean
-#'   squared error, the quantiles of the residuals, and the quantiles of the
-#'   posterior draws of sigma where the model has one.
+#'   squared error, the quantiles of the residuals, the quantiles of the
+#'   posterior draws of sigma where the model has one, and the convergence
+#'   diagnostics where two or more chains ran.
 #'
 #' @examples
 #' n <- 60
@@ -182,7 +188,9 @@ summary.thiessen <- function(object, ...) {
       nobs = nobs(object),
       n_features = object$n_features,
       control = object$control,
+      n_chains = object$n_chains,
       n_draws = object$n_draws,
+      convergence = object$convergence,
       in_sample_rmse = object$in_sample_rmse,
       residuals = quantile(object$residuals, probs),
       sigma = if (length(draws) > 0L) quantile(draws, probs) else NULL,
@@ -214,6 +222,11 @@ print.summary.thiessen <- function(x, ...) {
     print(x$sigma)
   }
   cat(sprintf("\nIn-sample RMSE %.4g\n", x$in_sample_rmse))
+  cat(convergence_line(x), "\n", sep = "")
+  message <- convergence_message(x$convergence)
+  if (!is.null(message)) {
+    cat("Warning: ", message, "\n", sep = "")
+  }
   for (warning in x$warnings) {
     cat("Warning: ", warning, "\n", sep = "")
   }
