@@ -112,11 +112,12 @@ test_that("a missing value is rejected", {
   )
 })
 
-test_that("a data frame is refused with the reason", {
+test_that("a matrix fit refuses a data frame at predict", {
   fixture <- small_fixture()
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
 
   expect_error(
-    thiessen(as.data.frame(fixture$x), fixture$y, small_control(), seed = 1),
+    predict(fit, as.data.frame(fixture$x)),
     class = "thiessen_error"
   )
 })

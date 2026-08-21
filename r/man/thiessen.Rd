@@ -3,20 +3,26 @@
 \name{thiessen}
 \alias{thiessen}
 \alias{thiessen.default}
+\alias{thiessen.data.frame}
+\alias{thiessen.formula}
 \title{Fit an AddiVortes model}
 \usage{
 thiessen(x, ...)
 
 \method{thiessen}{default}(x, y, control = thiessen_control(), seed = NULL, ...)
+
+\method{thiessen}{data.frame}(x, y, control = thiessen_control(), seed = NULL, ...)
+
+\method{thiessen}{formula}(formula, data, control = thiessen_control(), seed = NULL, ...)
 }
 \arguments{
-\item{x}{A numeric matrix of covariates, one row per observation. A
-numeric vector is taken as one column.}
+\item{x}{A numeric matrix of covariates, one row per observation, or a
+data frame. A numeric vector is taken as one column.}
 
 \item{...}{Passed to the method.}
 
-\item{y}{The response: a numeric vector of length \code{nrow(x)}. Under the
-probit model the values must be 0 and 1.}
+\item{y}{The response: a numeric vector of length \code{nrow(x)}, or a
+two-level factor. Under the probit model the values must be 0 and 1.}
 
 \item{control}{An object of class \code{"thiessen_control"}, from
 \code{\link[=thiessen_control]{thiessen_control()}}.}
@@ -25,13 +31,17 @@ probit model the values must be 0 and 1.}
 R's stream, so \code{\link[=set.seed]{set.seed()}} governs; a whole number in \verb{[0, 2^53]}
 passes to the core unchanged, so the same value reproduces the same
 draws for a given package version and platform.}
+
+\item{formula}{A two-sided formula. The left side names the response and
+the right side the covariates, \code{.} for every remaining column.}
+
+\item{data}{A data frame holding the columns the formula names.}
 }
 \value{
 An object of class \code{"thiessen"}: a list with the fitted state,
 the resolved configuration, the number of kept draws, the seed used,
-the design, the response, the fitted values, the residuals and the
-call. Use \code{\link[=predict.thiessen]{predict.thiessen()}},
-\code{\link[=summary.thiessen]{summary.thiessen()}} and \code{\link[=sigma.thiessen]{sigma.thiessen()}} to read it.
+the design, the response, the fitted values, the residuals, the
+hardhat blueprint where one applies, and the call.
 }
 \description{
 AddiVortes is Bayesian regression on a sum of Voronoi tessellations
@@ -42,6 +52,19 @@ stands to a tree: a cell is a region of the covariate space rather than a
 box, so a boundary oblique to the axes costs one cell rather than many
 splits.
 }
+\details{
+A factor covariate becomes d - 1 treatment-contrast indicators, the first
+level as reference, as \code{model.matrix} and upstream AddiVortes encode it.
+Where \code{control} declares a \code{metric}, one entry per column, factors are
+passed as integer level codes instead and each factor column must declare
+\code{"categorical"}.
+
+A factor response must have two levels and becomes 0 and 1 with the first
+level as the zero, as \code{glm} treats one.
+
+\code{stats::update()} works on a fit: the call is stored, so
+\code{update(fit, seed = 2)} refits with that argument replaced.
+}
 \examples{
 n <- 60
 x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
@@ -49,6 +72,10 @@ y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
 fit <- thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
                 seed = 1)
 fit
+
+frame <- data.frame(y = y, a = x[, 1], b = factor(x[, 2] > 0))
+thiessen(y ~ a + b, frame, thiessen_control(m = 10, burn_in = 20,
+                                            draws = 40), seed = 1)
 }
 \references{
 Chipman, H. A., George, E. I. and McCulloch, R. E. (2010). BART: Bayesian

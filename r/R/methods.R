@@ -1,9 +1,10 @@
 #' Posterior predictions from a fitted model
 #'
 #' @param object An object of class `"thiessen"`.
-#' @param newdata A numeric matrix of covariates with the columns of the
-#'   design the model was fitted to. `NULL`, the default, predicts at the
-#'   training rows.
+#' @param newdata New covariates. A fit from a formula or a data frame takes
+#'   a data frame, whose columns are matched to the fitted design by name and
+#'   type; a fit from a matrix takes a numeric matrix with the fitted
+#'   columns. `NULL`, the default, predicts at the training rows.
 #' @param type The quantity: `"mean"`, the posterior mean of the response
 #'   (the probability under the probit model); `"draws"`, that quantity for
 #'   every kept draw; `"latent"`, the mean function f for every kept draw;
@@ -35,7 +36,13 @@ predict.thiessen <- function(object, newdata = NULL,
                              level = 0.95, ...) {
   type <- match.arg(type)
   interval <- match.arg(interval)
-  design <- if (is.null(newdata)) object$x else as_design(newdata, "newdata")
+  design <- if (is.null(newdata)) {
+    object$x
+  } else if (is.null(object$blueprint)) {
+    as_design(newdata, "newdata")
+  } else {
+    forge_design(object, newdata)
+  }
   if (interval != "none" && type != "mean") {
     thiessen_abort("An interval is available for `type = \"mean\"` only.")
   }
