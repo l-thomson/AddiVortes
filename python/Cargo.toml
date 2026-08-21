@@ -11,6 +11,11 @@ repository.workspace = true
 description = "Python bindings to the thiessen crate"
 publish = false
 
+[features]
+# Off in every wheel; `_native.EXPERIMENTAL` reports the build's setting and
+# the policy is docs/experimental.md in the repository.
+experimental = ["thiessen/experimental"]
+
 [lib]
 name = "_native"
 crate-type = ["cdylib", "rlib"]

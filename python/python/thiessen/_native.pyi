@@ -7,6 +7,7 @@ import numpy as np
 import numpy.typing as npt
 
 CORE_VERSION: str
+EXPERIMENTAL: bool
 
 class ThiessenError(ValueError): ...
 

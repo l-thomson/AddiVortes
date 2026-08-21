@@ -94,6 +94,16 @@ AddiVortes and `model.matrix`. A column whose `metric` entry is
 `'categorical'` passes as integer level codes and takes the Eskin mismatch
 weight rather than being expanded.
 
+## Models and the stable surface
+
+`model` takes `gaussian`, `probit` or `heteroscedastic`, the models of Stone
+and Gosling (2025) and of CRAN AddiVortes. Everything else the core crate adds
+sits behind its `experimental` Cargo feature, which this package does not
+enable, so a configuration or a saved model naming such an option is rejected
+with the core's message naming the feature. The table of experimental items and
+their status is `docs/experimental.md` in the repository. A graduated item is
+exposed here as any other option, with no separate opt-in.
+
 ## Documentation
 
 The reproducibility contract, the input-data contract and the testing
