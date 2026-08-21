@@ -99,6 +99,9 @@ mod sampler;
 mod scaler;
 mod tessellation;
 
+/// The crate version, as the bindings report it.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub use config::Config;
 pub use data::{Data, Warning};
 pub use error::{Error, Result};

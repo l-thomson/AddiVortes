@@ -1,0 +1,21 @@
+Package: thiessen
+Title: Bayesian Additive Voronoi Tessellations
+Version: 0.0.0.9000
+Authors@R: c(
+    person("Leo", "Thomson", , "leo@feasibly.co.uk", role = c("aut", "cre")),
+    person("The authors of the vendored Rust crates", role = "cph",
+           comment = "listed in inst/AUTHORS"))
+Description: Bindings to the 'thiessen' Rust crate, an implementation of
+    AddiVortes, Bayesian regression on a sum of Voronoi tessellations
+    (Stone and Gosling, 2025, <doi:10.1080/10618600.2024.2414104>). This
+    version builds and links the core crate from vendored sources; the
+    modelling interface follows.
+License: MIT + file LICENSE
+URL: https://github.com/l-thomson/thiessen
+BugReports: https://github.com/l-thomson/thiessen/issues
+Encoding: UTF-8
+Depends: R (>= 4.2)
+Suggests: testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Config/thiessen/core-version: 0.2.0
+SystemRequirements: Cargo (Rust's package manager), rustc >= 1.74

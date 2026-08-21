@@ -1,0 +1,24 @@
+#!/bin/sh
+# The toolchain checks of ./configure, then src/Makevars.win from
+# src/Makevars.win.in with the Rust target of this R build: the gnu
+# targets under the mingw toolchains, gnullvm under the clang ones.
+
+sh ./configure || exit 1
+
+rscript="${R_HOME}/bin${R_ARCH_BIN}/Rscript.exe"
+platform=$("$rscript" -e 'cat(R.version$platform)')
+compiled_by=$("$rscript" -e 'cat(Sys.getenv("R_COMPILED_BY"))')
+
+case "$platform" in
+  aarch64*) target=aarch64-pc-windows-gnullvm ;;
+  i386*) target=i686-pc-windows-gnu ;;
+  *)
+    case "$compiled_by" in
+      *clang*) target=x86_64-pc-windows-gnullvm ;;
+      *) target=x86_64-pc-windows-gnu ;;
+    esac
+    ;;
+esac
+
+echo "Rust target $target"
+sed "s|@TARGET@|$target|" src/Makevars.win.in > src/Makevars.win

@@ -1,0 +1,8 @@
+# Copied to $CARGO_HOME/config.toml by src/Makevars; the path is relative
+# to src/.
+
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "rust/vendor"

@@ -1,0 +1,6 @@
+^src/rust/core$
+^src/rust/vendor$
+^src/rust/target$
+^src/\.cargo$
+^.*\.Rcheck$
+^docs$

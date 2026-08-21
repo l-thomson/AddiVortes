@@ -1,0 +1,17 @@
+[package]
+name = "thiessen-r"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.74"
+publish = false
+
+[lib]
+name = "thiessen"
+crate-type = ["staticlib"]
+
+[dependencies]
+extendr-api = "0.9"
+thiessen = { path = "core" }
+
+# Detached from the repository workspace: the tarball carries no root.
+[workspace]
