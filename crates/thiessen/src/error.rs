@@ -105,6 +105,13 @@ pub enum Error {
         /// The Cargo feature.
         feature: &'static str,
     },
+    /// Chains given to [`Fitted::pool`](crate::Fitted::pool) were not
+    /// fitted the same way.
+    #[error("chains cannot be pooled: {reason}")]
+    MismatchedChains {
+        /// The invariant that failed.
+        reason: String,
+    },
     /// A value in a categorical column is not an integer level code.
     #[error("design value at row {row}, column {col} is not an integer level code")]
     InvalidCategoryCode {
@@ -214,6 +221,12 @@ mod tests {
                     model: crate::Model::Probit,
                 },
                 "`prediction_interval` is not defined under the probit model",
+            ),
+            (
+                Error::MismatchedChains {
+                    reason: "configurations differ".into(),
+                },
+                "chains cannot be pooled: configurations differ",
             ),
         ];
         for (error, message) in cases {
