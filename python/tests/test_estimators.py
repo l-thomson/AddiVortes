@@ -19,7 +19,7 @@ from thiessen.estimators import (
     AddiVortesRegressor,
 )
 
-SMALL = {"m": 8, "burn_in": 10, "draws": 20}
+from .conftest import SMALL
 
 
 def test_parameters_are_configuration_fields():

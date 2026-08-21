@@ -43,7 +43,22 @@ target-version = "py39"
 extend-exclude = [".venv"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "UP", "B", "W"]
+select = ["D", "E", "F", "I", "N", "UP", "B", "W"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 88
+
+[tool.ruff.lint.per-file-ignores]
+# Test names carry the statement; a docstring would repeat it.
+"tests/**" = ["D"]
+
+[tool.ruff.lint.extend-per-file-ignores]
+# D105: the dunder and protocol methods carry the semantics of their
+# protocol, so a docstring would only restate the signature.
+"python/thiessen/*.py" = ["D105"]
 
 [tool.ruff.lint.pep8-naming]
 # `X` for the design is the scikit-learn convention.
@@ -52,7 +67,7 @@ extend-ignore-names = ["X"]
 [tool.mypy]
 # No `python_version`: mypy no longer targets 3.9, and numpy's stubs need the
 # running interpreter. Ruff's `target-version` holds the 3.9 floor.
-files = ["python/thiessen"]
+files = ["python/thiessen", "tests"]
 strict = true
 
 [[tool.mypy.overrides]]
@@ -67,6 +82,15 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "thiessen.estimators"
 disallow_subclassing_any = false
+
+# Lenient on the tests: a test's name states its subject, and annotating the
+# fixtures and assertions adds nothing a reader needs.
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

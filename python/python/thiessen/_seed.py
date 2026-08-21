@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Union
+from typing import Any, Union
 
 import numpy as np
 
 __all__ = ["SeedLike", "_resolve_seed"]
 
-SeedLike = Union[int, "np.random.Generator", "np.random.RandomState", None]
+SeedLike = Union[
+    int, "np.integer[Any]", "np.random.Generator", "np.random.RandomState", None
+]
 
 _U64 = 1 << 64
 

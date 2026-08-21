@@ -7,7 +7,7 @@ import pytest
 from thiessen import Model
 from thiessen._seed import _resolve_seed
 
-SMALL = {"m": 8, "burn_in": 10, "draws": 20}
+from .conftest import SMALL
 
 
 def test_an_integer_passes_through_unchanged():
@@ -42,7 +42,7 @@ def test_an_out_of_range_integer_is_rejected():
 
 def test_an_unsupported_type_is_rejected():
     with pytest.raises(TypeError, match="random_state"):
-        _resolve_seed("7")
+        _resolve_seed("7")  # type: ignore[arg-type]
 
 
 def test_the_same_integer_gives_the_same_draws(gaussian_fixture):

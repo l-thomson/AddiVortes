@@ -7,6 +7,8 @@ draws and answers prediction and posterior queries.
 from __future__ import annotations
 
 import json
+import os
+import warnings
 from collections.abc import Mapping, Sequence
 from typing import Any, Union
 
@@ -193,6 +195,7 @@ class Model:
         response = _as_response(y)
         seed = _resolve_seed(random_state)
         fitted = _native.fit(_config_json(self.get_params()), design, response, seed)
+        _emit_warnings(fitted, stacklevel=3)
         return FittedModel(fitted, seed)
 
     def __repr__(self) -> str:
@@ -202,6 +205,12 @@ class Model:
             if value is not None
         )
         return f"Model({set_fields})"
+
+
+def _emit_warnings(fitted: _native.Fitted, stacklevel: int) -> None:
+    """Re-raise the core's fit-time warnings as `UserWarning`."""
+    for message in fitted.warnings:
+        warnings.warn(message, UserWarning, stacklevel=stacklevel)
 
 
 def _rebuild(payload: str, seed: int) -> FittedModel:
@@ -248,13 +257,16 @@ class FittedModel:
 
     @property
     def in_sample_rmse(self) -> float:
-        """float: Root mean squared error of the posterior mean on the
-        training rows."""
+        """float: The in-sample root mean squared error.
+
+        The root mean squared error of the posterior mean at the training
+        rows.
+        """
         return float(self._fitted.in_sample_rmse)
 
     @property
     def warnings(self) -> tuple[str, ...]:
-        """tuple of str: The fit-time warnings."""
+        """Tuple of str: the fit-time warnings."""
         return tuple(self._fitted.warnings)
 
     def predict(self, X: Any) -> npt.NDArray[np.float64]:
@@ -450,6 +462,51 @@ class FittedModel:
             Sums to one (Chipman, George and McCulloch, 2010, s. 5.1).
         """
         return self._fitted.variable_inclusion_proportions()
+
+    def save(self, path: str | os.PathLike[str]) -> None:
+        """Write the fitted model to `path`.
+
+        Parameters
+        ----------
+        path : str or os.PathLike
+            The destination. The format is the core's serde representation,
+            which reloads bit-exact.
+
+        Raises
+        ------
+        OSError
+            If the file cannot be written.
+        """
+        with open(os.fspath(path), "w", encoding="utf-8") as handle:
+            handle.write(self._fitted.to_json())
+
+    @classmethod
+    def load(cls, path: str | os.PathLike[str], random_state: int = 0) -> FittedModel:
+        """Read a fitted model from `path`.
+
+        Parameters
+        ----------
+        path : str or os.PathLike
+            A file written by `save`.
+        random_state : int, default=0
+            The seed to report on the loaded object, which the file does not
+            carry.
+
+        Returns
+        -------
+        FittedModel
+            The loaded model.
+
+        Raises
+        ------
+        OSError
+            If the file cannot be read.
+        ThiessenError
+            If the contents are not a fitted model of this crate version.
+        """
+        with open(os.fspath(path), encoding="utf-8") as handle:
+            payload = handle.read()
+        return cls(_native.fitted_from_json(payload), random_state)
 
     def __reduce__(self) -> tuple[Any, tuple[str, int]]:
         return _rebuild, (self._fitted.to_json(), self.random_state)

@@ -35,6 +35,16 @@ the core crate version the package builds against, which
   array or a boolean mask. A named column becomes d - 1 treatment-contrast
   indicators, the first level as reference, unless its `metric` entry is
   `'categorical'`, in which case it passes as integer level codes.
+- `FittedModel.save` and `FittedModel.load`, taking `str` or `os.PathLike`
+  and writing the core's serde representation, which reloads bit-exact.
+  Failures to read or write are `OSError`; contents that are not a fitted
+  model are `ThiessenError`.
+- The core's fit-time warnings are raised as `UserWarning` at fit, by `Model`
+  and by the estimators, as well as staying on `FittedModel.warnings`.
+- Overloads on `AddiVortesRegressor.predict`, so `return_std=True` types as a
+  pair of arrays rather than a union.
+- `numpy.integer` accepted for `random_state`, which already worked at
+  runtime.
 - `_native.EXPERIMENTAL`, whether the extension was built with the core's
   `experimental` feature. It is off in every wheel of this release, so `model`
   takes the published models only. The package keeps no list of model names:

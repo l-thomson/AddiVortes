@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from thiessen import CORE_VERSION, FittedModel, Model, ThiessenError
 
-SMALL = {"m": 8, "burn_in": 10, "draws": 20}
+from .conftest import SMALL
 
 
 def test_gaussian_fit_predicts_at_every_row(gaussian_fixture):
