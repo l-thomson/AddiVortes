@@ -59,5 +59,14 @@ strict = true
 module = "thiessen._native"
 ignore_missing_imports = true
 
+# scikit-learn ships no py.typed, so its base classes are `Any`.
+[[tool.mypy.overrides]]
+module = "sklearn.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "thiessen.estimators"
+disallow_subclassing_any = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

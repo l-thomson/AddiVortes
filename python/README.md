@@ -40,6 +40,60 @@ lower, upper = fitted.credible_interval(x, level=0.9).T
 target reproduce the same draws; the resolved seed is on
 `fitted.random_state`.
 
+## scikit-learn
+
+With the `sklearn` extra, `thiessen.estimators` holds two estimators meeting
+the scikit-learn contract, so they compose with `Pipeline`, `GridSearchCV`,
+`cross_val_score` and `sklearn.inspection`.
+
+```python
+from sklearn.inspection import PartialDependenceDisplay
+from thiessen.estimators import AddiVortesRegressor
+
+model = AddiVortesRegressor(m=50, burn_in=100, draws=200, random_state=1)
+model.fit(x, y)
+PartialDependenceDisplay.from_estimator(model, x, features=[0, 1])
+```
+
+`AddiVortesClassifier` fits the binary probit model and carries
+`predict_proba`. An integer `random_state` gives the same draws through either
+API, so `AddiVortesRegressor(random_state=1)` and `Model(random_state=1)`
+agree.
+
+### Priors
+
+| Parameter | Default | Stone and Gosling (2025) |
+| --- | --- | --- |
+| `m` | 200 | 200 |
+| `nu` | 6 | 6 |
+| `q` | 0.85 | 0.85 |
+| `k` | 3 | 3 |
+| `sigma_c` | 0.8 | 0.8 |
+| `omega` | min(3, p) | min(3, p) |
+| `lambda_c` | 5 | 25 |
+
+The `lambda_c` default follows AddiVortes >= 0.6.8; pass `lambda_c=25` for the
+paper's value.
+
+### Categorical covariates
+
+`categorical_features` follows the `HistGradientBoostingRegressor` shape.
+Without it the input is taken as numeric, and the usual route is an explicit
+encoder:
+
+```python
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder
+
+ColumnTransformer([("g", OneHotEncoder(drop="first"), ["group"])])
+```
+
+Naming the columns instead has the estimator apply the same d - 1
+treatment-contrast encoding, the first level as reference, as upstream
+AddiVortes and `model.matrix`. A column whose `metric` entry is
+`'categorical'` passes as integer level codes and takes the Eskin mismatch
+weight rather than being expanded.
+
 ## Documentation
 
 The reproducibility contract, the input-data contract and the testing
