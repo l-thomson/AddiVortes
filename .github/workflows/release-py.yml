@@ -1,0 +1,174 @@
+name: release-py
+
+# Build only. Nothing is uploaded anywhere: the trusted publisher and the
+# first upload are the release train, and creating a pending publisher would
+# reserve the name before it is agreed.
+on:
+  pull_request:
+    paths:
+      - "python/**"
+      - "crates/**"
+      - "Cargo.lock"
+      - ".github/workflows/release-py.yml"
+  push:
+    branches: [dev]
+    paths:
+      - "python/**"
+      - "crates/**"
+      - "Cargo.lock"
+      - ".github/workflows/release-py.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wheels:
+    name: wheels (${{ matrix.platform }} ${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            runner: ubuntu-latest
+            target: x86_64
+          - platform: linux
+            runner: ubuntu-latest
+            target: aarch64
+          - platform: macos
+            runner: macos-latest
+            target: x86_64
+          - platform: macos
+            runner: macos-latest
+            target: aarch64
+          - platform: windows
+            runner: windows-latest
+            target: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          command: build
+          args: --release --out dist
+          working-directory: python
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.platform == 'linux' && 'auto' || '' }}
+          sccache: "true"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wheel-${{ matrix.platform }}-${{ matrix.target }}
+          path: python/dist
+
+  # abi3 gives one wheel per platform, so one interpreter per platform covers
+  # every wheel the matrix builds. The Linux aarch64 wheel is cross-compiled
+  # and is not smoke-tested: no aarch64 Linux runner is available, and running
+  # it under emulation would test the emulator as much as the wheel.
+  smoke:
+    name: smoke (${{ matrix.platform }})
+    needs: wheels
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            runner: ubuntu-latest
+            target: x86_64
+          - platform: macos
+            runner: macos-latest
+            target: aarch64
+          - platform: windows
+            runner: windows-latest
+            target: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: wheel-${{ matrix.platform }}-${{ matrix.target }}
+          path: dist
+      # The wheel by path, not by name: `--no-index` cannot resolve numpy and
+      # resolving by name could reach a same-named package on the index.
+      - name: install the wheel
+        run: pip install dist/*.whl
+        shell: bash
+      - name: fit
+        shell: bash
+        run: |
+          python -c "
+          import numpy as np
+          from thiessen import CORE_VERSION, Model
+          n = 40
+          x = np.linspace(0.0, 1.0, n).reshape(-1, 1)
+          y = 3.0 * x[:, 0] ** 2 - x[:, 0]
+          fitted = Model(m=10, burn_in=20, draws=30).fit(x, y, random_state=1)
+          assert fitted.predict(x).shape == (n,)
+          assert fitted.random_state == 1
+          print('core', CORE_VERSION)
+          "
+
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          command: sdist
+          args: --out dist
+          working-directory: python
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdist
+          path: python/dist
+
+  # The workspace path dependency on the core crate is what an sdist most
+  # easily gets wrong, so the tarball is installed away from the checkout.
+  sdist-install:
+    name: sdist-install
+    needs: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sdist
+          path: dist
+      - name: install from the tarball
+        run: |
+          mkdir -p ~/elsewhere
+          cd ~/elsewhere
+          pip install "$GITHUB_WORKSPACE"/dist/*.tar.gz
+      - name: fit
+        run: |
+          cd ~/elsewhere
+          python -c "
+          import numpy as np
+          from thiessen import Model
+          x = np.linspace(0.0, 1.0, 40).reshape(-1, 1)
+          y = 3.0 * x[:, 0] ** 2 - x[:, 0]
+          assert Model(m=10, burn_in=20, draws=30).fit(x, y, random_state=1).n_draws == 30
+          "
+
+  alls-green:
+    name: alls-green
+    if: always()
+    needs: [wheels, smoke, sdist, sdist-install]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
