@@ -228,6 +228,28 @@ jobs:
       - run: mypy
         working-directory: python
 
+  py-coverage:
+    name: py-coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[sklearn,arviz]" pytest pytest-cov pandas
+        working-directory: python
+      - run: pytest --cov=thiessen --cov-report=xml
+        working-directory: python
+      - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7
+        with:
+          files: python/coverage.xml
+          flags: python
+          fail_ci_if_error: false
+
   py-docs:
     name: py-docs
     runs-on: ubuntu-latest
@@ -275,7 +297,7 @@ jobs:
     name: alls-green
     if: always()
     needs: [fmt, clippy, test, deny, doc, semver, coverage, cff, py-lint, py-test,
-            py-docs, r-source, r-check]
+            py-coverage, py-docs, r-source, r-check]
     runs-on: ubuntu-latest
     steps:
       - uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # release/v1
@@ -283,4 +305,4 @@ jobs:
           jobs: ${{ toJSON(needs) }}
           # semver runs on pull requests only; coverage is informational
           allowed-skips: semver
-          allowed-failures: coverage
+          allowed-failures: coverage, py-coverage

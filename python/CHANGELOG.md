@@ -35,6 +35,10 @@ the core crate version the package builds against, which
   array or a boolean mask. A named column becomes d - 1 treatment-contrast
   indicators, the first level as reference, unless its `metric` entry is
   `'categorical'`, in which case it passes as integer level codes.
+- Coverage reporting for the Python suite, uploaded under the `python` flag.
+- Packaging metadata completed against the pyOpenSci guide: the issue
+  tracker, the platform and language classifiers, and a statement of need,
+  contributing and citation sections in the README.
 - A documentation site built with mkdocs-material and mkdocstrings: quick
   start, the model menu with parameter tables, priors and scaling with the
   BART correspondence table, the input-data contract, the scikit-learn and
