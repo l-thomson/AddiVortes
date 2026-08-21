@@ -22,11 +22,13 @@ Depends: R (>= 4.2)
 Imports:
     hardhat,
     jsonlite,
+    progressr,
     rlang,
     rstantools,
     stats
 Suggests:
     bayesplot,
+    callr,
     loo,
     posterior,
     testthat (>= 3.0.0),

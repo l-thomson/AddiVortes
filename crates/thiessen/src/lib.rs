@@ -114,7 +114,7 @@ pub use error::{Error, Result};
 pub use fitted::{Fitted, Interval, Posterior};
 pub use geometry::Metric;
 pub use model::Model;
-pub use models::fit;
+pub use models::{fit, fit_with_progress};
 pub use rng::chain_seed;
 pub use sampler::Sampler;
 pub use scaler::Scaler;

@@ -27,6 +27,8 @@ export(posterior_predict)
 export(predictive_interval)
 export(thiessen)
 export(thiessen_control)
+export(thiessen_diagnostics)
+export(variable_inclusion)
 importFrom(rstantools,
   log_lik,
   posterior_epred,

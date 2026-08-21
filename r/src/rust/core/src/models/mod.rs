@@ -28,22 +28,54 @@ pub mod probit;
 ///
 /// [`Sampler::new`].
 pub fn fit(config: &Config, x: &Data, y: &[f64], seed: u64) -> Result<Fitted> {
+    fit_with_progress(config, x, y, seed, |_, _| {})
+}
+
+/// Fit as [`fit`], calling `progress(completed, total)` after every sweep.
+///
+/// # Arguments
+///
+/// As [`fit`]. `total` is `burn_in + draws * thinning`, `completed` counts
+/// sweeps from one, and the draws do not depend on `progress`.
+///
+/// # Errors
+///
+/// [`Sampler::new`].
+pub fn fit_with_progress(
+    config: &Config,
+    x: &Data,
+    y: &[f64],
+    seed: u64,
+    mut progress: impl FnMut(usize, usize),
+) -> Result<Fitted> {
     match config.model {
-        Model::Gaussian => gaussian::fit(config, x, y, seed),
-        Model::Probit => probit::fit(config, x, y, seed),
-        Model::Heteroscedastic => heteroscedastic::fit(config, x, y, seed),
+        Model::Gaussian => gaussian::fit(config, x, y, seed, &mut progress),
+        Model::Probit => probit::fit(config, x, y, seed, &mut progress),
+        Model::Heteroscedastic => heteroscedastic::fit(config, x, y, seed, &mut progress),
     }
 }
 
 /// The sweep schedule shared by every model.
-pub(crate) fn run(config: &Config, x: &Data, y: &[f64], seed: u64) -> Result<Fitted> {
+pub(crate) fn run(
+    config: &Config,
+    x: &Data,
+    y: &[f64],
+    seed: u64,
+    progress: &mut dyn FnMut(usize, usize),
+) -> Result<Fitted> {
+    let total = config.burn_in + config.draws * config.thinning;
     let mut sampler = Sampler::new(config, x, y, seed)?;
+    let mut completed = 0;
     for _ in 0..config.burn_in {
         sampler.step();
+        completed += 1;
+        progress(completed, total);
     }
     for _ in 0..config.draws {
         for _ in 0..config.thinning {
             sampler.step();
+            completed += 1;
+            progress(completed, total);
         }
         sampler.keep();
     }

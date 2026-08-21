@@ -65,8 +65,14 @@ use crate::error::Result;
 use crate::fitted::Fitted;
 
 /// Fit the probit model with the shared sweep schedule.
-pub(crate) fn fit(config: &Config, x: &Data, y: &[f64], seed: u64) -> Result<Fitted> {
-    super::run(config, x, y, seed)
+pub(crate) fn fit(
+    config: &Config,
+    x: &Data,
+    y: &[f64],
+    seed: u64,
+    progress: &mut dyn FnMut(usize, usize),
+) -> Result<Fitted> {
+    super::run(config, x, y, seed, progress)
 }
 
 #[cfg(test)]

@@ -22,6 +22,14 @@
   `library(rstantools)` is needed. `loo::loo()` runs on `log_lik()`. The
   draws carry `mu[i]`, `sigma` under the Gaussian model only, and the
   per-draw `cell_count` and `dimension_count`.
+* `thiessen_diagnostics()` returns the per-draw sigma, mean cells and mean
+  active covariates, and `variable_inclusion()` the share of the active
+  dimensions falling on each covariate.
+* Progress over the sweep schedule is signalled with progressr, so a
+  session reports it after `progressr::handlers()` and nothing is printed
+  by default. The draws do not depend on whether a handler is set.
+* A fit is a plain R object holding the sampler state, so `saveRDS()`
+  writes one and a later session reads it without a refit.
 * The call is stored on a fit, so `stats::update()` refits with an argument
   replaced.
 * `seed = NULL` draws the chain's seed from R's stream, so `set.seed()`

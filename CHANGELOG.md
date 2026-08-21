@@ -10,6 +10,9 @@ says "Sampled values changed" with the reason.
 
 ### Added
 
+- `fit_with_progress`, `fit` with a callback taking the number of
+  completed sweeps and `burn_in + draws * thinning`. The draws for a
+  fixed seed are those of `fit`.
 - `VERSION`, the crate version as the bindings report it.
 - `Metric` and `Config::metric`: the metric of each covariate column,
   Euclidean (default) or spherical, the great-circle distance of CRAN

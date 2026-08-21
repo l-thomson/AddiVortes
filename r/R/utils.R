@@ -99,3 +99,18 @@ as_design <- function(x, argument = "x", call = rlang::caller_env()) {
   storage.mode(x) <- "double"
   x
 }
+
+#' A function the core calls to signal progress, and the number of calls
+#'
+#' Progress is signalled with progressr, so a session reports it only after
+#' `progressr::handlers()`; nothing is printed by default.
+#'
+#' @param control An object of class `"thiessen_control"`.
+#' @return A list of the function the core calls and the number of calls.
+#' @noRd
+progress_reporter <- function(control) {
+  sweeps <- control$burn_in + control$draws * control$thinning
+  updates <- min(sweeps, 100L)
+  report <- progressr::progressor(steps = updates)
+  list(report = function() report(), updates = as.integer(updates))
+}
