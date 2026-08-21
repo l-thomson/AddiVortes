@@ -119,6 +119,10 @@ jobs:
       # The default heuristic enables a feature named `experimental`.
       - uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2
         with:
+          # The published crate, named rather than searched for: the R
+          # package vendors a copy of it under r/src/rust/core, so a scan of
+          # the tree finds the name twice.
+          manifest-path: crates/thiessen/Cargo.toml
           baseline-rev: ${{ github.event.pull_request.base.sha }}
           feature-group: default-features
 
