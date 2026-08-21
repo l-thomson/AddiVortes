@@ -5,6 +5,8 @@ target/
 /python/.venv*
 /python/dist
 /python/site
+/python/.coverage
+/python/coverage.xml
 /python/python/thiessen/*.so
 __pycache__/
 *.egg-info/

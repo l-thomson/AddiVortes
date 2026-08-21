@@ -15,7 +15,10 @@ keywords = ["bayesian", "mcmc", "regression", "voronoi", "nonparametric"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
+  "Natural Language :: English",
+  "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering :: Mathematics",
   "Typing :: Typed",
@@ -29,7 +32,8 @@ arviz = ["arviz>=1.0"]
 [project.urls]
 Homepage = "https://github.com/l-thomson/thiessen"
 Repository = "https://github.com/l-thomson/thiessen"
-Changelog = "https://github.com/l-thomson/thiessen/blob/dev/CHANGELOG.md"
+Issues = "https://github.com/l-thomson/thiessen/issues"
+Changelog = "https://github.com/l-thomson/thiessen/blob/dev/python/CHANGELOG.md"
 
 [tool.maturin]
 module-name = "thiessen._native"

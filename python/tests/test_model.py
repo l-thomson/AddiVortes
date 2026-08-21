@@ -128,7 +128,8 @@ def test_warnings_report_more_features_than_observations():
     x = rng.uniform(size=(4, 6))
     y = rng.uniform(size=4)
 
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    with pytest.warns(UserWarning, match="more features"):
+        fitted = Model(**SMALL).fit(x, y, random_state=1)
 
     assert any("more features" in warning for warning in fitted.warnings)
 

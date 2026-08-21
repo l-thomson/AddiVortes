@@ -5,11 +5,21 @@ AddiVortes: Bayesian regression on a sum of Voronoi tessellations (Stone and
 Gosling, 2025, *Journal of Computational and Graphical Statistics* 34(3),
 859-871, [doi:10.1080/10618600.2024.2414104](https://doi.org/10.1080/10618600.2024.2414104)).
 
-AddiVortes replaces the decision trees of BART (Chipman, George and
-McCulloch, 2010) with Voronoi tessellations, so a cell is a region of the
-covariate space rather than a box. The sampler is the Gibbs sampler of the
-paper; the models are Gaussian regression, binary probit and the
-heteroscedastic variant.
+## Statement of need
+
+BART (Chipman, George and McCulloch, 2010) partitions the covariate space
+with axis-aligned boxes, so a boundary oblique to the axes costs many splits
+to approximate. AddiVortes replaces the trees with Voronoi tessellations, so
+a cell is a region of the covariate space and an oblique or curved boundary
+is reached directly. It keeps the parts of BART that make it usable as a
+default: the priors that regularise each component to a weak learner, the
+Gibbs sampler, and the posterior summaries.
+
+No implementation of the method existed outside the authors' R code. This
+package provides one with a Rust core, a reproducibility contract that fixes
+the draws for a seed, and the interfaces a Python user expects: a
+scikit-learn estimator pair and an arviz conversion. The models are Gaussian
+regression, binary probit and the heteroscedastic variant.
 
 ## Installation
 
@@ -131,6 +141,17 @@ cd python && mkdocs serve
 
 Every example on the site is executed at build, so the printed output is that
 of the version being documented.
+
+## Contributing
+
+`CONTRIBUTING.md` at the root of the repository covers the development setup
+and the gates a change must pass. `CODE_OF_CONDUCT.md` applies to every
+space of the project.
+
+## Citation
+
+Cite the method as Stone and Gosling (2025). `CITATION.cff` at the root of
+the repository carries the software metadata.
 
 ## Licence
 
