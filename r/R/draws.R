@@ -1,5 +1,5 @@
-# Methods on the posterior package's generics. Registration is delayed, so
-# posterior is needed only by a session that calls them.
+# Methods on the posterior package's generics, registered on load without
+# attaching posterior.
 
 #' The posterior draws of a fit as a matrix of named variables
 #'
@@ -27,15 +27,33 @@ draws_matrix_of <- function(object) {
   do.call(cbind, blocks)
 }
 
+#' Pooled draws as an iteration by chain by variable array
+#'
+#' The pooled draws are in chain order, so chain k holds the rows from
+#' `(k - 1) * iterations + 1`.
+#'
+#' @param draws A double matrix, one row per pooled draw.
+#' @param chains The number of chains the rows hold.
+#' @return A double array of `iterations`, `chains` and variables.
+#' @noRd
+chain_array <- function(draws, chains) {
+  iterations <- nrow(draws) / chains
+  array(
+    as.vector(draws),
+    dim = c(iterations, chains, ncol(draws)),
+    dimnames = list(NULL, NULL, colnames(draws))
+  )
+}
+
 #' Posterior draws of a fitted model
 #'
 #' The variables are `mu[i]`, the mean function at training row i; `sigma`,
 #' under the Gaussian model only; and `cell_count` and `dimension_count`, the
 #' mean cells and mean active covariates per mean tessellation.
 #'
-#' The sampler runs one chain, so the chain dimension has length one and
-#' `posterior::summarise_draws()` reports R-hat as `NA`. Effective sample
-#' sizes are reported as usual.
+#' The chain dimension holds the chains of the fit. A fit of one chain has
+#' one chain, and `posterior::summarise_draws()` then reports R-hat as `NA`;
+#' effective sample sizes are reported as usual.
 #'
 #' @param x An object of class `"thiessen"`.
 #' @param ... Passed to the posterior method.
@@ -43,42 +61,38 @@ draws_matrix_of <- function(object) {
 #' @return A `draws_df`, from [posterior::as_draws_df()].
 #'
 #' @examples
-#' if (requireNamespace("posterior", quietly = TRUE)) {
-#'   n <- 60
-#'   x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
-#'   y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
-#'   fit <- thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
-#'                   seed = 1)
-#'   posterior::summarise_draws(posterior::as_draws_df(fit), "mean", "sd")
-#' }
+#' n <- 60
+#' x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
+#' y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
+#' fit <- thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
+#'                 seed = 1, chains = 2)
+#' posterior::summarise_draws(posterior::as_draws_df(fit), "mean", "sd")
 #' @exportS3Method posterior::as_draws_df
 as_draws_df.thiessen <- function(x, ...) {
-  posterior::as_draws_df(posterior::as_draws_matrix(draws_matrix_of(x)), ...)
+  posterior::as_draws_df(as_draws_array.thiessen(x), ...)
 }
 
 #' @rdname as_draws_df.thiessen
 #' @return For `as_draws_array()`, a `draws_array`.
 #' @exportS3Method posterior::as_draws_array
 as_draws_array.thiessen <- function(x, ...) {
-  posterior::as_draws_array(posterior::as_draws_matrix(draws_matrix_of(x)), ...)
+  posterior::as_draws_array(chain_array(draws_matrix_of(x), x$n_chains), ...)
 }
 
 #' Number of draws and chains of a fitted model
 #'
 #' @param x An object of class `"thiessen"`.
 #'
-#' @return The number of kept draws, and the number of chains, which is one:
-#'   `fit()` runs a single chain.
+#' @return The number of kept draws over every chain, and the number of
+#'   chains the fit ran.
 #'
 #' @examples
-#' if (requireNamespace("posterior", quietly = TRUE)) {
-#'   n <- 60
-#'   x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
-#'   y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
-#'   fit <- thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
-#'                   seed = 1)
-#'   posterior::ndraws(fit)
-#' }
+#' n <- 60
+#' x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
+#' y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
+#' fit <- thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
+#'                 seed = 1)
+#' posterior::ndraws(fit)
 #' @exportS3Method posterior::ndraws
 ndraws.thiessen <- function(x) {
   x$n_draws
@@ -87,5 +101,5 @@ ndraws.thiessen <- function(x) {
 #' @rdname ndraws.thiessen
 #' @exportS3Method posterior::nchains
 nchains.thiessen <- function(x) {
-  1L
+  x$n_chains
 }

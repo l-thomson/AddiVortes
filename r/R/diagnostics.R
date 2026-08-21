@@ -8,11 +8,11 @@
 #'
 #' @param object An object of class `"thiessen"`.
 #'
-#' @return A data frame with one row per kept draw and the columns `draw`,
-#'   the draw's index; `sigma`, the residual standard deviation, under the
-#'   Gaussian model only; `cell_count`, the mean cells per mean
-#'   tessellation; and `dimension_count`, the mean active covariates per
-#'   mean tessellation.
+#' @return A data frame with one row per kept draw and the columns `chain`,
+#'   the chain the draw comes from; `draw`, its index within that chain;
+#'   `sigma`, the residual standard deviation, under the Gaussian model
+#'   only; `cell_count`, the mean cells per mean tessellation; and
+#'   `dimension_count`, the mean active covariates per mean tessellation.
 #'
 #' @examples
 #' n <- 60
@@ -26,7 +26,11 @@ thiessen_diagnostics <- function(object) {
   check_fit(object)
   counts <- core_call(core_diagnostics(object$state))
   sigma <- core_call(core_sigma(object$state))
-  out <- data.frame(draw = seq_len(object$n_draws))
+  iterations <- object$n_draws / object$n_chains
+  out <- data.frame(
+    chain = rep(seq_len(object$n_chains), each = iterations),
+    draw = rep(seq_len(iterations), times = object$n_chains)
+  )
   if (length(sigma) > 0L) {
     out$sigma <- sigma
   }

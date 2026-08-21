@@ -25,17 +25,15 @@ under the Gaussian model only; and \code{cell_count} and \code{dimension_count},
 mean cells and mean active covariates per mean tessellation.
 }
 \details{
-The sampler runs one chain, so the chain dimension has length one and
-\code{posterior::summarise_draws()} reports R-hat as \code{NA}. Effective sample
-sizes are reported as usual.
+The chain dimension holds the chains of the fit. A fit of one chain has
+one chain, and \code{posterior::summarise_draws()} then reports R-hat as \code{NA};
+effective sample sizes are reported as usual.
 }
 \examples{
-if (requireNamespace("posterior", quietly = TRUE)) {
-  n <- 60
-  x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
-  y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
-  fit <- thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
-                  seed = 1)
-  posterior::summarise_draws(posterior::as_draws_df(fit), "mean", "sd")
-}
+n <- 60
+x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
+y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
+fit <- thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
+                seed = 1, chains = 2)
+posterior::summarise_draws(posterior::as_draws_df(fit), "mean", "sd")
 }

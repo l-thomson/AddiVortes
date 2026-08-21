@@ -22,6 +22,7 @@ Depends: R (>= 4.2)
 Imports:
     hardhat,
     jsonlite,
+    posterior,
     progressr,
     rlang,
     rstantools,
@@ -30,7 +31,6 @@ Suggests:
     bayesplot,
     callr,
     loo,
-    posterior,
     testthat (>= 3.0.0),
     tidybayes
 Roxygen: list(markdown = TRUE, load = "source")

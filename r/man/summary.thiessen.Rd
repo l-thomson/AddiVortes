@@ -19,8 +19,9 @@
 \value{
 An object of class \code{"summary.thiessen"}: a list of the model, the
 dimensions of the fit, the sweep schedule, the in-sample root mean
-squared error, the quantiles of the residuals, and the quantiles of the
-posterior draws of sigma where the model has one.
+squared error, the quantiles of the residuals, the quantiles of the
+posterior draws of sigma where the model has one, and the convergence
+diagnostics where two or more chains ran.
 
 \code{x}, invisibly.
 }

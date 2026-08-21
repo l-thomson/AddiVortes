@@ -20,6 +20,15 @@
 #' `stats::update()` works on a fit: the call is stored, so
 #' `update(fit, seed = 2)` refits with that argument replaced.
 #'
+#' With `chains` of two or more, the chains are run in turn with the seeds
+#' the core derives from `seed`, their draws are pooled, and the fit carries
+#' rank-normalised split R-hat and the bulk and tail effective sample sizes
+#' of sigma and of the mean function at up to twenty training rows
+#' (`posterior::summarise_draws()`). A fit warns, and `print()` and
+#' `summary()` repeat the warning, where R-hat exceeds 1.01 or an effective
+#' sample size falls below 400 (Vehtari and others, 2021). A fit of one
+#' chain says so instead.
+#'
 #' Progress over the sweep schedule is signalled with progressr, so a
 #' session reports it after `progressr::handlers()` and nothing is printed
 #' by default. The draws do not depend on whether a handler is set.
@@ -39,6 +48,10 @@
 #'   two-level factor. Under the probit model the values must be 0 and 1.
 #' @param control An object of class `"thiessen_control"`, from
 #'   [thiessen_control()].
+#' @param chains The number of chains to run, a whole number. Each chain
+#'   has its own seed, derived from `seed` in the core, and the draws of the
+#'   chains are pooled. Two or more chains give the convergence
+#'   diagnostics; one chain does not.
 #' @param seed The seed of the chain. `NULL`, the default, draws one from
 #'   R's stream, so [set.seed()] governs; a whole number in `[0, 2^53]`
 #'   passes to the core unchanged, so the same value reproduces the same
@@ -46,7 +59,8 @@
 #' @param ... Passed to the method.
 #'
 #' @return An object of class `"thiessen"`: a list with the fitted state,
-#'   the resolved configuration, the number of kept draws, the seed used,
+#'   the resolved configuration, the number of chains and of kept draws, the
+#'   convergence diagnostics where two or more chains ran, the seed used,
 #'   the design, the response, the fitted values, the residuals, the
 #'   hardhat blueprint where one applies, and the call.
 #'
@@ -58,6 +72,11 @@
 #' Stone, A. and Gosling, J. P. (2025). AddiVortes: (Bayesian) additive
 #' Voronoi tessellations. *Journal of Computational and Graphical
 #' Statistics* 34(3), 859-871. \doi{10.1080/10618600.2024.2414104}
+#'
+#' Vehtari, A., Gelman, A., Simpson, D., Carpenter, B. and Buerkner, P.-C.
+#' (2021). Rank-normalization, folding, and localization: an improved R-hat
+#' for assessing convergence of MCMC. *Bayesian Analysis* 16(2), 667-718.
+#' \doi{10.1214/20-BA1221}
 #'
 #' @examples
 #' n <- 60
@@ -78,18 +97,18 @@ thiessen <- function(x, ...) {
 #' @rdname thiessen
 #' @export
 thiessen.default <- function(x, y, control = thiessen_control(), seed = NULL,
-                             ...) {
+                             chains = 1, ...) {
   rlang::check_dots_empty()
   design <- as_design(x)
   response <- as_response(y)
-  new_fit(design, response$y, control, seed, generic_call(match.call()),
-          response_levels = response$levels)
+  new_fit(design, response$y, control, seed, chains,
+          generic_call(match.call()), response_levels = response$levels)
 }
 
 #' @rdname thiessen
 #' @export
 thiessen.data.frame <- function(x, y, control = thiessen_control(),
-                                seed = NULL, ...) {
+                                seed = NULL, chains = 1, ...) {
   rlang::check_dots_empty()
   molded <- core_call(
     hardhat::mold(~ ., data = x, blueprint = blueprint_for(control))
@@ -98,14 +117,15 @@ thiessen.data.frame <- function(x, y, control = thiessen_control(),
     molded$predictors, molded$blueprint$indicators, control$metric
   )
   response <- as_response(y)
-  new_fit(design, response$y, control, seed, generic_call(match.call()),
-          blueprint = molded$blueprint, response_levels = response$levels)
+  new_fit(design, response$y, control, seed, chains,
+          generic_call(match.call()), blueprint = molded$blueprint,
+          response_levels = response$levels)
 }
 
 #' @rdname thiessen
 #' @export
 thiessen.formula <- function(formula, data, control = thiessen_control(),
-                             seed = NULL, ...) {
+                             seed = NULL, chains = 1, ...) {
   rlang::check_dots_empty()
   molded <- core_call(
     hardhat::mold(formula, data, blueprint = blueprint_for(control))
@@ -114,8 +134,9 @@ thiessen.formula <- function(formula, data, control = thiessen_control(),
     molded$predictors, molded$blueprint$indicators, control$metric
   )
   response <- encode_response(molded$outcomes)
-  new_fit(design, response$y, control, seed, generic_call(match.call()),
-          blueprint = molded$blueprint, response_levels = response$levels)
+  new_fit(design, response$y, control, seed, chains,
+          generic_call(match.call()), blueprint = molded$blueprint,
+          response_levels = response$levels)
 }
 
 #' Coerce a response to the numeric vector the core takes
@@ -154,13 +175,14 @@ generic_call <- function(call) {
 #' @param y The numeric response.
 #' @param control An object of class `"thiessen_control"`.
 #' @param seed The seed as the caller gave it.
+#' @param chains The number of chains to run.
 #' @param call The call to store.
 #' @param blueprint The hardhat blueprint, or `NULL` for a matrix fit.
 #' @param response_levels The response's factor levels, or `NULL`.
 #' @param call_env The calling environment to report.
 #' @return An object of class `"thiessen"`.
 #' @noRd
-new_fit <- function(design, y, control, seed, call, blueprint = NULL,
+new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
                     response_levels = NULL, call_env = rlang::caller_env()) {
   if (length(y) != nrow(design)) {
     thiessen_abort(
@@ -171,17 +193,18 @@ new_fit <- function(design, y, control, seed, call, blueprint = NULL,
       call = call_env
     )
   }
+  chains <- resolve_chains(chains, call = call_env)
   resolved <- resolve_seed(seed, call = call_env)
-  progress <- progress_reporter(control)
+  progress <- progress_reporter(control, chains)
   fit <- core_call(
-    core_fit(config_json(control), design, y, resolved, progress$report,
-             progress$updates),
+    core_fit(config_json(control), design, y, resolved, chains,
+             progress$report, progress$updates),
     call = call_env
   )
   for (warning in fit$warnings) {
     rlang::warn(warning, class = "thiessen_warning")
   }
-  structure(
+  fit_object <- structure(
     list(
       state = fit$state,
       control = structure(
@@ -189,6 +212,7 @@ new_fit <- function(design, y, control, seed, call, blueprint = NULL,
         class = "thiessen_control"
       ),
       model = fit$model,
+      n_chains = fit$n_chains,
       n_draws = fit$n_draws,
       in_sample_rmse = fit$in_sample_rmse,
       warnings = fit$warnings,
@@ -204,4 +228,7 @@ new_fit <- function(design, y, control, seed, call, blueprint = NULL,
     ),
     class = "thiessen"
   )
+  fit_object$convergence <- convergence_of(fit_object)
+  warn_convergence(fit_object, call = call_env)
+  fit_object
 }

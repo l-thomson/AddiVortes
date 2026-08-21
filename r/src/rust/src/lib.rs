@@ -75,43 +75,59 @@ fn core_validate(config_json: &str) -> Result<()> {
 }
 
 /// Fit the model of the configuration and return the fit and the quantities
-/// the print, summary, fitted and residuals methods report. `report`, an R
-/// function or `NULL`, is called `updates` times over the sweep schedule.
+/// the print, summary, fitted and residuals methods report. `chains` runs
+/// that many chains, seeded by `thiessen::chain_seed`, and pools their
+/// draws. `report`, an R function or `NULL`, is called `updates` times over
+/// the sweep schedules of every chain.
 #[extendr]
 fn core_fit(
     config_json: &str,
     x: RMatrix<f64>,
     y: &[f64],
     seed_value: f64,
+    chains: i32,
     report: Robj,
     updates: i32,
 ) -> Result<List> {
     let config = config(config_json)?;
     let data = design(&x)?;
     let seed = seed(seed_value)?;
-    let fitted = match report.as_function() {
-        Some(report) => {
-            let updates = updates.max(1) as usize;
-            let mut emitted = 0_usize;
-            thiessen::fit_with_progress(&config, &data, y, seed, |completed, total| {
-                // `updates` calls spread evenly over `total` sweeps. A
-                // failing handler must not lose a completed fit, so the
-                // result of the call is discarded.
-                while (emitted + 1) * total <= completed * updates {
-                    emitted += 1;
-                    let _ = report.call(pairlist!());
-                }
-            })
+    let chains = chains.max(1) as usize;
+    let reporter = report.as_function();
+    let updates = updates.max(1) as usize;
+    let sweeps = config.burn_in + config.draws * config.thinning;
+    let total = chains * sweeps;
+    let mut emitted = 0_usize;
+    let mut done = 0_usize;
+    let mut fits = Vec::with_capacity(chains);
+    for index in 0..chains {
+        let chain = thiessen::chain_seed(seed, index);
+        let fitted = match &reporter {
+            Some(report) => {
+                thiessen::fit_with_progress(&config, &data, y, chain, |completed, _| {
+                    // `updates` calls spread evenly over the sweeps of every
+                    // chain. A failing handler must not lose a completed
+                    // fit, so the result of the call is discarded.
+                    while (emitted + 1) * total <= (done + completed) * updates {
+                        emitted += 1;
+                        let _ = report.call(pairlist!());
+                    }
+                })
+            }
+            None => thiessen::fit(&config, &data, y, chain),
         }
-        None => thiessen::fit(&config, &data, y, seed),
+        .map_err(core_error)?;
+        done += sweeps;
+        fits.push(fitted);
     }
-    .map_err(core_error)?;
+    let fitted = thiessen::Fitted::pool(&fits, &data, y).map_err(core_error)?;
     let fitted_values = fitted.predict(&data).map_err(core_error)?;
     let warnings: Vec<String> = fitted.warnings().iter().map(ToString::to_string).collect();
     Ok(list!(
         state = serde_json::to_string(&fitted).map_err(json_error)?,
         config = serde_json::to_string(fitted.config()).map_err(json_error)?,
         model = fitted.model().to_string(),
+        n_chains = chains as i32,
         n_draws = fitted.n_draws() as i32,
         in_sample_rmse = fitted.in_sample_rmse(),
         warnings = warnings,

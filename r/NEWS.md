@@ -22,9 +22,18 @@
   `library(rstantools)` is needed. `loo::loo()` runs on `log_lik()`. The
   draws carry `mu[i]`, `sigma` under the Gaussian model only, and the
   per-draw `cell_count` and `dimension_count`.
+* `chains` runs that many chains, each with a seed the core derives from
+  `seed`, and pools their draws. Two or more chains give rank-normalised
+  split R-hat and the bulk and tail effective sample sizes of sigma and of
+  the mean function at up to twenty training rows, through
+  `posterior::summarise_draws()`. A fit warns, and `print()` and `summary()`
+  repeat the warning, where R-hat exceeds 1.01 or an effective sample size
+  falls below 400 (Vehtari and others, 2021); a fit of one chain says so
+  instead.
 * `thiessen_diagnostics()` returns the per-draw sigma, mean cells and mean
-  active covariates, and `variable_inclusion()` the share of the active
-  dimensions falling on each covariate.
+  active covariates, with the chain each draw comes from, and
+  `variable_inclusion()` the share of the active dimensions falling on each
+  covariate.
 * Progress over the sweep schedule is signalled with progressr, so a
   session reports it after `progressr::handlers()` and nothing is printed
   by default. The draws do not depend on whether a handler is set.

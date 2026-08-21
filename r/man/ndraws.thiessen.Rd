@@ -13,19 +13,17 @@
 \item{x}{An object of class \code{"thiessen"}.}
 }
 \value{
-The number of kept draws, and the number of chains, which is one:
-\code{fit()} runs a single chain.
+The number of kept draws over every chain, and the number of
+chains the fit ran.
 }
 \description{
 Number of draws and chains of a fitted model
 }
 \examples{
-if (requireNamespace("posterior", quietly = TRUE)) {
-  n <- 60
-  x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
-  y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
-  fit <- thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
-                  seed = 1)
-  posterior::ndraws(fit)
-}
+n <- 60
+x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
+y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
+fit <- thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
+                seed = 1)
+posterior::ndraws(fit)
 }
