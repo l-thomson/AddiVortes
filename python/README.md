@@ -120,9 +120,17 @@ exposed here as any other option, with no separate opt-in.
 
 ## Documentation
 
-The reproducibility contract, the input-data contract and the testing
-strategy are in the repository: `README.md`, `docs/models.md` and
-`docs/testing.md`.
+The site under `python/docs` covers the models, the priors and their
+correspondence with BART, the input-data contract, the scikit-learn and arviz
+interfaces, reproducibility and the testing strategy. Build it with:
+
+```sh
+pip install -e "python/[sklearn,arviz]" -r python/requirements-docs.txt
+cd python && mkdocs serve
+```
+
+Every example on the site is executed at build, so the printed output is that
+of the version being documented.
 
 ## Licence
 

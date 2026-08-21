@@ -1,0 +1,7 @@
+# Pinned so the site does not change with a release of the tools.
+# Dependabot keeps them current.
+mkdocs==1.6.1
+mkdocs-material==9.7.7
+mkdocstrings==1.0.6
+mkdocstrings-python==2.0.7
+markdown-exec==1.12.3
