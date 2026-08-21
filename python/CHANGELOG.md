@@ -24,3 +24,14 @@ the core crate version the package builds against, which
   `numpy.random.RandomState` or `None`, resolved by one rule; an integer
   passes through unchanged, and the resolved seed is on the fitted object.
 - `CORE_VERSION`, the core crate version the extension was built from.
+- `thiessen.estimators` with `AddiVortesRegressor` and
+  `AddiVortesClassifier`, meeting the scikit-learn estimator contract:
+  explicit `__init__` parameters, `n_features_in_`, `feature_names_in_`,
+  `classes_`, `predict(X, return_std=False)`, `predict_proba`,
+  `__sklearn_tags__`, `clone` and pickling. `scikit-learn` >= 1.6 is the
+  `sklearn` extra.
+- `categorical_features` on the estimators, of the
+  `HistGradientBoostingRegressor` shape: `None`, `'from_dtype'`, an index
+  array or a boolean mask. A named column becomes d - 1 treatment-contrast
+  indicators, the first level as reference, unless its `metric` entry is
+  `'categorical'`, in which case it passes as integer level codes.
