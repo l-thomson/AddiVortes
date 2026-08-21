@@ -231,18 +231,27 @@ impl Fitted {
     }
 }
 
-/// Fit the model of the configuration to `x` and `y` under `seed`.
+/// Fit the model of the configuration to `x` and `y` under `seed`, running
+/// `n_chains` chains seeded by [`thiessen::chain_seed`] and pooling their
+/// draws.
 #[pyfunction]
 fn fit(
     config_json: &str,
     x: PyReadonlyArray2<'_, f64>,
     y: PyReadonlyArray1<'_, f64>,
     seed: u64,
+    n_chains: usize,
 ) -> PyResult<Fitted> {
     let config = config(config_json)?;
     let data = design(&x)?;
     let y = response(&y);
-    let inner = thiessen::fit(&config, &data, &y, seed).map_err(core_error)?;
+    let chains = n_chains.max(1);
+    let mut fits = Vec::with_capacity(chains);
+    for index in 0..chains {
+        let chain = thiessen::chain_seed(seed, index);
+        fits.push(thiessen::fit(&config, &data, &y, chain).map_err(core_error)?);
+    }
+    let inner = thiessen::Fitted::pool(&fits, &data, &y).map_err(core_error)?;
     Ok(Fitted { inner })
 }
 

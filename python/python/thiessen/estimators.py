@@ -22,16 +22,17 @@ from sklearn.utils.validation import check_is_fitted, validate_data
 from . import _native
 from ._arrays import _as_response
 from ._config import FIELDS, _config_json
+from ._convergence import _warn_convergence
 from ._encoding import Encoding, columns_of, resolve_mask
 from ._seed import SeedLike, _resolve_seed
-from .model import _emit_warnings
+from .model import _emit_warnings, _resolve_chains
 
 __all__ = ["AddiVortesClassifier", "AddiVortesRegressor"]
 
 MetricEntry = Union[str, "dict[str, dict[str, int]]"]
 
 #: Parameters that are not fields of the core's configuration.
-_NON_CONFIG = frozenset({"random_state", "categorical_features"})
+_NON_CONFIG = frozenset({"random_state", "categorical_features", "n_chains"})
 
 
 class _BaseAddiVortes(BaseEstimator):
@@ -53,6 +54,7 @@ class _BaseAddiVortes(BaseEstimator):
         prior_only: bool = False,
         metric: Sequence[MetricEntry] | None = None,
         categorical_features: str | Sequence[Any] | None = None,
+        n_chains: int = 1,
         random_state: SeedLike = None,
     ) -> None:
         self.m = m
@@ -68,6 +70,7 @@ class _BaseAddiVortes(BaseEstimator):
         self.prior_only = prior_only
         self.metric = metric
         self.categorical_features = categorical_features
+        self.n_chains = n_chains
         self.random_state = random_state
 
     def __sklearn_tags__(self) -> Any:
@@ -131,14 +134,18 @@ class _BaseAddiVortes(BaseEstimator):
 
     def _fit_core(self, x: npt.NDArray[np.float64], y: npt.NDArray[np.float64]) -> None:
         seed = _resolve_seed(self.random_state)
+        chains = _resolve_chains(self.n_chains)
         self.random_state_ = seed
+        design = np.ascontiguousarray(x, dtype=np.float64)
         self._fitted: _native.Fitted = _native.fit(
             self._config(self._model_name(), self._encoding.core_metric),
-            np.ascontiguousarray(x, dtype=np.float64),
+            design,
             _as_response(y),
             seed,
+            chains,
         )
         _emit_warnings(self._fitted, stacklevel=4)
+        _warn_convergence(self._fitted, chains, design, stacklevel=4)
 
     def _model_name(self) -> str:
         raise NotImplementedError
@@ -212,6 +219,12 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
         treatment-contrast indicators, the first level as reference, unless its
         `metric` entry is ``'categorical'``, in which case it passes as
         integer level codes.
+    n_chains : int, default=1
+        The number of chains to run. Each chain has its own seed, derived
+        from the resolved seed in the core, and the draws of the chains are
+        pooled. Two or more chains warn where R-hat exceeds 1.01 or an
+        effective sample size falls below 400 (Vehtari and others, 2021),
+        which needs arviz.
     random_state : int, Generator, RandomState or None, default=None
         The seed. An integer passes through to the core unchanged, so
         `AddiVortesRegressor(random_state=1)` and `Model(random_state=1)` draw
@@ -269,6 +282,7 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
         prior_only: bool = False,
         metric: Sequence[MetricEntry] | None = None,
         categorical_features: str | Sequence[Any] | None = None,
+        n_chains: int = 1,
         random_state: SeedLike = None,
     ) -> None:
         super().__init__(
@@ -285,6 +299,7 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
             prior_only=prior_only,
             metric=metric,
             categorical_features=categorical_features,
+            n_chains=n_chains,
             random_state=random_state,
         )
         self.model = model
@@ -430,6 +445,12 @@ class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
         treatment-contrast indicators, the first level as reference, unless its
         `metric` entry is ``'categorical'``, in which case it passes as
         integer level codes.
+    n_chains : int, default=1
+        The number of chains to run. Each chain has its own seed, derived
+        from the resolved seed in the core, and the draws of the chains are
+        pooled. Two or more chains warn where R-hat exceeds 1.01 or an
+        effective sample size falls below 400 (Vehtari and others, 2021),
+        which needs arviz.
     random_state : int, Generator, RandomState or None, default=None
         The seed. An integer passes through to the core unchanged, so
         `AddiVortesRegressor(random_state=1)` and `Model(random_state=1)` draw
@@ -479,6 +500,7 @@ class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
         prior_only: bool = False,
         metric: Sequence[MetricEntry] | None = None,
         categorical_features: str | Sequence[Any] | None = None,
+        n_chains: int = 1,
         random_state: SeedLike = None,
     ) -> None:
         super().__init__(
@@ -495,6 +517,7 @@ class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
             prior_only=prior_only,
             metric=metric,
             categorical_features=categorical_features,
+            n_chains=n_chains,
             random_state=random_state,
         )
         self.offset = offset

@@ -24,9 +24,32 @@ print("posterior:", sorted(data["posterior"].dataset.data_vars))
 | `log_likelihood` | `y`, pointwise per draw |
 | `observed_data` | `y` |
 
-The sampler runs one chain, so every group has a chain dimension of one. The
-observation dimension is labelled, so the arviz summaries and the
-information-criterion functions work directly.
+The chain dimension of every group holds the chains of the fit, so a fit of
+one chain has one chain and R-hat is `NaN`. The observation dimension is
+labelled, so the arviz summaries and the information-criterion functions work
+directly.
+
+```python exec="on" source="above" result="text"
+import arviz as az
+import numpy as np
+from thiessen import Model
+
+rng = np.random.default_rng(0)
+x = rng.uniform(size=(120, 2))
+y = x[:, 0] + rng.normal(scale=0.1, size=120)
+
+fitted = Model(m=25, burn_in=50, draws=500).fit(x, y, random_state=1, n_chains=4)
+data = fitted.to_inference_data(x, y)
+print("chains:", data["posterior"].dataset.sizes["chain"])
+print(az.summary(data, var_names=["sigma"], kind="diagnostics"))
+```
+
+`fit(n_chains=k)` runs k chains, each with a seed the core derives from the
+resolved seed, and pools their draws. A fit of two or more chains checks
+R-hat and the bulk and tail effective sample sizes of `sigma` and of the mean
+function at up to twenty training rows, and warns where R-hat exceeds 1.01 or
+an effective sample size falls below 400 (Vehtari, Gelman, Simpson, Carpenter
+and Buerkner, 2021). The check needs arviz; a fit without it says so.
 
 ```python exec="on" source="above" result="text"
 import arviz as az

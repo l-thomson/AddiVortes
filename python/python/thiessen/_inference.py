@@ -2,7 +2,7 @@
 
 Requires arviz, the `arviz` extra. The groups follow the PyMC and numpyro
 convention: `posterior`, `posterior_predictive`, `log_likelihood` and
-`observed_data`, over the single chain the sampler runs.
+`observed_data`, over the chains of the fit.
 """
 
 from __future__ import annotations
@@ -41,6 +41,7 @@ def _to_inference_data(
     design: npt.NDArray[np.float64],
     response: npt.NDArray[np.float64],
     seed: int,
+    n_chains: int = 1,
 ) -> Any:
     """Build the `DataTree` of a fitted model over `design` and `response`.
 
@@ -54,6 +55,8 @@ def _to_inference_data(
         The observed response.
     seed : int
         The fit's resolved seed, which seeds the predictive replicates.
+    n_chains : int, default=1
+        The number of chains the pooled draws hold, in chain order.
 
     Returns
     -------
@@ -81,25 +84,28 @@ def _to_inference_data(
             "the observation dimension needs one label per row"
         )
 
+    # The pooled draws are in chain order, so the leading axis splits into
+    # chain by iteration.
+    def by_chain(draws: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        return np.asarray(draws).reshape((n_chains, -1) + np.shape(draws)[1:])
+
     latent = fitted.predict_latent(design)
     posterior: dict[str, npt.NDArray[np.float64]] = {
-        "mu": latent[np.newaxis, :, :],
-        "cell_count": np.asarray(fitted.cell_counts())[np.newaxis, :],
-        "dimension_count": np.asarray(fitted.dimension_counts())[np.newaxis, :],
+        "mu": by_chain(latent),
+        "cell_count": by_chain(np.asarray(fitted.cell_counts())),
+        "dimension_count": by_chain(np.asarray(fitted.dimension_counts())),
     }
     sigma = np.asarray(fitted.sigma())
     # Empty under the probit model, whose latent variance is one, and under
     # the heteroscedastic model, whose variance varies with x.
     if sigma.size:
-        posterior["sigma"] = sigma[np.newaxis, :]
+        posterior["sigma"] = by_chain(sigma)
 
     groups = {
         "posterior": posterior,
-        "posterior_predictive": {
-            "y": _replicates(fitted, design, seed)[np.newaxis, :, :]
-        },
+        "posterior_predictive": {"y": by_chain(_replicates(fitted, design, seed))},
         "log_likelihood": {
-            "y": np.asarray(fitted.log_likelihood(design, response))[np.newaxis, :, :]
+            "y": by_chain(np.asarray(fitted.log_likelihood(design, response)))
         },
         "observed_data": {"y": response},
     }

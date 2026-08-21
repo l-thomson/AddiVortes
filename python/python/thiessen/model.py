@@ -18,6 +18,7 @@ import numpy.typing as npt
 from . import _native
 from ._arrays import _as_design, _as_response
 from ._config import FIELDS, _config_json
+from ._convergence import _warn_convergence
 from ._inference import _to_inference_data
 from ._seed import SeedLike, _resolve_seed
 
@@ -165,6 +166,7 @@ class Model:
         X: Any,
         y: Any,
         random_state: SeedLike = None,
+        n_chains: int = 1,
     ) -> FittedModel:
         """Fit the model to `X` and `y`.
 
@@ -179,11 +181,22 @@ class Model:
         random_state : int, numpy.random.Generator, numpy.random.RandomState or None
             The seed. `None` draws fresh entropy. The resolved seed is on
             the returned object.
+        n_chains : int, default=1
+            The number of chains to run. Each chain has its own seed,
+            derived from the resolved seed in the core, and the draws of the
+            chains are pooled.
 
         Returns
         -------
         FittedModel
-            The kept draws.
+            The kept draws of every chain.
+
+        Warns
+        -----
+        UserWarning
+            Where two or more chains ran and R-hat exceeds 1.01 or an
+            effective sample size falls below 400 (Vehtari and others,
+            2021), or where arviz is not installed to compute them.
 
         Raises
         ------
@@ -191,13 +204,19 @@ class Model:
             For an invalid configuration, or for data the core rejects:
             missing or non-finite values, a constant response, a constant
             column, fewer than two rows, or a row-count mismatch.
+        ValueError
+            If `n_chains` is not a positive integer.
         """
         design = _as_design(X)
         response = _as_response(y)
         seed = _resolve_seed(random_state)
-        fitted = _native.fit(_config_json(self.get_params()), design, response, seed)
+        chains = _resolve_chains(n_chains)
+        fitted = _native.fit(
+            _config_json(self.get_params()), design, response, seed, chains
+        )
         _emit_warnings(fitted, stacklevel=3)
-        return FittedModel(fitted, seed)
+        _warn_convergence(fitted, chains, design, stacklevel=3)
+        return FittedModel(fitted, seed, chains)
 
     def __repr__(self) -> str:
         set_fields = ", ".join(
@@ -214,9 +233,17 @@ def _emit_warnings(fitted: _native.Fitted, stacklevel: int) -> None:
         warnings.warn(message, UserWarning, stacklevel=stacklevel)
 
 
-def _rebuild(payload: str, seed: int) -> FittedModel:
+def _resolve_chains(n_chains: Any) -> int:
+    """Return `n_chains` as a positive integer."""
+    chains = int(n_chains)
+    if chains != n_chains or chains < 1:
+        raise ValueError(f"n_chains must be a positive integer; got {n_chains!r}")
+    return chains
+
+
+def _rebuild(payload: str, seed: int, n_chains: int = 1) -> FittedModel:
     """Reconstruct a `FittedModel` from its pickled state."""
-    return FittedModel(_native.fitted_from_json(payload), seed)
+    return FittedModel(_native.fitted_from_json(payload), seed, n_chains)
 
 
 class FittedModel:
@@ -236,9 +263,15 @@ class FittedModel:
     Model : The configuration.
     """
 
-    def __init__(self, fitted: _native.Fitted, seed: int) -> None:
+    def __init__(self, fitted: _native.Fitted, seed: int, n_chains: int = 1) -> None:
         self._fitted = fitted
         self.random_state = seed
+        self._n_chains = n_chains
+
+    @property
+    def n_chains(self) -> int:
+        """int: The number of chains the draws were pooled from."""
+        return self._n_chains
 
     @property
     def model(self) -> str:
@@ -253,7 +286,7 @@ class FittedModel:
 
     @property
     def n_draws(self) -> int:
-        """int: The number of kept draws."""
+        """int: The number of kept draws over every chain."""
         return int(self._fitted.n_draws)
 
     @property
@@ -492,12 +525,16 @@ class FittedModel:
 
         Notes
         -----
-        The sampler runs one chain, so every group has a chain dimension of
-        one. The predictive replicates are drawn in numpy from the fit's
-        resolved seed rather than by the core.
+        The chain dimension of every group holds the chains of the fit. The
+        predictive replicates are drawn in numpy from the fit's resolved
+        seed rather than by the core.
         """
         return _to_inference_data(
-            self._fitted, _as_design(X), _as_response(y), self.random_state
+            self._fitted,
+            _as_design(X),
+            _as_response(y),
+            self.random_state,
+            self._n_chains,
         )
 
     def save(self, path: str | os.PathLike[str]) -> None:
@@ -518,7 +555,12 @@ class FittedModel:
             handle.write(self._fitted.to_json())
 
     @classmethod
-    def load(cls, path: str | os.PathLike[str], random_state: int = 0) -> FittedModel:
+    def load(
+        cls,
+        path: str | os.PathLike[str],
+        random_state: int = 0,
+        n_chains: int = 1,
+    ) -> FittedModel:
         """Read a fitted model from `path`.
 
         Parameters
@@ -528,6 +570,9 @@ class FittedModel:
         random_state : int, default=0
             The seed to report on the loaded object, which the file does not
             carry.
+        n_chains : int, default=1
+            The number of chains the draws were pooled from, which the file
+            does not carry.
 
         Returns
         -------
@@ -543,13 +588,13 @@ class FittedModel:
         """
         with open(os.fspath(path), encoding="utf-8") as handle:
             payload = handle.read()
-        return cls(_native.fitted_from_json(payload), random_state)
+        return cls(_native.fitted_from_json(payload), random_state, n_chains)
 
-    def __reduce__(self) -> tuple[Any, tuple[str, int]]:
-        return _rebuild, (self._fitted.to_json(), self.random_state)
+    def __reduce__(self) -> tuple[Any, tuple[str, int, int]]:
+        return _rebuild, (self._fitted.to_json(), self.random_state, self._n_chains)
 
     def __repr__(self) -> str:
         return (
-            f"FittedModel(model={self.model!r}, n_draws={self.n_draws}, "
-            f"random_state={self.random_state})"
+            f"FittedModel(model={self.model!r}, n_chains={self.n_chains}, "
+            f"n_draws={self.n_draws}, random_state={self.random_state})"
         )
