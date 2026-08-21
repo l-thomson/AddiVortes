@@ -76,7 +76,7 @@ def test_probit_is_rejected_by_the_regressor(gaussian_fixture):
 
 def test_unknown_model_is_rejected(gaussian_fixture):
     x, y = gaussian_fixture
-    with pytest.raises(ValueError, match="gaussian"):
+    with pytest.raises(ValueError, match="unknown model"):
         AddiVortesRegressor(model="soft", **SMALL).fit(x, y)
 
 

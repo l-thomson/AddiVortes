@@ -35,3 +35,8 @@ the core crate version the package builds against, which
   array or a boolean mask. A named column becomes d - 1 treatment-contrast
   indicators, the first level as reference, unless its `metric` entry is
   `'categorical'`, in which case it passes as integer level codes.
+- `_native.EXPERIMENTAL`, whether the extension was built with the core's
+  `experimental` feature. It is off in every wheel of this release, so `model`
+  takes the published models only. The package keeps no list of model names:
+  the core validates every name, so an item added to or graduated from the
+  feature needs no change here.

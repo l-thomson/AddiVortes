@@ -262,6 +262,7 @@ fn validate_config(config_json: &str) -> PyResult<()> {
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("CORE_VERSION", thiessen::VERSION)?;
+    m.add("EXPERIMENTAL", cfg!(feature = "experimental"))?;
     m.add("ThiessenError", m.py().get_type::<ThiessenError>())?;
     m.add_class::<Fitted>()?;
     m.add_function(wrap_pyfunction!(fit, m)?)?;

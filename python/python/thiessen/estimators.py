@@ -299,14 +299,10 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
         self.m_var = m_var
 
     def _model_name(self) -> str:
-        if self.model not in {"gaussian", "heteroscedastic"}:
-            if self.model == "probit":
-                raise ValueError(
-                    "model='probit' is a classifier; use AddiVortesClassifier"
-                )
-            raise ValueError(
-                f"model must be 'gaussian' or 'heteroscedastic', got {self.model!r}"
-            )
+        # Every other name goes to the core, which holds the list of models
+        # and names the `experimental` feature for a gated one.
+        if self.model == "probit":
+            raise ValueError("model='probit' is a classifier; use AddiVortesClassifier")
         return self.model
 
     def fit(self, X: Any, y: Any) -> AddiVortesRegressor:
