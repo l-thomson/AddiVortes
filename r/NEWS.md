@@ -43,6 +43,10 @@
   replaced.
 * `seed = NULL` draws the chain's seed from R's stream, so `set.seed()`
   governs; a whole number passes to the core unchanged.
+* The core is built without its `experimental` feature, so
+  `thiessen_control(model = )` takes the three published models and any
+  other name is rejected with the core's message; `core_experimental()`
+  reports the build's setting.
 * Errors carry the condition class `thiessen_error` and warnings
   `thiessen_warning`.
 * Builds and links the core crate offline from the vendored sources in

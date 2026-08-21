@@ -56,6 +56,12 @@ fn seed(seed: f64) -> Result<u64> {
     Ok(seed as u64)
 }
 
+/// Whether the core was built with the `experimental` feature.
+#[extendr]
+fn core_experimental() -> bool {
+    cfg!(feature = "experimental")
+}
+
 /// Version of the vendored core crate.
 #[extendr]
 fn core_version() -> &'static str {
@@ -211,6 +217,7 @@ fn core_diagnostics(state_json: &str) -> Result<List> {
 extendr_module! {
     mod thiessen;
     fn core_version;
+    fn core_experimental;
     fn core_defaults;
     fn core_validate;
     fn core_fit;
