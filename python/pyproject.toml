@@ -24,7 +24,7 @@ dependencies = ["numpy>=1.22"]
 
 [project.optional-dependencies]
 sklearn = ["scikit-learn>=1.6"]
-arviz = ["arviz>=0.18"]
+arviz = ["arviz>=1.0"]
 
 [project.urls]
 Homepage = "https://github.com/l-thomson/thiessen"
@@ -74,9 +74,9 @@ strict = true
 module = "thiessen._native"
 ignore_missing_imports = true
 
-# scikit-learn ships no py.typed, so its base classes are `Any`.
+# Neither scikit-learn nor arviz ships py.typed.
 [[tool.mypy.overrides]]
-module = "sklearn.*"
+module = ["arviz.*", "sklearn.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

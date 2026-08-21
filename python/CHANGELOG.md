@@ -35,6 +35,14 @@ the core crate version the package builds against, which
   array or a boolean mask. A named column becomes d - 1 treatment-contrast
   indicators, the first level as reference, unless its `metric` entry is
   `'categorical'`, in which case it passes as integer level codes.
+- `FittedModel.to_inference_data(X, y)`, returning the arviz `DataTree` of
+  the fit: `posterior` with `mu` per draw, `sigma` under the Gaussian model
+  only, and the per-draw cell and dimension counts; `posterior_predictive`
+  and `log_likelihood` with `y`; and `observed_data`. The chain dimension is
+  one, as the sampler runs one chain, and the predictive replicates are drawn
+  in numpy from the fit's resolved seed rather than by the core. `arviz>=1.0`
+  is the `arviz` extra; the groups are built through `arviz.from_dict` with
+  no version dispatch.
 - `FittedModel.save` and `FittedModel.load`, taking `str` or `os.PathLike`
   and writing the core's serde representation, which reloads bit-exact.
   Failures to read or write are `OSError`; contents that are not a fitted

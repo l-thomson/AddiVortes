@@ -18,6 +18,7 @@ import numpy.typing as npt
 from . import _native
 from ._arrays import _as_design, _as_response
 from ._config import FIELDS, _config_json
+from ._inference import _to_inference_data
 from ._seed import SeedLike, _resolve_seed
 
 __all__ = ["FittedModel", "Model"]
@@ -462,6 +463,42 @@ class FittedModel:
             Sums to one (Chipman, George and McCulloch, 2010, s. 5.1).
         """
         return self._fitted.variable_inclusion_proportions()
+
+    def to_inference_data(self, X: Any, y: Any) -> Any:
+        """Return the fit as an arviz `DataTree`.
+
+        Parameters
+        ----------
+        X : array_like of shape (n_samples, n_features)
+            The rows the observation dimension indexes, usually the training
+            design.
+        y : array_like of shape (n_samples,)
+            The observed response.
+
+        Returns
+        -------
+        xarray.DataTree
+            The `posterior` group carries `mu`, the mean function per draw,
+            with `sigma` under the Gaussian model only, and the per-draw cell
+            and dimension counts; `posterior_predictive` and `log_likelihood`
+            carry `y`; `observed_data` carries the response.
+
+        Raises
+        ------
+        ImportError
+            If arviz is not installed.
+        ValueError
+            If `X` and `y` disagree on the number of rows.
+
+        Notes
+        -----
+        The sampler runs one chain, so every group has a chain dimension of
+        one. The predictive replicates are drawn in numpy from the fit's
+        resolved seed rather than by the core.
+        """
+        return _to_inference_data(
+            self._fitted, _as_design(X), _as_response(y), self.random_state
+        )
 
     def save(self, path: str | os.PathLike[str]) -> None:
         """Write the fitted model to `path`.
