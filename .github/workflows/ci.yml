@@ -119,6 +119,10 @@ jobs:
       # The default heuristic enables a feature named `experimental`.
       - uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2
         with:
+          # The published crate, named rather than searched for: the R
+          # package vendors a copy of it under r/src/rust/core, so a scan of
+          # the tree finds the name twice.
+          manifest-path: crates/thiessen/Cargo.toml
           baseline-rev: ${{ github.event.pull_request.base.sha }}
           feature-group: default-features
 
@@ -163,11 +167,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: stable
+          components: clippy, rustfmt
       - uses: r-lib/actions/setup-r@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2
         with:
           use-public-rspm: true
       - run: tools/vendor.sh
-      - run: git diff --exit-code -- r/DESCRIPTION r/inst/AUTHORS r/src/rust/Cargo.lock
+      - run: |
+          git diff --exit-code -- r/DESCRIPTION r/inst/AUTHORS \
+            r/src/rust/Cargo.lock r/src/rust/core \
+            r/tests/testthat/core-gaussian-chain.txt
+      # The binding crate is outside the root workspace, so the fmt and
+      # clippy jobs above do not reach it.
+      - run: cargo fmt --check
+        working-directory: r/src/rust
+      - run: cargo clippy --locked --all-targets -- -D warnings
+        working-directory: r/src/rust
       - run: R CMD build r
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -175,12 +189,17 @@ jobs:
           path: thiessen_*.tar.gz
 
   r-check:
-    name: r-check
+    name: r-check (${{ matrix.os }}, ${{ matrix.r }})
     needs: r-source
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - {os: ubuntu-latest, r: 'release'}
+          - {os: ubuntu-latest, r: 'devel'}
+          - {os: ubuntu-latest, r: 'oldrel-1'}
+          - {os: macos-latest, r: 'release'}
+          - {os: windows-latest, r: 'release'}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -190,6 +209,11 @@ jobs:
           targets: ${{ runner.os == 'Windows' && 'x86_64-pc-windows-gnu' || '' }}
       - uses: r-lib/actions/setup-r@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2
         with:
+          r-version: ${{ matrix.r }}
+          # r-devel has no binaries on the public RSPM, so it builds the
+          # dependencies from source; the agent string selects the release
+          # repository for the rest.
+          http-user-agent: ${{ matrix.r == 'devel' && 'release' || 'default' }}
           use-public-rspm: true
       - uses: r-lib/actions/setup-r-dependencies@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2
         with:
@@ -209,7 +233,7 @@ jobs:
       - if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: r-check-${{ matrix.os }}
+          name: r-check-${{ matrix.os }}-${{ matrix.r }}
           path: check
 
   py-lint:

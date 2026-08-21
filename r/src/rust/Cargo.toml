@@ -11,6 +11,9 @@ crate-type = ["staticlib"]
 
 [dependencies]
 extendr-api = "0.9"
+# `float_roundtrip` so a fit written by `saveRDS` reloads bit-exact; the
+# default parser is accurate to within one ULP, which moves the draws.
+serde_json = { version = "1.0.100", features = ["float_roundtrip"] }
 thiessen = { path = "core" }
 
 # Detached from the repository workspace: the tarball carries no root.

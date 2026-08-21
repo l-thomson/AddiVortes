@@ -5,17 +5,27 @@ Authors@R: c(
     person("Leo", "Thomson", , "leo@feasibly.co.uk", role = c("aut", "cre")),
     person("The authors of the vendored Rust crates", role = "cph",
            comment = "listed in inst/AUTHORS"))
-Description: Bindings to the 'thiessen' Rust crate, an implementation of
-    AddiVortes, Bayesian regression on a sum of Voronoi tessellations
-    (Stone and Gosling, 2025, <doi:10.1080/10618600.2024.2414104>). This
-    version builds and links the core crate from vendored sources; the
-    modelling interface follows.
+Description: Bayesian regression on a sum of Voronoi tessellations
+    (AddiVortes; Stone and Gosling, 2025,
+    <doi:10.1080/10618600.2024.2414104>), a variant of BART (Chipman,
+    George and McCulloch, 2010, <doi:10.1214/09-AOAS285>) in which a cell
+    is a region of the covariate space rather than a box. Provides the
+    Gaussian, binary probit and heteroscedastic models, with methods for
+    prediction, posterior intervals and summaries. The sampler is the
+    'thiessen' Rust crate, built and linked from vendored sources.
 License: MIT + file LICENSE
 URL: https://github.com/l-thomson/thiessen
 BugReports: https://github.com/l-thomson/thiessen/issues
 Encoding: UTF-8
+Language: en-GB
 Depends: R (>= 4.2)
+Imports:
+    jsonlite,
+    rlang,
+    stats
 Suggests: testthat (>= 3.0.0)
+Roxygen: list(markdown = TRUE, load = "source")
 Config/testthat/edition: 3
 Config/thiessen/core-version: 0.2.0
 SystemRequirements: Cargo (Rust's package manager), rustc >= 1.74
+Config/roxygen2/version: 8.1.0
