@@ -11,7 +11,15 @@ the core crate version the package builds against, which
 ### Added
 
 - `Model`, the configuration, with every field of the core's `Config` as a
-  keyword argument and `fit(X, y, random_state=None)`.
+  keyword argument and `fit(X, y, random_state=None, n_chains=1)`.
+- `n_chains` runs that many chains, each with a seed the core derives from
+  the resolved seed, and pools their draws; the chain dimension of
+  `to_inference_data` holds them. Two or more chains warn where R-hat
+  exceeds 1.01 or a bulk or tail effective sample size falls below 400
+  (Vehtari and others, 2021), computed by arviz on sigma and on the mean
+  function at up to twenty training rows; a fit says so where arviz is not
+  installed. `AddiVortesRegressor` and `AddiVortesClassifier` take
+  `n_chains` as a constructor parameter.
 - `FittedModel`, the kept draws: `predict`, `predict_draws`,
   `predict_latent`, `predict_variance`, `predict_quantiles`,
   `credible_interval`, `prediction_interval`, `log_likelihood`, `sigma`,
