@@ -16,9 +16,10 @@
 \arguments{
 \item{object}{An object of class \code{"thiessen"}.}
 
-\item{newdata}{A numeric matrix of covariates with the columns of the
-design the model was fitted to. \code{NULL}, the default, predicts at the
-training rows.}
+\item{newdata}{New covariates. A fit from a formula or a data frame takes
+a data frame, whose columns are matched to the fitted design by name and
+type; a fit from a matrix takes a numeric matrix with the fitted
+columns. \code{NULL}, the default, predicts at the training rows.}
 
 \item{type}{The quantity: \code{"mean"}, the posterior mean of the response
 (the probability under the probit model); \code{"draws"}, that quantity for
