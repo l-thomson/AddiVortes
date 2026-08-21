@@ -8,7 +8,7 @@
 //! set at a family-wise level under 1 percent with no further
 //! correction.
 
-use thiessen::{fit, Config, Data};
+use thiessen::{fit, Config, Data, Metric};
 
 const K: f64 = 4.0;
 /// Half-width of the central difference estimating the density at a
@@ -109,14 +109,14 @@ fn quantile_mcse(series: &[f64], p: f64) -> f64 {
     (p * (1.0 - p) / ess(series)).sqrt() * width / (2.0 * H)
 }
 
-fn compare(dataset: &str, points: &[usize], seed: u64) {
+fn compare(dataset: &str, config: &Config, points: &[usize], seed: u64) {
     let (x, y) = parse_data(&format!("{dataset}_data.csv"));
     let upstream = parse_summary(&format!("{dataset}_summary.csv"));
 
     // The defaults match the fixture script's arguments: m = 200, nu = 6,
     // q = 0.85, k = 3, sigma_c = 0.8, omega = min(3, p), lambda_c = 5,
     // 200 burn-in sweeps, 1000 kept draws.
-    let fitted = fit(&Config::new(), &x, &y, seed).unwrap();
+    let fitted = fit(config, &x, &y, seed).unwrap();
 
     let rows: Vec<&[f64]> = points.iter().map(|&r| x.row(r)).collect();
     let x_points = Data::from_rows(&rows).unwrap();
@@ -154,10 +154,20 @@ fn compare(dataset: &str, points: &[usize], seed: u64) {
 
 #[test]
 fn friedman_matches_upstream() {
-    compare("friedman", &[0, 49, 99, 149, 199], 11);
+    compare("friedman", &Config::new(), &[0, 49, 99, 149, 199], 11);
 }
 
 #[test]
 fn attitude_matches_upstream() {
-    compare("attitude", &[0, 7, 14, 21, 29], 12);
+    compare("attitude", &Config::new(), &[0, 7, 14, 21, 29], 12);
+}
+
+/// Latitude and longitude on one sphere, upstream `metric = "S"`.
+#[test]
+fn globe_matches_upstream() {
+    let config = Config::new().with_metric(vec![
+        Metric::Spherical { sphere: 0 },
+        Metric::Spherical { sphere: 0 },
+    ]);
+    compare("globe", &config, &[0, 49, 99, 149, 199], 13);
 }

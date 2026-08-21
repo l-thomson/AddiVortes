@@ -2,7 +2,7 @@
 //! rejected input has its error; accepted degenerate inputs have their
 //! documented behaviour.
 
-use thiessen::{fit, Config, Data, Error, Warning};
+use thiessen::{fit, Config, Data, Error, Metric, Warning};
 
 fn config() -> Config {
     Config::new().with_m(3).with_burn_in(5).with_draws(5)
@@ -115,6 +115,33 @@ fn zero_residual_response_fits() {
     let model = fit(&config(), &x, &y, 1).unwrap();
     assert!(model.predict(&x).unwrap().iter().all(|p| p.is_finite()));
     assert!(model.sigma().iter().all(|s| s.is_finite() && *s > 0.0));
+}
+
+#[test]
+fn metric_must_name_every_column_with_the_longitude_last() {
+    let (x, y) = valid();
+    let short = config().with_metric(vec![Metric::Euclidean]);
+    assert!(matches!(
+        fit(&short, &x, &y, 1).unwrap_err(),
+        Error::InvalidHyperparameter { ref name, .. } if name == "metric"
+    ));
+    // Column 0 spans more than pi but is declared before the longitude.
+    let sphere = vec![
+        Metric::Spherical { sphere: 0 },
+        Metric::Spherical { sphere: 0 },
+    ];
+    let wide = Data::from_rows(&[[-3.0, 0.1], [3.0, 0.2], [0.0, 0.3], [1.0, 0.4]]).unwrap();
+    assert!(matches!(
+        fit(&config().with_metric(sphere.clone()), &wide, &y, 1).unwrap_err(),
+        Error::InvalidHyperparameter { ref name, .. } if name == "metric"
+    ));
+    let globe = Data::from_rows(&[[-1.0, -3.0], [1.0, 3.0], [0.0, 0.0], [0.5, 1.0]]).unwrap();
+    let model = fit(&config().with_metric(sphere), &globe, &y, 1).unwrap();
+    assert_eq!(model.predict(&globe).unwrap().len(), 4);
+    // A saved model whose metric does not fit its design is rejected.
+    let json = serde_json::to_string(&model).unwrap();
+    let corrupt = json.replace(r#""metric":["#, r#""metric":["euclidean","#);
+    assert!(serde_json::from_str::<thiessen::Fitted>(&corrupt).is_err());
 }
 
 #[test]

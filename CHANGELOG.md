@@ -11,6 +11,12 @@ says "Sampled values changed" with the reason.
 ### Added
 
 - `VERSION`, the crate version as the bindings report it.
+- `Metric` and `Config::metric`: the metric of each covariate column,
+  Euclidean (default) or spherical, the great-circle distance of CRAN
+  AddiVortes `metric = "S"` with `members` as the sphere label. Spherical
+  columns are radians, unscaled, with the upstream centre-coordinate
+  law; an upstream comparison fixture on a sphere joins the suite. The
+  Euclidean chain for a fixed seed is unchanged.
 - Cargo feature `experimental` for components and models beyond the
   published method, outside the semver promise; `Error::RequiresFeature`
   and `FromStr` for `Model`; the stability contract in the crate-root

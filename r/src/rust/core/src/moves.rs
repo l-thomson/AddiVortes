@@ -7,9 +7,8 @@
 //! table, so the boundary corrections of Appendix B (+- ln 2) follow from the
 //! weight folding rather than being written by hand.
 
-use crate::geometry::{CoordinateLaw, Geometry};
 use crate::maths;
-use crate::rng::{uniform, uniform_index, Rng};
+use crate::rng::{standard_normal, uniform, uniform_index, Rng};
 use crate::tessellation::{Delta, Tessellation};
 
 /// The move kinds, in selection-table order.
@@ -36,7 +35,7 @@ const MOVES: [Move; 6] = [
 const WEIGHTS: [f64; 6] = [0.2, 0.2, 0.2, 0.2, 0.1, 0.1];
 
 /// Read-only model state the moves consult.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct Prior {
     /// Number of covariates p.
     pub p: usize,
@@ -44,31 +43,11 @@ pub(crate) struct Prior {
     pub omega: f64,
     /// Cell-count prior rate lambda_c.
     pub lambda_c: f64,
-    /// The metric of each column.
-    pub geometry: Geometry,
-    /// The centre-coordinate law of each column.
-    pub laws: Vec<CoordinateLaw>,
+    /// Centre-coordinate standard deviation sigma_c.
+    pub sigma_c: f64,
 }
 
 impl Prior {
-    /// p Euclidean columns with centre coordinates N(0, sigma_c^2).
-    #[cfg(test)]
-    pub(crate) fn euclidean(p: usize, omega: f64, lambda_c: f64, sigma_c: f64) -> Self {
-        Self {
-            p,
-            omega,
-            lambda_c,
-            geometry: Geometry::euclidean(p),
-            laws: vec![
-                CoordinateLaw::Normal {
-                    mean: 0.0,
-                    sd: sigma_c
-                };
-                p
-            ],
-        }
-    }
-
     /// ln P(b) - ln P(b - 1) of the cell-count prior b - 1 ~ Poisson(lambda_c),
     /// at the larger count b >= 2: ln lambda_c - ln(b - 1).
     fn log_cell_count_ratio(&self, b: usize) -> f64 {
@@ -87,9 +66,9 @@ impl Prior {
         maths::ln(p - d + 1.0) - maths::ln(d - 1.0) + maths::ln(theta) - maths::ln(1.0 - theta)
     }
 
-    /// One centre coordinate on column `col` from its law.
-    pub(crate) fn coordinate(&self, col: usize, rng: &mut Rng) -> f64 {
-        self.laws[col].draw(rng)
+    /// One centre coordinate, N(0, sigma_c^2), scaled space.
+    pub(crate) fn coordinate(&self, rng: &mut Rng) -> f64 {
+        self.sigma_c * standard_normal(rng)
     }
 }
 
@@ -192,7 +171,7 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
         // What remains is the cell-count prior ratio.
         Move::AddCentre => {
             let mut centres = t.centres.clone();
-            centres.extend(t.dims.iter().map(|&dim| prior.coordinate(dim, rng)));
+            centres.extend((0..d).map(|_| prior.coordinate(rng)));
             let mut mus = t.mus.clone();
             mus.push(0.0);
             Proposal {
@@ -231,7 +210,7 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
             let mut centres = Vec::with_capacity(b * (d + 1));
             for k in 0..b {
                 centres.extend_from_slice(t.centre(k));
-                centres.push(prior.coordinate(incoming, rng));
+                centres.push(prior.coordinate(rng));
             }
             Proposal {
                 tessellation: Tessellation {
@@ -270,8 +249,8 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
         Move::Change => {
             let cell = uniform_index(b, rng);
             let mut centres = t.centres.clone();
-            for (c, &dim) in centres[cell * d..(cell + 1) * d].iter_mut().zip(&t.dims) {
-                *c = prior.coordinate(dim, rng);
+            for c in &mut centres[cell * d..(cell + 1) * d] {
+                *c = prior.coordinate(rng);
             }
             Proposal {
                 tessellation: Tessellation {
@@ -293,7 +272,7 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
             dims[out] = incoming;
             let mut centres = t.centres.clone();
             for k in 0..b {
-                centres[k * d + out] = prior.coordinate(incoming, rng);
+                centres[k * d + out] = prior.coordinate(rng);
             }
             Proposal {
                 tessellation: Tessellation {
@@ -326,7 +305,12 @@ mod tests {
     use crate::rng::chain_rng;
 
     fn prior(p: usize) -> Prior {
-        Prior::euclidean(p, 3.0_f64.min(p as f64), 5.0, 0.8)
+        Prior {
+            p,
+            omega: 3.0_f64.min(p as f64),
+            lambda_c: 5.0,
+            sigma_c: 0.8,
+        }
     }
 
     fn tess(b: usize, dims: Vec<usize>) -> Tessellation {
@@ -431,7 +415,11 @@ mod tests {
         // d - 1 ~ Binomial(9, 0.3): P(d = 3) / P(d = 2) = (9 - 2 + 1) / 2 * 0.3 / 0.7.
         close(pr.log_dim_count_ratio(3), (8.0 / 2.0 * 0.3 / 0.7_f64).ln());
         // At omega = p the ratio is +infinity: the dimension count saturates.
-        let saturated = Prior::euclidean(2, 2.0, pr.lambda_c, 0.8);
+        let saturated = Prior {
+            p: 2,
+            omega: 2.0,
+            ..pr
+        };
         assert_eq!(saturated.log_dim_count_ratio(2), f64::INFINITY);
     }
 

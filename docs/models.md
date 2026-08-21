@@ -143,6 +143,38 @@ every model), burn_in = `burn_in`, draws = `max_iter - burn_in`. The
 script is pre-0.6.8 and the comparison against it is informational
 (`benchmarks/upstream/heteroscedastic_variant.R`).
 
+## Distances
+
+`Config::metric` names the metric of each covariate column (CRAN
+AddiVortes `metric`, with `members` grouping the columns of a sphere);
+empty means Euclidean throughout. An observation is assigned to the
+nearest centre over a tessellation's active columns, the distance being
+the sum over metrics of their squared distances; ties go to the lowest
+centre index.
+
+| `Metric`                     | CRAN AddiVortes           | distance                         | column scale                | centre coordinate law                                         |
+|------------------------------|---------------------------|----------------------------------|-----------------------------|---------------------------------------------------------------|
+| `Euclidean`                  | `"E"` (default)           | squared Euclidean                | min-max to [-0.5, 0.5]      | N(0, sigma_c^2)                                               |
+| `Spherical { sphere }`       | `"S"`, `members = sphere` | squared great-circle angle       | radians, unscaled           | N(mid, sd^2), sd = range / (2 Phi^-1(0.75)); longitude wrapped to [-pi, pi] |
+
+Spherical: the columns declared for a sphere are its latitudes and,
+last, its longitude, the coordinate with period 2 pi (upstream moves the
+column of range above pi last; here the declaration order is the
+contract, and a latitude spanning more than pi is rejected at fit). The
+angle between a row and a centre follows the spherical law of cosines,
+cos c = sin a sin b + cos a cos b cos(Delta longitude), nested over the
+latitudes for spheres of more than two columns; a sphere of one column
+is a circle and takes the shorter arc. When a tessellation uses only
+some of a sphere's columns, the centre takes the row's own coordinates
+in the others, so the distance is measured along the row's parallel or
+meridian (upstream `knnx_index_cpp`). The per-column mean and standard
+deviation of the coordinate law are upstream's `mus` and `sd` for
+non-Euclidean columns; the longitude is wrapped by upstream's
+`period_shift`. Several spheres take distinct labels; their angles add.
+
+Columns of a sphere are separate covariates for the dimension prior and
+the structural moves, as upstream.
+
 ## Experimental models
 
 Models behind the `experimental` Cargo feature are stated here under

@@ -5,7 +5,6 @@
 use crate::config::Config;
 use crate::data::{self, Data, Warning};
 use crate::error::{Error, Result};
-use crate::geometry::Geometry;
 use crate::maths;
 use crate::model::Model;
 use crate::scaler::Scaler;
@@ -162,7 +161,6 @@ impl TryFrom<FittedParts> for Fitted {
         };
         parts.config.validate()?;
         let p = parts.scaler.n_cols();
-        Geometry::new(&parts.config.metric, p)?;
         let uses_covariates = |draws: &[Vec<Tessellation>]| {
             draws
                 .iter()
@@ -297,7 +295,6 @@ impl Fitted {
     /// `FeatureCountMismatch`, `NonFiniteFeature`.
     pub fn predict_latent(&self, x: &Data) -> Result<Vec<Vec<f64>>> {
         data::validate_predict(x, self.scaler.n_cols())?;
-        let geometry = self.geometry()?;
         let x_scaled = self.scaler.scale_x(x);
         let n = x.n_rows();
         let offset = self.offset();
@@ -309,17 +306,12 @@ impl Fitted {
                 (0..n)
                     .map(|i| {
                         let row = x_scaled.row(i);
-                        let sum: f64 = draw.iter().map(|t| t.value_at(row, &geometry)).sum();
+                        let sum: f64 = draw.iter().map(|t| t.value_at(row)).sum();
                         self.scaler.unscale_y(sum) + offset
                     })
                     .collect()
             })
             .collect())
-    }
-
-    /// The column structure of the fit, from the configuration.
-    fn geometry(&self) -> Result<Geometry> {
-        Geometry::new(&self.config.metric, self.scaler.n_cols())
     }
 
     /// The variance of y given f at each row of `x` for every kept draw,
@@ -344,7 +336,6 @@ impl Fitted {
                 .map(|s| vec![s * range_sq; n])
                 .collect()),
             Model::Heteroscedastic => {
-                let geometry = self.geometry()?;
                 let x_scaled = self.scaler.scale_x(x);
                 Ok(self
                     .posterior
@@ -354,10 +345,7 @@ impl Fitted {
                         (0..n)
                             .map(|i| {
                                 let row = x_scaled.row(i);
-                                draw.iter()
-                                    .map(|t| t.value_at(row, &geometry))
-                                    .product::<f64>()
-                                    * range_sq
+                                draw.iter().map(|t| t.value_at(row)).product::<f64>() * range_sq
                             })
                             .collect()
                     })
@@ -782,11 +770,7 @@ mod tests {
         // s^2 is the product of the variance cell values times the range squared.
         let draw0 = &model.posterior().variance_tessellations()[0];
         let x_scaled = model.scaler().scale_x(&x);
-        let g = model.geometry().unwrap();
-        let product: f64 = draw0
-            .iter()
-            .map(|t| t.value_at(x_scaled.row(4), &g))
-            .product();
+        let product: f64 = draw0.iter().map(|t| t.value_at(x_scaled.row(4))).product();
         let range = model.scaler().y_range();
         assert!((variance[0][4] - product * range * range).abs() < 1e-12 * variance[0][4]);
         let pi = model.prediction_interval(&x, 0.9).unwrap();
