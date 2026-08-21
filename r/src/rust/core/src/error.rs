@@ -113,6 +113,13 @@ pub enum Error {
         /// Zero-based column.
         col: usize,
     },
+    /// Chains given to [`Fitted::pool`](crate::Fitted::pool) were not
+    /// fitted the same way.
+    #[error("chains cannot be pooled: {reason}")]
+    MismatchedChains {
+        /// The invariant that failed.
+        reason: String,
+    },
 }
 
 /// `Result<T, Error>`.
@@ -214,6 +221,12 @@ mod tests {
                     model: crate::Model::Probit,
                 },
                 "`prediction_interval` is not defined under the probit model",
+            ),
+            (
+                Error::MismatchedChains {
+                    reason: "configurations differ".into(),
+                },
+                "chains cannot be pooled: configurations differ",
             ),
         ];
         for (error, message) in cases {

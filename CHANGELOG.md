@@ -10,6 +10,10 @@ says "Sampled values changed" with the reason.
 
 ### Added
 
+- `Fitted::pool`, the kept draws of chains of the same model and data as
+  one fitted model in chain order, with `Error::MismatchedChains` for
+  chains that disagree. Chain seeds come from `chain_seed`; the pooled
+  in-sample RMSE is that of the pooled posterior mean.
 - `fit_with_progress`, `fit` with a callback taking the number of
   completed sweeps and `burn_in + draws * thinning`. The draws for a
   fixed seed are those of `fit`.

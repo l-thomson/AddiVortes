@@ -62,6 +62,13 @@ impl Posterior {
     pub fn variance_tessellations(&self) -> &[Vec<Tessellation>] {
         &self.variance_tessellations
     }
+
+    pub(crate) fn extend(&mut self, other: &Self) {
+        self.sigma_sq.extend_from_slice(&other.sigma_sq);
+        self.tessellations.extend_from_slice(&other.tessellations);
+        self.variance_tessellations
+            .extend_from_slice(&other.variance_tessellations);
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -264,6 +271,68 @@ impl Fitted {
     /// The model the draws were fitted under.
     pub fn model(&self) -> Model {
         self.config.model
+    }
+
+    /// The kept draws of `fits`, in chain order, as one fitted model.
+    ///
+    /// # Arguments
+    ///
+    /// `fits` are chains of the same model fitted to `x` and `y`, keyed by
+    /// [`chain_seed`](crate::chain_seed). The in-sample RMSE is that of the
+    /// pooled posterior mean.
+    ///
+    /// # Errors
+    ///
+    /// `MismatchedChains` for an empty `fits` or chains whose
+    /// configuration, scaling or category levels differ;
+    /// `RowCountMismatch`; the [`predict`](Self::predict) errors.
+    pub fn pool(fits: &[Self], x: &Data, y: &[f64]) -> Result<Self> {
+        let mismatch = |reason: &str| Error::MismatchedChains {
+            reason: reason.into(),
+        };
+        let (first, rest) = fits.split_first().ok_or_else(|| mismatch("no chains"))?;
+        for fit in rest {
+            if fit.config != first.config {
+                return Err(mismatch("configurations differ"));
+            }
+            if fit.scaler != first.scaler || fit.categories != first.categories {
+                return Err(mismatch("chains were fitted to different data"));
+            }
+        }
+        if y.len() != x.n_rows() {
+            return Err(Error::RowCountMismatch {
+                y_len: y.len(),
+                x_rows: x.n_rows(),
+            });
+        }
+        let mut posterior = Posterior::empty();
+        let mut warnings: Vec<Warning> = Vec::new();
+        for fit in fits {
+            posterior.extend(&fit.posterior);
+            for warning in &fit.warnings {
+                if !warnings.contains(warning) {
+                    warnings.push(*warning);
+                }
+            }
+        }
+        let mut pooled = Self::new(
+            first.config.clone(),
+            first.scaler.clone(),
+            posterior,
+            warnings,
+            0.0,
+            first.categories.clone(),
+        );
+        let mean = pooled.predict(x)?;
+        let n = y.len() as f64;
+        pooled.in_sample_rmse = (mean
+            .iter()
+            .zip(y)
+            .map(|(f, y)| (f - y) * (f - y))
+            .sum::<f64>()
+            / n)
+            .sqrt();
+        Ok(pooled)
     }
 
     fn not_applicable(&self, method: &str) -> Error {
