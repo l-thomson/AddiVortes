@@ -94,6 +94,20 @@ AddiVortes and `model.matrix`. A column whose `metric` entry is
 `'categorical'` passes as integer level codes and takes the Eskin mismatch
 weight rather than being expanded.
 
+## arviz
+
+With the `arviz` extra, a fit converts to an arviz `DataTree`:
+
+```python
+import arviz as az
+
+data = fitted.to_inference_data(x, y)
+az.summary(data, var_names=["sigma"])
+az.loo(data)
+```
+
+The sampler runs one chain, so every group has a chain dimension of one.
+
 ## Models and the stable surface
 
 `model` takes `gaussian`, `probit` or `heteroscedastic`, the models of Stone
