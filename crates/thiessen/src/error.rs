@@ -105,13 +105,6 @@ pub enum Error {
         /// The Cargo feature.
         feature: &'static str,
     },
-    /// Chains given to [`Fitted::pool`](crate::Fitted::pool) were not
-    /// fitted the same way.
-    #[error("chains cannot be pooled: {reason}")]
-    MismatchedChains {
-        /// The invariant that failed.
-        reason: String,
-    },
     /// A value in a categorical column is not an integer level code.
     #[error("design value at row {row}, column {col} is not an integer level code")]
     InvalidCategoryCode {
@@ -119,6 +112,13 @@ pub enum Error {
         row: usize,
         /// Zero-based column.
         col: usize,
+    },
+    /// Chains given to [`Fitted::pool`](crate::Fitted::pool) were not
+    /// fitted the same way.
+    #[error("chains cannot be pooled: {reason}")]
+    MismatchedChains {
+        /// The invariant that failed.
+        reason: String,
     },
 }
 
