@@ -70,40 +70,55 @@ enum Kind {
 }
 
 /// The centre-coordinate law of one column, the test's own: N(mean, sd^2),
-/// wrapped to [-pi, pi] for a longitude.
-#[derive(Clone, Copy)]
-struct Law {
-    mean: f64,
-    sd: f64,
-    wrapped: bool,
+/// wrapped to [-pi, pi] for a longitude; uniform over the levels of a
+/// categorical column.
+#[derive(Clone)]
+enum Law {
+    Normal { mean: f64, sd: f64, wrapped: bool },
+    Uniform { levels: Vec<f64> },
 }
 
 impl Law {
     fn draw(&self, rng: &mut TestRng) -> f64 {
-        let mut v = self.mean + self.sd * rng.normal();
-        if self.wrapped {
-            while v > PI {
-                v -= 2.0 * PI;
+        match self {
+            Law::Normal { mean, sd, wrapped } => {
+                let mut v = mean + sd * rng.normal();
+                if *wrapped {
+                    while v > PI {
+                        v -= 2.0 * PI;
+                    }
+                    while v < -PI {
+                        v += 2.0 * PI;
+                    }
+                }
+                v
             }
-            while v < -PI {
-                v += 2.0 * PI;
-            }
+            Law::Uniform { levels } => levels[(rng.uniform() * levels.len() as f64) as usize],
         }
-        v
     }
 }
 
+/// The column structure of a model under test: two Euclidean columns; one
+/// sphere of latitude and longitude; or a Euclidean column and a
+/// categorical column whose mismatch weighs `weight`.
+#[derive(Clone, Copy, PartialEq)]
+enum Space {
+    Euclidean,
+    Sphere,
+    Categorical { weight: f64 },
+}
+
 /// One model under test: the pinned-prior configuration and the test
-/// quantities, the first `n_sbc` of which are functions of theta alone.
-/// `spherical` makes the two columns latitude and longitude of one
-/// sphere, with `laws` the per-column coordinate laws.
+/// quantities, the first `n_sbc` of which are functions of theta alone;
+/// `space` and `laws` the column structure and per-column coordinate
+/// laws.
 struct Model {
     kind: Kind,
     config: Config,
     lambda: f64,
     x: Data,
     rows: Vec<[f64; 2]>,
-    spherical: bool,
+    space: Space,
     laws: [Law; 2],
     quantities: &'static [&'static str],
     n_sbc: usize,
@@ -141,7 +156,7 @@ fn gaussian_model() -> Model {
         .with_lambda_c(2.0)
         .with_omega(0.8)
         .with_sigma_c(0.8);
-    let euclidean = Law {
+    let euclidean = Law::Normal {
         mean: 0.0,
         sd: 0.8,
         wrapped: false,
@@ -152,8 +167,8 @@ fn gaussian_model() -> Model {
         lambda: 0.04,
         x,
         rows,
-        spherical: false,
-        laws: [euclidean, euclidean],
+        space: Space::Euclidean,
+        laws: [euclidean.clone(), euclidean],
         quantities: &GAUSSIAN_QUANTITIES,
         n_sbc: 6,
         gates: GAUSSIAN_GATES,
@@ -177,7 +192,7 @@ fn spherical_model() -> Model {
             .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), r| {
                 (lo.min(r[col]), hi.max(r[col]))
             });
-        Law {
+        Law::Normal {
             mean: 0.5 * (lo + hi),
             sd: 0.5 * (hi - lo) / 0.674_489_750_196_081_7,
             wrapped,
@@ -191,7 +206,35 @@ fn spherical_model() -> Model {
         ]),
         x: Data::from_rows(&rows).unwrap(),
         rows,
-        spherical: true,
+        space: Space::Sphere,
+        laws,
+        ..gaussian
+    }
+}
+
+/// The Gaussian model with a categorical second column: four levels
+/// (codes 0 to 3), mismatch weight 2 / 16, uniform coordinate law.
+fn categorical_model() -> Model {
+    let gaussian = gaussian_model();
+    let rows: Vec<[f64; 2]> = gaussian
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(i, r)| [r[0], ((i * 7) % 4) as f64])
+        .collect();
+    let laws = [
+        gaussian.laws[0].clone(),
+        Law::Uniform {
+            levels: vec![0.0, 1.0, 2.0, 3.0],
+        },
+    ];
+    Model {
+        config: gaussian
+            .config
+            .with_metric(vec![Metric::Euclidean, Metric::Categorical]),
+        x: Data::from_rows(&rows).unwrap(),
+        rows,
+        space: Space::Categorical { weight: 2.0 / 16.0 },
         laws,
         ..gaussian
     }
@@ -360,12 +403,31 @@ impl Model {
     /// the great-circle angle with the centre placed at the row's own
     /// coordinate in an inactive column.
     fn key(&self, row: &[f64; 2], dims: &[usize], centre: &[f64]) -> f64 {
-        if !self.spherical {
-            return dims
-                .iter()
-                .zip(centre)
-                .map(|(&dim, c)| (row[dim] - c) * (row[dim] - c))
-                .sum();
+        match self.space {
+            Space::Euclidean => {
+                return dims
+                    .iter()
+                    .zip(centre)
+                    .map(|(&dim, c)| (row[dim] - c) * (row[dim] - c))
+                    .sum();
+            }
+            Space::Categorical { weight } => {
+                return dims
+                    .iter()
+                    .zip(centre)
+                    .map(|(&dim, c)| match dim {
+                        0 => (row[0] - c) * (row[0] - c),
+                        _ => {
+                            if row[1] == *c {
+                                0.0
+                            } else {
+                                weight
+                            }
+                        }
+                    })
+                    .sum();
+            }
+            Space::Sphere => {}
         }
         let coordinate = |col: usize| match dims.iter().position(|&dim| dim == col) {
             Some(j) => centre[j],
@@ -584,6 +646,13 @@ fn sbc_small_ranks_are_uniform_spherical() {
     assert_uniform(&model, &ranks, 19);
 }
 
+#[test]
+fn sbc_small_ranks_are_uniform_categorical() {
+    let model = categorical_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 405);
+    assert_uniform(&model, &ranks, 19);
+}
+
 /// Files first, so a failed gate still leaves the R evaluation its input.
 fn sbc_full(model: &Model, file: &str, seed: u64) {
     let ranks = sbc_ranks(model, 1000, 99, 20, 300, seed);
@@ -623,6 +692,12 @@ fn sbc_full_ranks_are_uniform_heteroscedastic() {
 #[ignore = "full size, nightly"]
 fn sbc_full_ranks_are_uniform_spherical() {
     sbc_full(&spherical_model(), "sbc_ranks_spherical.csv", 404);
+}
+
+#[test]
+#[ignore = "full size, nightly"]
+fn sbc_full_ranks_are_uniform_categorical() {
+    sbc_full(&categorical_model(), "sbc_ranks_categorical.csv", 405);
 }
 
 // ---------------------------------------------------------------------------
@@ -798,6 +873,13 @@ fn geweke_small_simulators_agree_spherical() {
     assert_simulators_agree(&model, &mc, &sc);
 }
 
+#[test]
+fn geweke_small_simulators_agree_categorical() {
+    let model = categorical_model();
+    let (mc, sc) = geweke_samples(&model, 2000, 800, 45, 200, 911);
+    assert_simulators_agree(&model, &mc, &sc);
+}
+
 /// Files first, so a failed gate still leaves the R evaluation its input.
 fn geweke_full(model: &Model, file: &str, seed: u64) {
     let (mc, sc) = geweke_samples(model, 20_000, 5000, 45, 500, seed);
@@ -840,6 +922,12 @@ fn geweke_full_simulators_agree_heteroscedastic() {
 #[ignore = "full size, nightly"]
 fn geweke_full_simulators_agree_spherical() {
     geweke_full(&spherical_model(), "geweke_samples_spherical.csv", 910);
+}
+
+#[test]
+#[ignore = "full size, nightly"]
+fn geweke_full_simulators_agree_categorical() {
+    geweke_full(&categorical_model(), "geweke_samples_categorical.csv", 911);
 }
 
 fn write_csv(name: &str, lines: &[String]) {

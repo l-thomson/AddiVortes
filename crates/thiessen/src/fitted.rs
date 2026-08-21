@@ -142,6 +142,8 @@ pub struct Fitted {
     posterior: Posterior,
     warnings: Vec<Warning>,
     in_sample_rmse: f64,
+    /// Levels of each categorical column; empty for the other columns.
+    categories: Vec<Vec<f64>>,
 }
 
 #[derive(serde::Deserialize)]
@@ -151,6 +153,8 @@ struct FittedParts {
     posterior: Posterior,
     warnings: Vec<Warning>,
     in_sample_rmse: f64,
+    #[serde(default)]
+    categories: Vec<Vec<f64>>,
 }
 
 impl TryFrom<FittedParts> for Fitted {
@@ -162,7 +166,13 @@ impl TryFrom<FittedParts> for Fitted {
         };
         parts.config.validate()?;
         let p = parts.scaler.n_cols();
-        Geometry::new(&parts.config.metric, p)?;
+        // A save from before categorical levels were stored carries none.
+        let categories = if parts.categories.is_empty() {
+            vec![Vec::new(); p]
+        } else {
+            parts.categories
+        };
+        Geometry::with_categories(&parts.config.metric, p, &categories)?;
         let uses_covariates = |draws: &[Vec<Tessellation>]| {
             draws
                 .iter()
@@ -218,6 +228,7 @@ impl TryFrom<FittedParts> for Fitted {
             posterior: parts.posterior,
             warnings: parts.warnings,
             in_sample_rmse: parts.in_sample_rmse,
+            categories,
         })
     }
 }
@@ -238,6 +249,7 @@ impl Fitted {
         posterior: Posterior,
         warnings: Vec<Warning>,
         in_sample_rmse: f64,
+        categories: Vec<Vec<f64>>,
     ) -> Self {
         Self {
             config,
@@ -245,6 +257,7 @@ impl Fitted {
             posterior,
             warnings,
             in_sample_rmse,
+            categories,
         }
     }
 
@@ -265,7 +278,7 @@ impl Fitted {
     ///
     /// # Errors
     ///
-    /// `FeatureCountMismatch`, `NonFiniteFeature`.
+    /// `FeatureCountMismatch`, `NonFiniteFeature`, `InvalidCategoryCode`.
     pub fn predict(&self, x: &Data) -> Result<Vec<f64>> {
         Ok(column_means(&self.predict_draws(x)?, x.n_rows()))
     }
@@ -275,7 +288,7 @@ impl Fitted {
     ///
     /// # Errors
     ///
-    /// `FeatureCountMismatch`, `NonFiniteFeature`.
+    /// `FeatureCountMismatch`, `NonFiniteFeature`, `InvalidCategoryCode`.
     pub fn predict_draws(&self, x: &Data) -> Result<Vec<Vec<f64>>> {
         let mut latent = self.predict_latent(x)?;
         if self.config.model == Model::Probit {
@@ -294,10 +307,11 @@ impl Fitted {
     ///
     /// # Errors
     ///
-    /// `FeatureCountMismatch`, `NonFiniteFeature`.
+    /// `FeatureCountMismatch`, `NonFiniteFeature`, `InvalidCategoryCode`.
     pub fn predict_latent(&self, x: &Data) -> Result<Vec<Vec<f64>>> {
         data::validate_predict(x, self.scaler.n_cols())?;
         let geometry = self.geometry()?;
+        geometry.check_codes(x)?;
         let x_scaled = self.scaler.scale_x(x);
         let n = x.n_rows();
         let offset = self.offset();
@@ -317,9 +331,10 @@ impl Fitted {
             .collect())
     }
 
-    /// The column structure of the fit, from the configuration.
+    /// The column structure of the fit, from the configuration and the
+    /// stored categorical levels.
     fn geometry(&self) -> Result<Geometry> {
-        Geometry::new(&self.config.metric, self.scaler.n_cols())
+        Geometry::with_categories(&self.config.metric, self.scaler.n_cols(), &self.categories)
     }
 
     /// The variance of y given f at each row of `x` for every kept draw,
@@ -331,7 +346,7 @@ impl Fitted {
     /// # Errors
     ///
     /// `NotApplicable` under the probit model; `FeatureCountMismatch`,
-    /// `NonFiniteFeature`.
+    /// `NonFiniteFeature`, `InvalidCategoryCode`.
     pub fn predict_variance(&self, x: &Data) -> Result<Vec<Vec<f64>>> {
         data::validate_predict(x, self.scaler.n_cols())?;
         let n = x.n_rows();
@@ -345,6 +360,7 @@ impl Fitted {
                 .collect()),
             Model::Heteroscedastic => {
                 let geometry = self.geometry()?;
+                geometry.check_codes(x)?;
                 let x_scaled = self.scaler.scale_x(x);
                 Ok(self
                     .posterior

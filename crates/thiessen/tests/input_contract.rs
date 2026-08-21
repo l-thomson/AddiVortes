@@ -145,6 +145,39 @@ fn metric_must_name_every_column_with_the_longitude_last() {
 }
 
 #[test]
+fn categorical_columns_take_integer_codes() {
+    let codes = Data::from_rows(&[[1.0, 2.0], [2.0, 0.0], [3.0, 1.0], [4.0, 2.0]]).unwrap();
+    let y = vec![0.5, 1.5, 2.5, 3.0];
+    let config = config().with_metric(vec![Metric::Euclidean, Metric::Categorical]);
+    let model = fit(&config, &codes, &y, 1).unwrap();
+    assert_eq!(model.predict(&codes).unwrap().len(), 4);
+    // A code unseen in training predicts; a non-integer does not.
+    let unseen = Data::from_rows(&[[2.5, 7.0]]).unwrap();
+    assert_eq!(model.predict(&unseen).unwrap().len(), 1);
+    let fractional = Data::from_rows(&[[2.5, 0.5]]).unwrap();
+    assert_eq!(
+        model.predict(&fractional).unwrap_err(),
+        Error::InvalidCategoryCode { row: 0, col: 1 }
+    );
+    let bad = Data::from_rows(&[[1.0, 2.0], [2.0, 0.25], [3.0, 1.0], [4.0, 2.0]]).unwrap();
+    assert_eq!(
+        fit(&config, &bad, &y, 1).unwrap_err(),
+        Error::InvalidCategoryCode { row: 1, col: 1 }
+    );
+    // The levels survive a save and load; a save with levels on a
+    // Euclidean column is rejected.
+    let json = serde_json::to_string(&model).unwrap();
+    let loaded: thiessen::Fitted = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        loaded.predict(&unseen).unwrap(),
+        model.predict(&unseen).unwrap()
+    );
+    assert!(json.contains(r#""categories":[[],[0.0,1.0,2.0]]"#));
+    let corrupt = json.replace(r#""categories":[[],"#, r#""categories":[[1.0],"#);
+    assert!(serde_json::from_str::<thiessen::Fitted>(&corrupt).is_err());
+}
+
+#[test]
 fn predict_checks_columns_and_accepts_an_empty_matrix() {
     let (x, y) = valid();
     let model = fit(&config(), &x, &y, 1).unwrap();

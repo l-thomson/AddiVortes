@@ -279,7 +279,7 @@ mod tests {
             let g = if round % 2 == 0 {
                 Geometry::euclidean(p)
             } else {
-                Geometry::new(&vec![Metric::Spherical { sphere: 0 }; p], p).unwrap()
+                Geometry::structure(&vec![Metric::Spherical { sphere: 0 }; p], p).unwrap()
             };
             let t = random_tessellation(p, b, d, &mut rng);
             let cache = Assignment::full(&x, &t, &g);

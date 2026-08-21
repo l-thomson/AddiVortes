@@ -75,11 +75,13 @@
 //! must match the fitted model; an empty matrix is valid. Each column has
 //! a [`Metric`] ([`Config::metric`]): Euclidean columns are min-max scaled
 //! over their training range; spherical columns are coordinates in
-//! radians, a sphere's latitudes then its longitude, and are not scaled.
-//! Categorical covariates are encoded by the caller before they reach the
-//! crate; the Python and R packages encode a d-level factor as d - 1
-//! Euclidean indicator columns. This section corresponds to rOpenSci
-//! general standard G2 and Bayesian standard BS2.
+//! radians, a sphere's latitudes then its longitude, and are not scaled;
+//! categorical columns are integer level codes, not scaled, any
+//! non-integer value rejected with [`Error::InvalidCategoryCode`]. A
+//! categorical covariate reaches the crate either as d - 1 Euclidean
+//! indicator columns (the encoding the Python and R packages apply by
+//! default) or as one categorical column of codes. This section
+//! corresponds to rOpenSci general standard G2 and Bayesian standard BS2.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]

@@ -328,7 +328,8 @@ mod tests {
     fn unscaled_columns_keep_the_caller_scale() {
         use crate::geometry::Metric;
         let x = Data::new(vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0], 3, 2).unwrap();
-        let g = Geometry::new(&[Metric::Spherical { sphere: 0 }, Metric::Euclidean], 2).unwrap();
+        let g =
+            Geometry::structure(&[Metric::Spherical { sphere: 0 }, Metric::Euclidean], 2).unwrap();
         let (scaler, xs, _) = Scaler::fit(&x, &[0.0, 5.0, 10.0], &g);
         assert_eq!(xs.row(0), &[1.0, -0.5]);
         assert_eq!(xs.row(2), &[3.0, 0.5]);

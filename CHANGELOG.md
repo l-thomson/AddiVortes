@@ -17,6 +17,10 @@ says "Sampled values changed" with the reason.
   columns are radians, unscaled, with the upstream centre-coordinate
   law; an upstream comparison fixture on a sphere joins the suite. The
   Euclidean chain for a fixed seed is unchanged.
+- `Metric::Categorical`: integer level codes with the Eskin mismatch
+  weight 2 / n^2 of CRAN AddiVortes `metric = "C"`, uniform centre
+  coordinates over the training levels, `Error::InvalidCategoryCode` for
+  a non-integer value; the levels are stored on `Fitted`.
 - Cargo feature `experimental` for components and models beyond the
   published method, outside the semver promise; `Error::RequiresFeature`
   and `FromStr` for `Model`; the stability contract in the crate-root
