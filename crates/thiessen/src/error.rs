@@ -89,14 +89,6 @@ pub enum Error {
         /// Zero-based row.
         row: usize,
     },
-    /// A value in a categorical column is not an integer level code.
-    #[error("design value at row {row}, column {col} is not an integer level code")]
-    InvalidCategoryCode {
-        /// Zero-based row.
-        row: usize,
-        /// Zero-based column.
-        col: usize,
-    },
     /// A method has no meaning under the fitted model.
     #[error("`{method}` is not defined under the {model} model")]
     NotApplicable {
@@ -112,6 +104,14 @@ pub enum Error {
         item: String,
         /// The Cargo feature.
         feature: &'static str,
+    },
+    /// A value in a categorical column is not an integer level code.
+    #[error("design value at row {row}, column {col} is not an integer level code")]
+    InvalidCategoryCode {
+        /// Zero-based row.
+        row: usize,
+        /// Zero-based column.
+        col: usize,
     },
 }
 
