@@ -18,6 +18,10 @@ updates:
       # proptest above 1.8 needs rustc 1.85; the MSRV is 1.74.
       - dependency-name: proptest
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
+  - package-ecosystem: pip
+    directory: "/python"
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
