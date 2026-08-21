@@ -82,6 +82,15 @@ schedule \code{thiessen()} runs. Every argument defaults to the core's own
 default, reported by \code{core_defaults()}, so an unset argument and an
 argument set to its default give the same fit.
 }
+\details{
+The three models are the published method and follow semantic versioning.
+Everything else the core crate adds sits behind its \code{experimental} Cargo
+feature, which this package does not enable, so a configuration or a
+saved fit naming such an option is rejected with the core's message
+naming the feature. The table of experimental items and their status is
+\code{docs/experimental.md} in the repository. A graduated item is accepted
+here as any other option, with no separate opt-in.
+}
 \examples{
 thiessen_control(m = 50, draws = 200)
 }

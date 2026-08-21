@@ -5,6 +5,11 @@ edition = "2021"
 rust-version = "1.74"
 publish = false
 
+[features]
+# Off in every build the package ships; `core_experimental()` reports the
+# build's setting and the policy is docs/experimental.md in the repository.
+experimental = ["thiessen/experimental"]
+
 [lib]
 name = "thiessen"
 crate-type = ["staticlib"]

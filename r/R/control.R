@@ -5,6 +5,14 @@
 #' default, reported by `core_defaults()`, so an unset argument and an
 #' argument set to its default give the same fit.
 #'
+#' The three models are the published method and follow semantic versioning.
+#' Everything else the core crate adds sits behind its `experimental` Cargo
+#' feature, which this package does not enable, so a configuration or a
+#' saved fit naming such an option is rejected with the core's message
+#' naming the feature. The table of experimental items and their status is
+#' `docs/experimental.md` in the repository. A graduated item is accepted
+#' here as any other option, with no separate opt-in.
+#'
 #' @param model The observation model: `"gaussian"`, `"probit"` for a binary
 #'   response, or `"heteroscedastic"` for a variance that varies with x.
 #' @param m Ensemble size m of the mean function. Default 200.

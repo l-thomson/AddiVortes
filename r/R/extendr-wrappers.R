@@ -11,6 +11,8 @@
 #' @export
 core_version <- function() .Call(wrap__core_version)
 
+core_experimental <- function() .Call(wrap__core_experimental)
+
 core_defaults <- function() .Call(wrap__core_defaults)
 
 core_validate <- function(config_json) .Call(wrap__core_validate, config_json)
