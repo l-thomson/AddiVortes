@@ -69,3 +69,23 @@ fn a_fit_round_trips_through_its_saved_state() {
     let back: thiessen::Fitted = serde_json::from_str(&json).unwrap();
     assert_eq!(fitted.predict(&x).unwrap(), back.predict(&x).unwrap());
 }
+
+#[test]
+fn cosine_changes_the_chain_and_round_trips() {
+    let (config, x, y) = fixture();
+    let euclidean = fit(&config.clone(), &x, &y, SEED).unwrap();
+    let fitted = fit(&config.with_metric(vec![Metric::Cosine; 2]), &x, &y, SEED).unwrap();
+    assert_ne!(euclidean.sigma(), fitted.sigma());
+    let json = serde_json::to_string(&fitted).unwrap();
+    let back: thiessen::Fitted = serde_json::from_str(&json).unwrap();
+    assert_eq!(fitted.predict(&x).unwrap(), back.predict(&x).unwrap());
+}
+
+#[test]
+fn the_cosine_configuration_serialises_by_name() {
+    let config = Config::new().with_metric(vec![Metric::Cosine, Metric::Euclidean]);
+    let json = serde_json::to_string(&config).unwrap();
+    assert!(json.contains(r#""cosine""#), "{json}");
+    let back: Config = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+}

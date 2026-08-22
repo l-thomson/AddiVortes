@@ -120,6 +120,8 @@ enum Space {
     Minkowski {
         p: f64,
     },
+    #[cfg(feature = "experimental")]
+    Cosine,
 }
 
 /// One model under test: the pinned-prior configuration and the test
@@ -266,6 +268,21 @@ fn minkowski_model() -> Model {
             Metric::Minkowski { p: 1.0 },
         ]),
         space: Space::Minkowski { p: 1.0 },
+        ..gaussian
+    }
+}
+
+/// The Gaussian model under the cosine distance on both columns: the
+/// calibration rows, the Euclidean coordinate laws, only the assignment
+/// of rows to cells changes.
+#[cfg(feature = "experimental")]
+fn cosine_model() -> Model {
+    let gaussian = gaussian_model();
+    Model {
+        config: gaussian
+            .config
+            .with_metric(vec![Metric::Cosine, Metric::Cosine]),
+        space: Space::Cosine,
         ..gaussian
     }
 }
@@ -469,6 +486,23 @@ impl Model {
                     .map(|(&dim, c)| (row[dim] - c).abs().powf(p))
                     .sum();
                 return sum.powf(2.0 / p);
+            }
+            #[cfg(feature = "experimental")]
+            Space::Cosine => {
+                let (mut dot, mut a, mut b) = (0.0, 0.0, 0.0);
+                for (&dim, c) in dims.iter().zip(centre) {
+                    dot += row[dim] * c;
+                    a += row[dim] * row[dim];
+                    b += c * c;
+                }
+                let d = if a == 0.0 && b == 0.0 {
+                    0.0
+                } else if a == 0.0 || b == 0.0 {
+                    1.0
+                } else {
+                    (1.0 - dot / (a.sqrt() * b.sqrt())).clamp(0.0, 2.0)
+                };
+                return d * d;
             }
             Space::Sphere => {}
         }
@@ -701,6 +735,14 @@ fn sbc_small_ranks_are_uniform_categorical() {
 fn sbc_small_ranks_are_uniform_minkowski() {
     let model = minkowski_model();
     let ranks = sbc_ranks(&model, 160, 19, 15, 150, 406);
+    assert_uniform(&model, &ranks, 19);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+fn sbc_small_ranks_are_uniform_cosine() {
+    let model = cosine_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 407);
     assert_uniform(&model, &ranks, 19);
 }
 

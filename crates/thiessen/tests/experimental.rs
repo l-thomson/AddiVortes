@@ -31,3 +31,10 @@ fn manhattan_metric_is_rejected() {
     let err = serde_json::from_str::<Config>(json).unwrap_err();
     assert!(err.to_string().contains("manhattan"), "{err}");
 }
+
+#[test]
+fn cosine_metric_is_rejected() {
+    let json = r#"{"mean_params": {"geometry": {"metric": ["cosine"]}}}"#;
+    let err = serde_json::from_str::<Config>(json).unwrap_err();
+    assert!(err.to_string().contains("cosine"), "{err}");
+}

@@ -17,6 +17,12 @@ says "Sampled values changed" with the reason.
   coordinates and structural moves are those of Euclidean; only the
   assignment of rows to cells changes. Outside the semver promise
   (docs/experimental.md).
+- (experimental) `Metric::Cosine`: 1 minus the cosine similarity of the
+  active Cosine coordinates, squared into the key; 1 against a single
+  zero vector, 0 when both are zero. The triangle inequality does not
+  hold, the [-0.5, 0.5] scaling makes the origin data-dependent, and the
+  option is intended for covariates that are directions already. Outside
+  the semver promise (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled
