@@ -103,7 +103,7 @@ test_that("a two-level factor response becomes 0 and 1", {
   frame <- frame_fixture()
   frame$label <- factor(ifelse(frame$y >= stats::median(frame$y), "yes", "no"))
 
-  fit <- thiessen(label ~ a + b, frame, small_control(model = "probit"),
+  fit <- thiessen(label ~ a + b, frame, small_control(outcome = probit()),
                   seed = 1)
 
   expect_identical(fit$response_levels, c("no", "yes"))
@@ -121,9 +121,11 @@ test_that("a factor response of more than two levels is refused", {
 
 test_that("a declared metric passes a factor as level codes", {
   frame <- frame_fixture()
-  control <- small_control(
-    metric = c("euclidean", "euclidean", "categorical")
-  )
+  control <- small_control(mean_params = term_params(
+    geometry = geometry_params(
+      metric = c("euclidean", "euclidean", "categorical")
+    )
+  ))
 
   fit <- thiessen(y ~ a + b + g, frame, control, seed = 1)
 
@@ -133,9 +135,11 @@ test_that("a declared metric passes a factor as level codes", {
 
 test_that("a factor whose metric is not categorical is refused", {
   frame <- frame_fixture()
-  control <- small_control(
-    metric = c("euclidean", "euclidean", "euclidean")
-  )
+  control <- small_control(mean_params = term_params(
+    geometry = geometry_params(
+      metric = c("euclidean", "euclidean", "euclidean")
+    )
+  ))
 
   expect_error(
     thiessen(y ~ a + b + g, frame, control, seed = 1),
@@ -145,9 +149,11 @@ test_that("a factor whose metric is not categorical is refused", {
 
 test_that("a categorical fit predicts on new rows", {
   frame <- frame_fixture()
-  control <- small_control(
-    metric = c("euclidean", "euclidean", "categorical")
-  )
+  control <- small_control(mean_params = term_params(
+    geometry = geometry_params(
+      metric = c("euclidean", "euclidean", "categorical")
+    )
+  ))
   fit <- thiessen(y ~ a + b + g, frame, control, seed = 1)
 
   expect_identical(predict(fit, frame), fitted(fit))

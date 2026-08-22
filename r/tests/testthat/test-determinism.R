@@ -25,7 +25,10 @@ test_that("the draws equal the core's committed chain", {
 
   fit <- thiessen(
     fixture$x, fixture$y,
-    thiessen_control(m = 15, burn_in = 50, draws = 60),
+    thiessen_control(
+      tessellations = 15,
+      general_params = general_params(burn_in = 50, draws = 60)
+    ),
     seed = CORE_SEED
   )
 

@@ -24,6 +24,9 @@ Residual standard deviation of a fitted model
 n <- 60
 x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
 y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
-sigma(thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
-               seed = 1))
+control <- thiessen_control(
+  tessellations = 10,
+  general_params = general_params(burn_in = 20, draws = 40)
+)
+sigma(thiessen(x, y, control, seed = 1))
 }

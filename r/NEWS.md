@@ -1,8 +1,14 @@
 # thiessen 0.0.0.9000
 
 * `thiessen()` fits the Gaussian, binary probit and heteroscedastic models
-  to a numeric matrix, with `thiessen_control()` carrying the
-  hyperparameters and the sweep schedule. Methods: `predict()` for the
+  to a numeric matrix, with `thiessen_control()` carrying the configuration
+  in the shape the core stores it: an outcome family from `gaussian()` or
+  `probit()`, one `term_params()` group per ensemble (with
+  `geometry_params()` and `structure_params()` nested inside), and the
+  sweep schedule from `general_params()`. A positive tessellation count on
+  `variance_params` selects the heteroscedastic model, and
+  `thiessen_control(tessellations = )` is the one shortcut, setting the
+  mean ensemble's size. Methods: `predict()` for the
   posterior mean, the per-draw mean function and variance, and central
   credible and posterior predictive intervals; `sigma()`, `fitted()`,
   `residuals()`, `nobs()`, `print()` and `summary()`.
@@ -43,10 +49,10 @@
   replaced.
 * `seed = NULL` draws the chain's seed from R's stream, so `set.seed()`
   governs; a whole number passes to the core unchanged.
-* The core is built without its `experimental` feature, so
-  `thiessen_control(model = )` takes the three published models and any
-  other name is rejected with the core's message; `core_experimental()`
-  reports the build's setting.
+* The core is built without its `experimental` feature, so only the
+  published models are reachable: a gated outcome has no constructor and a
+  configuration naming a gated field or variant is rejected with the
+  core's message; `core_experimental()` reports the build's setting.
 * Errors carry the condition class `thiessen_error` and warnings
   `thiessen_warning`.
 * Builds and links the core crate offline from the vendored sources in

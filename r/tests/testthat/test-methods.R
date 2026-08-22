@@ -89,7 +89,7 @@ test_that("sigma is one under the probit model", {
   fixture <- small_fixture()
   labels <- as.double(fixture$y >= stats::median(fixture$y))
 
-  fit <- thiessen(fixture$x, labels, small_control(model = "probit"), seed = 1)
+  fit <- thiessen(fixture$x, labels, small_control(outcome = probit()), seed = 1)
 
   expect_identical(sigma(fit), 1)
 })
@@ -99,7 +99,7 @@ test_that("the heteroscedastic model has no single residual scale", {
 
   fit <- thiessen(
     fixture$x, fixture$y,
-    small_control(model = "heteroscedastic", m_var = 4),
+    small_control(variance_params = term_params(tessellations = 4)),
     seed = 1
   )
 
@@ -131,7 +131,7 @@ test_that("summary reports no sigma where the model has none", {
 
   fit <- thiessen(
     fixture$x, fixture$y,
-    small_control(model = "heteroscedastic", m_var = 4),
+    small_control(variance_params = term_params(tessellations = 4)),
     seed = 1
   )
 

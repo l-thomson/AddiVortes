@@ -10,15 +10,24 @@ test_that("the core calls the report function as many times as asked", {
 
 test_that("the number of updates does not exceed the sweeps", {
   expect_identical(
-    progress_reporter(thiessen_control(burn_in = 1, draws = 2))$updates,
+    progress_reporter(
+      thiessen_control(general_params = general_params(burn_in = 1, draws = 2))
+    )$updates,
     3L
   )
   expect_identical(
-    progress_reporter(thiessen_control(burn_in = 1, draws = 2), chains = 2)$updates,
+    progress_reporter(
+      thiessen_control(general_params = general_params(burn_in = 1, draws = 2)),
+      chains = 2
+    )$updates,
     6L
   )
   expect_identical(
-    progress_reporter(thiessen_control(burn_in = 100, draws = 100))$updates,
+    progress_reporter(
+      thiessen_control(
+        general_params = general_params(burn_in = 100, draws = 100)
+      )
+    )$updates,
     100L
   )
 })

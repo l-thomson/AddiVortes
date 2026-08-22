@@ -2,97 +2,75 @@
 % Please edit documentation in R/control.R
 \name{thiessen_control}
 \alias{thiessen_control}
-\title{Hyperparameters and sweep schedule of a fit}
+\title{Configuration of a fit}
 \usage{
 thiessen_control(
-  model = NULL,
-  m = NULL,
-  nu = NULL,
-  q = NULL,
-  k = NULL,
-  sigma_c = NULL,
-  omega = NULL,
-  lambda_c = NULL,
-  burn_in = NULL,
-  draws = NULL,
-  thinning = NULL,
-  prior_only = NULL,
-  offset = NULL,
-  m_var = NULL,
-  metric = NULL
+  outcome = gaussian(),
+  mean_params = term_params(),
+  variance_params = NULL,
+  general_params = NULL,
+  tessellations = NULL
 )
 }
 \arguments{
-\item{model}{The observation model: \code{"gaussian"}, \code{"probit"} for a binary
-response, or \code{"heteroscedastic"} for a variance that varies with x.}
+\item{outcome}{The outcome family, from \code{\link[=gaussian]{gaussian()}} or \code{\link[=probit]{probit()}}.}
 
-\item{m}{Ensemble size m of the mean function. Default 200.}
+\item{mean_params}{The ensemble describing the average, from
+\code{\link[=term_params]{term_params()}}.}
 
-\item{nu}{Degrees of freedom nu of the sigma^2 prior,
-sigma^2 ~ nu lambda / chi^2_nu. Default 6. The heteroscedastic model
-requires nu > 2.}
+\item{variance_params}{The ensemble describing the spread, from
+\code{\link[=term_params]{term_params()}}. \code{NULL}, the default, keeps the spread constant.}
 
-\item{q}{Calibration quantile q of the sigma^2 prior,
-Pr(sigma < sigma_hat) = q. Default 0.85.}
+\item{general_params}{The sweep schedule, from \code{\link[=general_params]{general_params()}}.
+\code{NULL}, the default, is \code{general_params()}.}
 
-\item{k}{Cell-mean prior spread k: sigma_mu = 0.5 / (k sqrt(m)) on the
-response scaled to [-0.5, 0.5], and 3 / (k sqrt(m)) on the latent
-scale of the probit model (Chipman, George and McCulloch 2010, s. 4).
-Default 3.}
-
-\item{sigma_c}{Prior and proposal standard deviation sigma_c of a centre
-coordinate in the scaled space. Default 0.8.}
-
-\item{omega}{Dimension-count prior parameter omega; omega / p is the
-prior probability of including a covariate. \code{NULL}, the default,
-resolves to min(3, p) at fit. Must satisfy 0 < omega <= p.}
-
-\item{lambda_c}{Cell-count prior rate lambda_c: b - 1 ~ Poisson(lambda_c).
-Default 5, following AddiVortes 0.6.8 and later; the paper reports 25.}
-
-\item{burn_in}{Sweeps discarded before the kept draws. Default 200.}
-
-\item{draws}{Posterior draws kept. Default 1000.}
-
-\item{thinning}{Keep every \code{thinning}-th sweep after burn-in. Default 1.}
-
-\item{prior_only}{Switch off the likelihood, so the chain draws from the
-prior and \code{predict()} gives prior predictive draws. Default \code{FALSE}.}
-
-\item{offset}{Probit model only: the offset c in
-P(y = 1 | x) = Phi(c + f(x)). \code{NULL}, the default, resolves to
-Phi^-1(ybar) at fit.}
-
-\item{m_var}{Heteroscedastic model only: the number m' of variance
-tessellations. Default 40.}
-
-\item{metric}{The metric of each covariate column, in column order: a
-list whose entries are \code{"euclidean"}, \code{"categorical"}, or
-\code{list(spherical = list(sphere = i))} for one coordinate of the sphere
-labelled \code{i}, its latitudes first and its longitude last, in radians.
-The default, an empty list, is Euclidean on every column.}
+\item{tessellations}{Shortcut for the mean ensemble's size:
+\code{thiessen_control(tessellations = 200)} is
+\code{thiessen_control(mean_params = term_params(tessellations = 200))}.
+An error if \code{mean_params} also sets a count.}
 }
 \value{
-An object of class \code{"thiessen_control"}: the core's default
-configuration with the arguments given substituted.
+An object of class \code{"thiessen_control"} holding the four
+groups.
 }
 \description{
-The hyperparameters of Stone and Gosling (2025), s. 2, and the sweep
-schedule \code{thiessen()} runs. Every argument defaults to the core's own
-default, reported by \code{core_defaults()}, so an unset argument and an
-argument set to its default give the same fit.
+The configuration of Stone and Gosling (2025), s. 2, in the shape the
+core stores it: an outcome family, one parameter group per ensemble,
+and the sweep schedule. Each part has its own constructor with its own
+documentation: \code{\link[=gaussian]{gaussian()}} and \code{\link[=probit]{probit()}} for the family,
+\code{\link[=term_params]{term_params()}} for an ensemble, and \code{\link[=general_params]{general_params()}} for the
+schedule. An argument left at its default gives the core's default, so
+\code{thiessen_control()} is the published configuration.
 }
 \details{
-The three models are the published method and follow semantic versioning.
-Everything else the core crate adds sits behind its \code{experimental} Cargo
-feature, which this package does not enable, so a configuration or a
-saved fit naming such an option is rejected with the core's message
-naming the feature. The table of experimental items and their status is
-\code{docs/experimental.md} in the repository. A graduated item is accepted
-here as any other option, with no separate opt-in.
+Attaching \code{variance_params} with a positive tessellation count selects
+the heteroscedastic model, in which the residual variance varies with
+x; it needs the Gaussian family with nu > 2, and the paper's count is
+40. The two ensembles share one covariate space: \code{geometry} and
+\code{structure} set on \code{mean_params} apply to \code{variance_params} as well.
+
+One shortcut: \code{thiessen_control(tessellations = 200)} sets the mean
+ensemble's size without spelling the group, since that count is the
+single number most fits tune. Every other setting is named in its
+group.
+
+The models reachable here are the published method and follow semantic
+versioning. Everything else the core crate adds sits behind its
+\code{experimental} Cargo feature, which this package does not enable, so a
+configuration or a saved fit naming such an option is rejected with the
+core's message naming the feature. The table of experimental items and
+their status is \code{docs/experimental.md} in the repository. A graduated
+item is accepted here as any other option, with no separate opt-in.
 }
 \examples{
-thiessen_control(m = 50, draws = 200)
+thiessen_control(tessellations = 50)
+
+thiessen_control(
+  outcome = gaussian(nu = 10),
+  mean_params = term_params(tessellations = 200, lambda_c = 25),
+  variance_params = term_params(tessellations = 40),
+  general_params = general_params(burn_in = 500, draws = 2000)
+)
 }
 \references{
 Stone, A. and Gosling, J. P. (2025). AddiVortes: (Bayesian) additive
