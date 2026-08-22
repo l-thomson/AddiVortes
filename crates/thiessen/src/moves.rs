@@ -48,6 +48,78 @@ pub(crate) struct Prior {
     pub geometry: Geometry,
     /// The centre-coordinate law of each column.
     pub laws: Vec<CoordinateLaw>,
+    /// The weighted inclusion prior; `None` is the uniform prior,
+    /// including a weight vector whose entries are all equal.
+    #[cfg(feature = "experimental")]
+    pub weights: Option<InclusionWeights>,
+}
+
+/// A fixed inclusion weight per column with its elementary symmetric
+/// polynomials e_k, the subset-prior normalising constants.
+#[cfg(feature = "experimental")]
+#[derive(Debug, Clone)]
+pub(crate) struct InclusionWeights {
+    w: Vec<f64>,
+    /// e_k(w) for k = 0..=p; e_k = 0 beyond the positive-weight count.
+    e: Vec<f64>,
+}
+
+#[cfg(feature = "experimental")]
+impl InclusionWeights {
+    /// `None` when the entries are all equal: equal weights are the
+    /// uniform prior and take its code path.
+    pub(crate) fn new(w: &[f64]) -> Option<Self> {
+        if w.iter().all(|&v| v == w[0]) {
+            return None;
+        }
+        let p = w.len();
+        let mut e = vec![0.0; p + 1];
+        e[0] = 1.0;
+        for &v in w {
+            for k in (1..=p).rev() {
+                e[k] += v * e[k - 1];
+            }
+        }
+        Some(Self { w: w.to_vec(), e })
+    }
+
+    /// The total weight of the columns not in `dims`.
+    fn unused_weight(&self, dims: &[usize]) -> f64 {
+        self.w
+            .iter()
+            .enumerate()
+            .filter(|(col, _)| !dims.contains(col))
+            .map(|(_, &v)| v)
+            .sum()
+    }
+
+    /// Whether any column outside `dims` has positive weight.
+    fn has_positive_unused(&self, dims: &[usize]) -> bool {
+        self.w
+            .iter()
+            .enumerate()
+            .any(|(col, &v)| v > 0.0 && !dims.contains(&col))
+    }
+
+    /// A column drawn with probability proportional to its weight among
+    /// the columns not in `dims`, with one uniform.
+    fn draw_unused(&self, dims: &[usize], rng: &mut Rng) -> usize {
+        let total = self.unused_weight(dims);
+        let target = uniform(rng) * total;
+        let mut cumulative = 0.0;
+        let mut last = None;
+        for (col, &v) in self.w.iter().enumerate() {
+            if v <= 0.0 || dims.contains(&col) {
+                continue;
+            }
+            cumulative += v;
+            last = Some(col);
+            if target < cumulative {
+                return col;
+            }
+        }
+        last.expect("a positive unused weight")
+    }
 }
 
 impl Prior {
@@ -66,6 +138,8 @@ impl Prior {
                 };
                 p
             ],
+            #[cfg(feature = "experimental")]
+            weights: None,
         }
     }
 
@@ -91,6 +165,42 @@ impl Prior {
     pub(crate) fn coordinate(&self, col: usize, rng: &mut Rng) -> f64 {
         self.laws[col].draw(rng)
     }
+
+    /// The single covariate of an initial tessellation, with one
+    /// uniform: uniform over columns, or the inclusion weights.
+    pub(crate) fn initial_dim(&self, rng: &mut Rng) -> usize {
+        #[cfg(feature = "experimental")]
+        if let Some(weights) = &self.weights {
+            return weights.draw_unused(&[], rng);
+        }
+        uniform_index(self.p, rng)
+    }
+
+    /// ln[prior x proposal] for adding a dimension to a subset of `d`
+    /// dims under the weighted prior: the count ratio, the subset-prior
+    /// normalisers e_d / e_(d+1), the forward pick's total unused weight,
+    /// and the reverse uniform removal 1 / (d + 1). The incoming weight
+    /// cancels between the subset prior and the forward pick.
+    #[cfg(feature = "experimental")]
+    fn log_weighted_add_ratio(&self, d: usize, unused_weight: f64) -> f64 {
+        let weights = self.weights.as_ref().expect("weighted prior");
+        self.log_dim_count_ratio(d + 1) + maths::ln(weights.e[d]) - maths::ln(weights.e[d + 1])
+            + maths::ln(unused_weight)
+            - maths::ln((d + 1) as f64)
+    }
+
+    /// Whether `m` may be proposed from dims `dims` as far as the
+    /// inclusion prior is concerned.
+    fn inclusion_permits(&self, m: Move, dims: &[usize]) -> bool {
+        #[cfg(feature = "experimental")]
+        if let Some(weights) = &self.weights {
+            if matches!(m, Move::AddDimension | Move::Swap) {
+                return weights.has_positive_unused(dims);
+            }
+        }
+        let _ = (m, dims);
+        true
+    }
 }
 
 impl Move {
@@ -99,7 +209,9 @@ impl Move {
         match self {
             Move::AddCentre | Move::Change => true,
             Move::RemoveCentre => t.n_cells() >= 2,
-            Move::AddDimension | Move::Swap => t.n_dims() < prior.p,
+            Move::AddDimension | Move::Swap => {
+                t.n_dims() < prior.p && prior.inclusion_permits(self, &t.dims)
+            }
             Move::RemoveDimension => t.n_dims() >= 2,
         }
     }
@@ -224,8 +336,28 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
         // The incoming covariate is picked uniformly among the p - d unused
         // ones and each centre gets one coordinate from the prior.
         Move::AddDimension => {
-            let unused: Vec<usize> = (0..prior.p).filter(|c| !t.dims.contains(c)).collect();
-            let incoming = unused[uniform_index(unused.len(), rng)];
+            #[cfg(feature = "experimental")]
+            let (incoming, log_structure_ratio) = match &prior.weights {
+                Some(weights) => (
+                    weights.draw_unused(&t.dims, rng),
+                    prior.log_weighted_add_ratio(d, weights.unused_weight(&t.dims)),
+                ),
+                None => {
+                    let unused: Vec<usize> = (0..prior.p).filter(|c| !t.dims.contains(c)).collect();
+                    (
+                        unused[uniform_index(unused.len(), rng)],
+                        prior.log_dim_count_ratio(d + 1),
+                    )
+                }
+            };
+            #[cfg(not(feature = "experimental"))]
+            let (incoming, log_structure_ratio) = {
+                let unused: Vec<usize> = (0..prior.p).filter(|c| !t.dims.contains(c)).collect();
+                (
+                    unused[uniform_index(unused.len(), rng)],
+                    prior.log_dim_count_ratio(d + 1),
+                )
+            };
             let mut dims = t.dims.clone();
             dims.push(incoming);
             let mut centres = Vec::with_capacity(b * (d + 1));
@@ -240,13 +372,14 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
                     mus: t.mus.clone(),
                 },
                 delta: Delta::Full,
-                log_structure_ratio: prior.log_dim_count_ratio(d + 1),
+                log_structure_ratio,
             }
         }
         Move::RemoveDimension => {
             let out = uniform_index(d, rng);
             let mut dims = t.dims.clone();
-            dims.remove(out);
+            #[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
+            let outgoing = dims.remove(out);
             let mut centres = Vec::with_capacity(b * (d - 1));
             for k in 0..b {
                 for (j, &c) in t.centre(k).iter().enumerate() {
@@ -262,7 +395,19 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
                     mus: t.mus.clone(),
                 },
                 delta: Delta::Full,
-                log_structure_ratio: -prior.log_dim_count_ratio(d),
+                log_structure_ratio: {
+                    #[cfg(feature = "experimental")]
+                    match &prior.weights {
+                        Some(weights) => {
+                            let smaller: Vec<usize> =
+                                t.dims.iter().copied().filter(|&c| c != outgoing).collect();
+                            -prior.log_weighted_add_ratio(d - 1, weights.unused_weight(&smaller))
+                        }
+                        None => -prior.log_dim_count_ratio(d),
+                    }
+                    #[cfg(not(feature = "experimental"))]
+                    -prior.log_dim_count_ratio(d)
+                },
             }
         }
         // Counts unchanged; the pick is 1 / b both ways and the old and new
@@ -287,8 +432,24 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
         // reverse; the subset prior is uniform.
         Move::Swap => {
             let out = uniform_index(d, rng);
-            let unused: Vec<usize> = (0..prior.p).filter(|c| !t.dims.contains(c)).collect();
-            let incoming = unused[uniform_index(unused.len(), rng)];
+            #[cfg(feature = "experimental")]
+            let (incoming, log_structure_ratio) = match &prior.weights {
+                Some(weights) => {
+                    let incoming = weights.draw_unused(&t.dims, rng);
+                    let before = weights.unused_weight(&t.dims);
+                    let after = before - weights.w[incoming] + weights.w[t.dims[out]];
+                    (incoming, maths::ln(before) - maths::ln(after))
+                }
+                None => {
+                    let unused: Vec<usize> = (0..prior.p).filter(|c| !t.dims.contains(c)).collect();
+                    (unused[uniform_index(unused.len(), rng)], 0.0)
+                }
+            };
+            #[cfg(not(feature = "experimental"))]
+            let (incoming, log_structure_ratio) = {
+                let unused: Vec<usize> = (0..prior.p).filter(|c| !t.dims.contains(c)).collect();
+                (unused[uniform_index(unused.len(), rng)], 0.0)
+            };
             let mut dims = t.dims.clone();
             dims[out] = incoming;
             let mut centres = t.centres.clone();
@@ -302,7 +463,7 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
                     mus: t.mus.clone(),
                 },
                 delta: Delta::Full,
-                log_structure_ratio: 0.0,
+                log_structure_ratio,
             }
         }
     }
@@ -327,6 +488,46 @@ mod tests {
 
     fn prior(p: usize) -> Prior {
         Prior::euclidean(p, 3.0_f64.min(p as f64), 5.0, 0.8)
+    }
+
+    #[cfg(feature = "experimental")]
+    mod weighted {
+        use super::*;
+
+        #[test]
+        fn equal_weights_are_the_uniform_prior() {
+            assert!(InclusionWeights::new(&[0.5, 0.5, 0.5]).is_none());
+            assert!(InclusionWeights::new(&[0.5, 0.5, 0.4]).is_some());
+        }
+
+        #[test]
+        fn the_symmetric_polynomials_are_computed() {
+            let w = InclusionWeights::new(&[1.0, 2.0, 3.0]).unwrap();
+            assert_eq!(w.e, vec![1.0, 6.0, 11.0, 6.0]);
+        }
+
+        #[test]
+        fn draws_avoid_zero_weights_and_active_columns() {
+            let w = InclusionWeights::new(&[1.0, 0.0, 2.0]).unwrap();
+            let mut rng = chain_rng(5);
+            for _ in 0..200 {
+                assert_ne!(w.draw_unused(&[], &mut rng), 1);
+                assert_eq!(w.draw_unused(&[2], &mut rng), 0);
+            }
+            assert!(w.has_positive_unused(&[0]));
+            assert!(!w.has_positive_unused(&[0, 2]));
+            assert_eq!(w.unused_weight(&[1]), 3.0);
+        }
+
+        #[test]
+        fn a_zero_weight_blocks_add_and_swap() {
+            let mut prior = prior(2);
+            prior.weights = InclusionWeights::new(&[1.0, 0.0]);
+            let t = tess(1, vec![0]);
+            let probs = selection_probs(&t, &prior);
+            assert_eq!(probs[Move::AddDimension.index()], 0.0);
+            assert_eq!(probs[Move::Swap.index()], 0.0);
+        }
     }
 
     fn tess(b: usize, dims: Vec<usize>) -> Tessellation {

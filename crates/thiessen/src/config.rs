@@ -183,11 +183,51 @@ impl Default for GeometryParams {
     }
 }
 
+/// The covariate-inclusion prior over the columns of one term group:
+/// which covariates a tessellation may use, and with what prior weight.
+#[cfg(feature = "experimental")]
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum Inclusion {
+    /// Dimensions drawn uniformly, the published prior. The default.
+    #[default]
+    Uniform,
+    /// A fixed weight per column (bartMachine `cov_prior_vec`, Kapelner
+    /// and Bleich 2016): the subset prior given the dimension count is
+    /// proportional to the product of the member weights, proposals pick
+    /// the incoming covariate with probability proportional to its
+    /// weight, and a zero weight excludes the column. Weights are
+    /// non-negative and finite with at least one positive, checked with
+    /// the hyperparameters; the length is checked against the design at
+    /// fit. Equal weights are the uniform prior and take its code path,
+    /// so they reproduce the default draws exactly. Nothing is sampled:
+    /// the sampler's conditional updates are untouched. Experimental
+    /// (`docs/experimental.md`).
+    Weighted {
+        /// One weight per column, in column order.
+        weights: Vec<f64>,
+    },
+}
+
+#[cfg(feature = "experimental")]
+impl Inclusion {
+    /// Whether this is the default, for compact serialisation.
+    fn is_uniform(&self) -> bool {
+        matches!(self, Inclusion::Uniform)
+    }
+}
+
 /// The covariate-inclusion prior of one term group.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct StructureParams {
+    /// The covariate-inclusion prior. Default uniform, the published
+    /// prior. Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    #[serde(skip_serializing_if = "Inclusion::is_uniform")]
+    pub inclusion: Inclusion,
     /// Dimension-count prior parameter omega; omega / p is the prior
     /// probability of including a covariate. `None` resolves to
     /// min(3, p) at fit. Must satisfy 0 < omega <= p; at omega = p the
@@ -364,6 +404,15 @@ impl Config {
     pub fn with_precision(mut self, precision: Vec<f64>) -> Self {
         self.mean_params.geometry.precision = Some(precision.clone());
         self.variance_params.geometry.precision = Some(precision);
+        self
+    }
+
+    /// The covariate-inclusion prior, both slots. Experimental.
+    #[cfg(feature = "experimental")]
+    #[must_use]
+    pub fn with_inclusion(mut self, inclusion: Inclusion) -> Self {
+        self.mean_params.structure.inclusion = inclusion.clone();
+        self.variance_params.structure.inclusion = inclusion;
         self
     }
 
@@ -637,6 +686,16 @@ fn validate_term(slot: &str, params: &TermParams) -> Result<()> {
     positive(&format!("{slot}.lambda_c"), params.lambda_c)?;
     positive(&format!("{slot}.geometry.sigma_c"), params.geometry.sigma_c)?;
     #[cfg(feature = "experimental")]
+    if let Inclusion::Weighted { weights } = &params.structure.inclusion {
+        let name = format!("{slot}.structure.inclusion");
+        if weights.iter().any(|w| !(w.is_finite() && *w >= 0.0)) {
+            return Err(invalid(&name, "weights must be finite and non-negative"));
+        }
+        if !weights.iter().any(|w| *w > 0.0) {
+            return Err(invalid(&name, "at least one weight must be positive"));
+        }
+    }
+    #[cfg(feature = "experimental")]
     for kind in &params.geometry.metric {
         if let Metric::Minkowski { p, .. } = *kind {
             if !(p.is_finite() && p >= 1.0) {
@@ -676,6 +735,23 @@ mod tests {
         }
         assert!(Config::new()
             .with_metric(vec![Metric::Minkowski { p: 1.0, group: 0 }])
+            .validate()
+            .is_ok());
+    }
+
+    #[cfg(feature = "experimental")]
+    #[test]
+    fn inclusion_weights_are_validated() {
+        for weights in [vec![1.0, -0.5], vec![0.0, 0.0], vec![1.0, f64::NAN]] {
+            rejects(
+                Config::new().with_inclusion(Inclusion::Weighted { weights }),
+                "mean_params.structure.inclusion",
+            );
+        }
+        assert!(Config::new()
+            .with_inclusion(Inclusion::Weighted {
+                weights: vec![1.0, 0.0]
+            })
             .validate()
             .is_ok());
     }

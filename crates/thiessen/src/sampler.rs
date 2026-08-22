@@ -260,12 +260,30 @@ impl Sampler {
         // Both slots declare identical geometry and structure, so the
         // variance prior differs from the mean prior only where its group
         // does.
+        #[cfg(feature = "experimental")]
+        let inclusion_weights = match &config.mean_params.structure.inclusion {
+            crate::config::Inclusion::Uniform => None,
+            crate::config::Inclusion::Weighted { weights } => {
+                if weights.len() != p {
+                    return Err(crate::error::invalid(
+                        "mean_params.structure.inclusion",
+                        format!(
+                            "must weight every column: {} entries for p = {p} columns",
+                            weights.len()
+                        ),
+                    ));
+                }
+                crate::moves::InclusionWeights::new(weights)
+            }
+        };
         let prior = Prior {
             p,
             omega,
             lambda_c: config.mean_params.lambda_c,
             geometry,
             laws,
+            #[cfg(feature = "experimental")]
+            weights: inclusion_weights,
         };
         let mut rng = rng::chain_rng(seed);
         let mean_y = y_scaled.iter().sum::<f64>() / n as f64;

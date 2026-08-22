@@ -24,6 +24,7 @@ evidence. Removing the gate is a minor version bump.
 | Gower distance | distance | `geometry.metric` entries `{"gower": {"kind": "numeric" or "categorical"}}` | 0.3.0 | conformance, small SBC | experimental | [#63](https://github.com/l-thomson/thiessen/pull/63) |
 | Mahalanobis distance | distance | `geometry.metric` entry `"mahalanobis"` with `geometry.precision` | 0.3.0 | conformance, small SBC | experimental | [#64](https://github.com/l-thomson/thiessen/pull/64) |
 | Per-column composite | distance | `group` label on the minkowski, manhattan, cosine and gower entries | 0.3.0 | conformance per member metric, small SBC | experimental | [#65](https://github.com/l-thomson/thiessen/pull/65) |
+| Weighted inclusion | inclusion prior | `structure.inclusion` entry `{"weighted": {"weights": [...]}}` | 0.3.0 | conformance, small SBC | experimental | [#66](https://github.com/l-thomson/thiessen/pull/66) |
 
 Columns: the configuration field or `Model` variant; the first core version
 carrying the item behind the feature; calibration status (SBC and Geweke

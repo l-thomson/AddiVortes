@@ -15,9 +15,9 @@
 mod common;
 use common::TestRng;
 use std::f64::consts::PI;
-#[cfg(feature = "experimental")]
-use thiessen::GowerKind;
 use thiessen::{Config, Data, Metric, Sampler};
+#[cfg(feature = "experimental")]
+use thiessen::{GowerKind, Inclusion};
 
 /// Quantities of the Gaussian model, in column order: sigma^2, total cells
 /// and total active dimensions over the ensemble, f at three fixed
@@ -148,6 +148,8 @@ struct Model {
     rows: Vec<[f64; 2]>,
     space: Space,
     laws: [Law; 2],
+    /// The inclusion weight per column; None is the uniform prior.
+    weights: Option<[f64; 2]>,
     quantities: &'static [&'static str],
     n_sbc: usize,
     gates: Gates,
@@ -197,6 +199,7 @@ fn gaussian_model() -> Model {
         rows,
         space: Space::Euclidean,
         laws: [euclidean.clone(), euclidean],
+        weights: None,
         quantities: &GAUSSIAN_QUANTITIES,
         n_sbc: 6,
         gates: GAUSSIAN_GATES,
@@ -354,6 +357,22 @@ fn composite_model() -> Model {
     }
 }
 
+/// The Gaussian model under the weighted inclusion prior, weights
+/// (0.75, 0.25): the calibration rows and laws, subsets weighted by the
+/// product of member weights, proposals weighted to match.
+#[cfg(feature = "experimental")]
+fn weighted_model() -> Model {
+    let gaussian = gaussian_model();
+    let weights = [0.75, 0.25];
+    Model {
+        config: gaussian.config.with_inclusion(Inclusion::Weighted {
+            weights: weights.to_vec(),
+        }),
+        weights: Some(weights),
+        ..gaussian
+    }
+}
+
 /// The probit model at the calibration size: the Gaussian model's rows
 /// and structural prior, offset c = -0.2 fixed, k = 3, no sigma^2.
 fn probit_model() -> Model {
@@ -437,13 +456,25 @@ impl Model {
                     d += 1;
                 }
             }
-            let mut dims: Vec<usize> = (0..p).collect();
-            for i in 0..d {
-                let j = i + (rng.uniform() * (p - i) as f64) as usize;
-                dims.swap(i, j.min(p - 1));
-            }
-            let mut dims: Vec<usize> = dims[..d].to_vec();
-            dims.sort_unstable();
+            let dims: Vec<usize> = match self.weights {
+                // P(S | d) over two columns: the weight share at d = 1,
+                // both columns at d = 2.
+                Some(w) if d == 1 => {
+                    let target = rng.uniform() * (w[0] + w[1]);
+                    vec![usize::from(target >= w[0])]
+                }
+                Some(_) => vec![0, 1],
+                None => {
+                    let mut dims: Vec<usize> = (0..p).collect();
+                    for i in 0..d {
+                        let j = i + (rng.uniform() * (p - i) as f64) as usize;
+                        dims.swap(i, j.min(p - 1));
+                    }
+                    let mut dims: Vec<usize> = dims[..d].to_vec();
+                    dims.sort_unstable();
+                    dims
+                }
+            };
             let mut centres = Vec::with_capacity(b * d);
             for _ in 0..b {
                 for &dim in &dims {
@@ -878,6 +909,14 @@ fn sbc_small_ranks_are_uniform_mahalanobis() {
 fn sbc_small_ranks_are_uniform_composite() {
     let model = composite_model();
     let ranks = sbc_ranks(&model, 160, 19, 15, 150, 410);
+    assert_uniform(&model, &ranks, 19);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+fn sbc_small_ranks_are_uniform_weighted() {
+    let model = weighted_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 411);
     assert_uniform(&model, &ranks, 19);
 }
 
