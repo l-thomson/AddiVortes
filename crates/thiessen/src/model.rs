@@ -3,6 +3,7 @@
 use std::str::FromStr;
 
 use crate::error::{invalid, Error};
+use crate::outcome::Sigma2Mode;
 
 /// The observation model. Selected on [`Config`](crate::Config) and stored
 /// on the fitted model; the sampler's verbs and the prediction surface keep
@@ -36,9 +37,19 @@ pub enum Model {
 const EXPERIMENTAL: &[&str] = &[];
 
 impl Model {
-    /// Whether the model draws a global sigma^2.
+    /// What the model does with sigma^2; scale validity derives from this
+    /// value, never from a per-model table.
+    pub(crate) fn sigma2_mode(self) -> Sigma2Mode {
+        match self {
+            Model::Gaussian | Model::Heteroscedastic => Sigma2Mode::Sampled,
+            Model::Probit => Sigma2Mode::Fixed(1.0),
+        }
+    }
+
+    /// Whether the model draws and stores a global sigma^2: a sampled
+    /// scale that no variance ensemble carries instead.
     pub(crate) fn has_global_variance(self) -> bool {
-        matches!(self, Model::Gaussian)
+        self.sigma2_mode().samples_global_sigma_sq() && !self.has_variance_ensemble()
     }
 
     /// Whether the model carries a variance ensemble.
@@ -119,6 +130,18 @@ mod tests {
             "cauchy".parse::<Model>(),
             Err(Error::InvalidHyperparameter { .. })
         ));
+    }
+
+    #[test]
+    fn scale_validity_derives_from_the_mode() {
+        assert_eq!(Model::Gaussian.sigma2_mode(), Sigma2Mode::Sampled);
+        assert_eq!(Model::Probit.sigma2_mode(), Sigma2Mode::Fixed(1.0));
+        assert_eq!(Model::Heteroscedastic.sigma2_mode(), Sigma2Mode::Sampled);
+        assert!(Model::Gaussian.has_global_variance());
+        assert!(!Model::Probit.has_global_variance());
+        assert!(!Model::Heteroscedastic.has_global_variance());
+        assert!(Model::Heteroscedastic.has_variance_ensemble());
+        assert!(!Model::Probit.sigma2_mode().permits_variance_ensemble());
     }
 
     #[cfg(not(feature = "experimental"))]

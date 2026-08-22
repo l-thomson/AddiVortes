@@ -100,6 +100,8 @@ mod maths;
 mod model;
 pub mod models;
 mod moves;
+#[cfg_attr(not(test), allow(dead_code))]
+mod outcome;
 mod rng;
 mod sampler;
 mod scaler;
