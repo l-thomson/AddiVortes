@@ -191,6 +191,50 @@ fixture exists until that is corrected. Upstream's default path,
 min-max scaled, which is `catScaling = 1` without upstream's clamp of
 centre proposals to [0, `catScaling`].
 
+## The supported-likelihood boundary
+
+The crate supports observation models that admit an exact conditionally
+Gaussian augmentation: likelihoods under which, given latent variables
+with known conditional laws, the response is Gaussian with known
+variance, so the backfitting sweep and the marginal likelihood of every
+structural move stay in closed form. The probit model is the canonical
+case (Albert and Chib 1993). A Student-t likelihood is in scope as an
+exact scale mixture of normals (Geweke 1993); a Poisson or negative
+binomial model is reachable only through an approximating mixture
+(Fruhwirth-Schnatter et al. 2009) and would be approximate by
+construction, which its statement would have to say. Gamma, Beta,
+Weibull and Tweedie responses have no such augmentation and are out of
+scope permanently: carrying one would mean a second sampling kernel, not
+a missing file. A need that is not an outcome model or a setting goes
+through the sampler API's response seam and stays there until it earns a
+name.
+
+## Augmentation groups
+
+Sequencing prose, not API structure: the candidate models group by the
+machinery their augmentation needs. Latent-response models (probit, and
+the logit family through Polya-Gamma mixing, Polson, Scott and Windle
+2013) share the latent refresh against a fixed ensemble; scale-mixture
+models (Student-t, Laplace, contaminated normal) share per-observation
+variance draws. The first model of each group carries the shared
+machinery and the rest reuse it. The contaminated normal is the worked
+example of why the groups stay prose: it is a scale mixture, and its
+mixture indicator is also a latent label, so a group field on the
+configuration would have to pick one parent for a model that has two.
+The configuration names models; it never names groups.
+
+## Validation
+
+The configuration surface is a parameter space, and simulation-based
+calibration cannot cover it exhaustively, so the claim is stated
+exactly. The configurations listed in [calibrated.md](calibrated.md) are
+covered by the calibration suite: simulation-based calibration and
+Geweke tests at two sizes, with broken-sampler fixtures showing the
+gates reject a miscalibrated kernel (`docs/testing.md`). Component
+options are additionally verified in isolation by bit-exact equivalence,
+known-answer and property tests. Every other combination of the
+documented options is valid to run and is not separately verified.
+
 ## Experimental models
 
 Models behind the `experimental` Cargo feature are stated here under
@@ -252,12 +296,20 @@ broken-sampler fixture dropping the determinant term.
 - Eskin, E., Arnold, A., Prerau, M., Portnoy, L. and Stolfo, S. (2002).
   A geometric framework for unsupervised anomaly detection. In
   Applications of Data Mining in Computer Security, 77-101. Springer.
+- Fruhwirth-Schnatter, S., Fruhwirth, R., Held, L. and Rue, H. (2009).
+  Improved auxiliary mixture sampling for hierarchical models of
+  non-Gaussian data. Statistics and Computing 19, 479-492.
+- Geweke, J. (1993). Bayesian treatment of the independent Student-t
+  linear model. Journal of Applied Econometrics 8(S1), S19-S40.
 - Chipman, H. A., George, E. I. and McCulloch, R. E. (2010). BART:
   Bayesian additive regression trees. Annals of Applied Statistics 4(1),
   266-298.
 - Linero, A. R. (2018). Bayesian regression trees for high-dimensional
   prediction and variable selection. Journal of the American Statistical
   Association 113(522), 626-636.
+- Polson, N. G., Scott, J. G. and Windle, J. (2013). Bayesian inference
+  for logistic models using Polya-Gamma latent variables. Journal of the
+  American Statistical Association 108(504), 1339-1349.
 - Pratola, M. T., Chipman, H. A., George, E. I. and McCulloch, R. E.
   (2020). Heteroscedastic BART via multiplicative regression trees.
   Journal of Computational and Graphical Statistics 29(2), 405-417.

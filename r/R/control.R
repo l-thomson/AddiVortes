@@ -27,6 +27,11 @@
 #' their status is `docs/experimental.md` in the repository. A graduated
 #' item is accepted here as any other option, with no separate opt-in.
 #'
+#' The core's calibration suite covers the configurations listed in
+#' `docs/calibrated.md` in the repository; component options are verified
+#' in isolation, and every other combination of the documented options is
+#' valid to run and is not separately verified.
+#'
 #' @param outcome The outcome family, from [gaussian()] or [probit()].
 #' @param mean_params The ensemble describing the average, from
 #'   [term_params()].
