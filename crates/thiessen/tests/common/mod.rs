@@ -49,6 +49,16 @@ impl TestRng {
         }
     }
 
+    /// Gamma(shape, 1) for any positive shape: the boost
+    /// Gamma(shape + 1) U^(1 / shape) below 1.
+    pub fn gamma_any(&mut self, shape: f64) -> f64 {
+        assert!(shape > 0.0);
+        if shape >= 1.0 {
+            return self.gamma(shape);
+        }
+        self.gamma(shape + 1.0) * self.uniform().powf(1.0 / shape)
+    }
+
     pub fn poisson(&mut self, lambda: f64) -> usize {
         let target = self.uniform();
         let mut pmf = (-lambda).exp();

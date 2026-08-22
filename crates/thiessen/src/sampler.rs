@@ -140,10 +140,88 @@ pub struct Sampler {
     /// Calibrated scale of the prior sigma^2 ~ nu lambda / chi^2_nu.
     lambda: f64,
     kept: Posterior,
+    /// The DART inclusion state, when the structure prior samples its
+    /// weights.
+    #[cfg(feature = "experimental")]
+    dart: Option<Dart>,
     /// Test-only acceptance defect; `Breakage::None` on every constructed
     /// sampler.
     #[cfg(test)]
     pub(crate) breakage: crate::broken::Breakage,
+}
+
+/// The sampled state and fixed grid of the DART inclusion prior: the
+/// weight vector s, the concentration theta on the BART grid of
+/// lambda = theta / (theta + rho), and the grid's log prior weights.
+#[cfg(feature = "experimental")]
+#[derive(Debug, Clone)]
+struct Dart {
+    /// theta at each grid point.
+    grid_theta: Vec<f64>,
+    /// ln Beta(a, b) kernel at each grid point.
+    log_grid_prior: Vec<f64>,
+    theta: f64,
+    s: Vec<f64>,
+}
+
+#[cfg(feature = "experimental")]
+impl Dart {
+    const GRID: usize = 1000;
+
+    /// The grid for (a, b, rho), the state drawn from its prior: theta
+    /// from the grid, then s ~ Dirichlet(theta / p). Draw order: one
+    /// uniform for theta, then p gammas.
+    fn draw(a: f64, b: f64, rho: f64, p: usize, rng: &mut rng::Rng) -> Self {
+        let k = Self::GRID;
+        let mut grid_theta = Vec::with_capacity(k);
+        let mut log_grid_prior = Vec::with_capacity(k);
+        for i in 1..=k {
+            let lambda = i as f64 / (k + 1) as f64;
+            grid_theta.push(lambda * rho / (1.0 - lambda));
+            log_grid_prior
+                .push((a - 1.0) * maths::ln(lambda) + (b - 1.0) * maths::ln(1.0 - lambda));
+        }
+        let mut dart = Self {
+            grid_theta,
+            log_grid_prior,
+            theta: 0.0,
+            s: Vec::new(),
+        };
+        let index = draw_discrete(&dart.log_grid_prior, rng);
+        dart.theta = dart.grid_theta[index];
+        dart.s = draw_dirichlet(&vec![dart.theta / p as f64; p], rng);
+        dart
+    }
+}
+
+/// One index drawn from unnormalised log weights, with one uniform.
+#[cfg(feature = "experimental")]
+fn draw_discrete(log_weights: &[f64], rng: &mut rng::Rng) -> usize {
+    let max = log_weights.iter().fold(f64::NEG_INFINITY, |m, &v| m.max(v));
+    let weights: Vec<f64> = log_weights.iter().map(|&v| maths::exp(v - max)).collect();
+    let total: f64 = weights.iter().sum();
+    let target = rng::uniform(rng) * total;
+    let mut cumulative = 0.0;
+    for (i, &w) in weights.iter().enumerate() {
+        cumulative += w;
+        if target < cumulative {
+            return i;
+        }
+    }
+    weights.len() - 1
+}
+
+/// A Dirichlet draw by normalised gammas, one gamma per coordinate.
+/// A tiny shape makes the gamma underflow to zero; the draw is floored
+/// at the smallest positive normal so the logs downstream stay finite.
+#[cfg(feature = "experimental")]
+fn draw_dirichlet(shapes: &[f64], rng: &mut rng::Rng) -> Vec<f64> {
+    let draws: Vec<f64> = shapes
+        .iter()
+        .map(|&shape| rng::gamma(shape, 1.0, rng).max(f64::MIN_POSITIVE))
+        .collect();
+    let total: f64 = draws.iter().sum();
+    draws.iter().map(|&g| g / total).collect()
 }
 
 impl Sampler {
@@ -260,6 +338,14 @@ impl Sampler {
         // Both slots declare identical geometry and structure, so the
         // variance prior differs from the mean prior only where its group
         // does.
+        let mut rng = rng::chain_rng(seed);
+        #[cfg(feature = "experimental")]
+        let dart = match &config.mean_params.structure.inclusion {
+            crate::config::Inclusion::Dart { a, b, rho } => {
+                Some(Dart::draw(*a, *b, rho.unwrap_or(p as f64), p, &mut rng))
+            }
+            _ => None,
+        };
         #[cfg(feature = "experimental")]
         let inclusion_weights = match &config.mean_params.structure.inclusion {
             crate::config::Inclusion::Uniform => None,
@@ -275,6 +361,9 @@ impl Sampler {
                 }
                 crate::moves::InclusionWeights::new(weights)
             }
+            crate::config::Inclusion::Dart { .. } => Some(crate::moves::InclusionWeights::sampled(
+                dart.as_ref().expect("dart state").s.clone(),
+            )),
         };
         let prior = Prior {
             p,
@@ -285,7 +374,6 @@ impl Sampler {
             #[cfg(feature = "experimental")]
             weights: inclusion_weights,
         };
-        let mut rng = rng::chain_rng(seed);
         let mean_y = y_scaled.iter().sum::<f64>() / n as f64;
 
         // Initial state: m single-cell tessellations on one covariate each,
@@ -370,6 +458,8 @@ impl Sampler {
             precision,
             lambda,
             kept: Posterior::empty(),
+            #[cfg(feature = "experimental")]
+            dart,
             #[cfg(test)]
             breakage: crate::broken::Breakage::None,
         })
@@ -389,6 +479,78 @@ impl Sampler {
             #[cfg(test)]
             self.breakage,
         );
+        #[cfg(feature = "experimental")]
+        self.update_inclusion();
+    }
+
+    /// The DART updates: s | dims, theta by a Metropolis step whose
+    /// Dirichlet(theta / p + counts) proposal leaves the subset-prior
+    /// normalisers e_d in the ratio, then theta | s exactly on its grid.
+    /// Draw order: p gammas, the acceptance uniform, the grid uniform.
+    #[cfg(feature = "experimental")]
+    fn update_inclusion(&mut self) {
+        let Some(dart) = &mut self.dart else {
+            return;
+        };
+        let p = dart.s.len();
+        let mut counts = vec![0.0_f64; p];
+        let mut dim_counts: Vec<usize> = Vec::new();
+        let mut tally = |tessellations: &[crate::tessellation::Tessellation]| {
+            for t in tessellations {
+                dim_counts.push(t.n_dims());
+                for &dim in t.dims() {
+                    counts[dim] += 1.0;
+                }
+            }
+        };
+        tally(self.mean.tessellations());
+        if let Some(variance) = &self.variance {
+            tally(variance.tessellations());
+        }
+        let shapes: Vec<f64> = counts.iter().map(|&m| dart.theta / p as f64 + m).collect();
+        let proposed = draw_dirichlet(&shapes, &mut self.rng);
+        let current = crate::moves::InclusionWeights::sampled(dart.s.clone());
+        let candidate = crate::moves::InclusionWeights::sampled(proposed.clone());
+        let log_alpha: f64 = dim_counts
+            .iter()
+            .map(|&d| current.log_e(d) - candidate.log_e(d))
+            .sum();
+        #[cfg(test)]
+        let log_alpha = if self.breakage == crate::broken::Breakage::DroppedSubsetNormaliser {
+            0.0
+        } else {
+            log_alpha
+        };
+        let accepted = maths::ln(rng::uniform(&mut self.rng)) < log_alpha;
+        if accepted {
+            dart.s = proposed;
+        }
+        let weights = if accepted { candidate } else { current };
+        self.mean.set_inclusion_weights(weights.clone());
+        if let Some(variance) = &mut self.variance {
+            variance.set_inclusion_weights(weights);
+        }
+        let sum_ln_s: f64 = dart.s.iter().map(|&v| maths::ln(v)).sum();
+        let log_density: Vec<f64> = dart
+            .grid_theta
+            .iter()
+            .zip(&dart.log_grid_prior)
+            .map(|(&theta, &log_prior)| {
+                let c = theta / p as f64;
+                log_prior + maths::lgamma(theta) - p as f64 * maths::lgamma(c)
+                    + (c - 1.0) * sum_ln_s
+            })
+            .collect();
+        dart.theta = dart.grid_theta[draw_discrete(&log_density, &mut self.rng)];
+    }
+
+    /// The DART inclusion state, (weights, concentration), when the
+    /// structure prior samples its weights.
+    #[cfg(feature = "experimental")]
+    pub fn inclusion_state(&self) -> Option<(&[f64], f64)> {
+        self.dart
+            .as_ref()
+            .map(|dart| (dart.s.as_slice(), dart.theta))
     }
 
     /// The scale and working-response update; `structural` enables the

@@ -53,6 +53,16 @@ says "Sampled values changed" with the reason.
   excludes the column, and equal weights are the uniform prior on its
   code path, reproducing the default draws exactly. Nothing is sampled.
   Outside the semver promise (docs/experimental.md).
+- (experimental) `Inclusion::Dart` (Linero 2018; BART `sparse = TRUE`
+  with `a`, `b`, `rho`): the inclusion weights are a sampled vector
+  s ~ Dirichlet(theta / p), updated by a Metropolis step whose
+  Dirichlet(theta / p + counts) proposal leaves exactly the subset-prior
+  normalisers in the ratio; the concentration theta is sampled on the
+  BART grid of 1000 points, which is the prior itself, not an
+  approximation. In the API a component of the term group; in validation
+  model-grade, with SBC and Geweke at both sizes and a broken-sampler
+  fixture for the weight update. Outside the semver promise
+  (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled

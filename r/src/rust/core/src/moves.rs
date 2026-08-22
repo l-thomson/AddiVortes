@@ -72,15 +72,26 @@ impl InclusionWeights {
         if w.iter().all(|&v| v == w[0]) {
             return None;
         }
+        Some(Self::sampled(w.to_vec()))
+    }
+
+    /// Weights taken as given, without the equal-entries fold: sampled
+    /// weight vectors keep their own values.
+    pub(crate) fn sampled(w: Vec<f64>) -> Self {
         let p = w.len();
         let mut e = vec![0.0; p + 1];
         e[0] = 1.0;
-        for &v in w {
+        for &v in &w {
             for k in (1..=p).rev() {
                 e[k] += v * e[k - 1];
             }
         }
-        Some(Self { w: w.to_vec(), e })
+        Self { w, e }
+    }
+
+    /// ln e_d(w), the subset-prior normaliser at dimension count `d`.
+    pub(crate) fn log_e(&self, d: usize) -> f64 {
+        maths::ln(self.e[d])
     }
 
     /// The total weight of the columns not in `dims`.
