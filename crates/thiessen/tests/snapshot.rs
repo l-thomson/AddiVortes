@@ -1,7 +1,15 @@
-//! Fixed-seed chain against the stored snapshot: bit-exact on the reference
-//! target `x86_64-unknown-linux-gnu`; posterior summaries within Monte
-//! Carlo error on every target. A per-draw tolerance is not used: once one
-//! acceptance flips, the chains diverge entirely.
+//! Fixed-seed chain against the stored chain file: bit-exact on the
+//! reference target `x86_64-unknown-linux-gnu`; posterior summaries within
+//! Monte Carlo error on every target. A per-draw tolerance is not used:
+//! once one acceptance flips, the chains diverge entirely.
+//!
+//! The files under `tests/chains/` are sampled-value snapshots and sit
+//! outside `insta`, where `cargo insta review` and `INSTA_UPDATE` cannot
+//! touch them. Regeneration is its own act,
+//! `THIESSEN_UPDATE_CHAINS=1 cargo test --test snapshot` on the reference
+//! target, and carries a minor bump with the changelog line "Sampled
+//! values changed". During a reshape a moved chain is a bug, not a
+//! regeneration.
 
 mod common;
 
@@ -13,26 +21,28 @@ use thiessen::{Data, Fitted};
 /// Rows of the fixture at which f(x) is snapshotted.
 const POINTS: [usize; 3] = [0, 17, 33];
 
-const SNAPSHOT: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/snapshots/snapshot__gaussian_chain.snap"
-);
-const PROBIT_SNAPSHOT: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/snapshots/snapshot__probit_chain.snap"
-);
-const HETEROSCEDASTIC_SNAPSHOT: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/snapshots/snapshot__heteroscedastic_chain.snap"
-);
-const SPHERICAL_SNAPSHOT: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/snapshots/snapshot__spherical_chain.snap"
-);
-const CATEGORICAL_SNAPSHOT: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/snapshots/snapshot__categorical_chain.snap"
-);
+const CHAINS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/chains");
+
+fn chain_path(name: &str) -> String {
+    format!("{CHAINS}/{name}.txt")
+}
+
+/// The rendered chain against the stored file. With
+/// `THIESSEN_UPDATE_CHAINS` set the file is rewritten first; run that on
+/// the reference target only, and only as a sampled-values change.
+fn assert_chain(name: &str, rendered: &str) {
+    let path = chain_path(name);
+    if std::env::var_os("THIESSEN_UPDATE_CHAINS").is_some() {
+        std::fs::write(&path, rendered).expect("write the chain file");
+    }
+    let stored = std::fs::read_to_string(&path)
+        .expect("stored chain; regenerate on the reference target first");
+    assert_eq!(
+        rendered, stored,
+        "the {name} chain moved: a sampled-values change (minor bump, \
+         changelog line), never a reflex regeneration"
+    );
+}
 
 fn points(x: &Data) -> Data {
     let rows: Vec<&[f64]> = POINTS.iter().map(|&i| x.row(i)).collect();
@@ -80,7 +90,7 @@ fn render_heteroscedastic(model: &Fitted, x: &Data) -> String {
 fn reference_target_chain_is_bit_exact() {
     let (config, x, y) = fixture();
     let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
-    insta::assert_snapshot!("gaussian_chain", render(&model, &x));
+    assert_chain("gaussian", &render(&model, &x));
 }
 
 #[cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))]
@@ -88,7 +98,7 @@ fn reference_target_chain_is_bit_exact() {
 fn reference_target_probit_chain_is_bit_exact() {
     let (config, x, y) = probit_fixture();
     let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
-    insta::assert_snapshot!("probit_chain", render_probit(&model, &x));
+    assert_chain("probit", &render_probit(&model, &x));
 }
 
 #[cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))]
@@ -96,7 +106,7 @@ fn reference_target_probit_chain_is_bit_exact() {
 fn reference_target_heteroscedastic_chain_is_bit_exact() {
     let (config, x, y) = heteroscedastic_fixture();
     let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
-    insta::assert_snapshot!("heteroscedastic_chain", render_heteroscedastic(&model, &x));
+    assert_chain("heteroscedastic", &render_heteroscedastic(&model, &x));
 }
 
 #[cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))]
@@ -104,7 +114,7 @@ fn reference_target_heteroscedastic_chain_is_bit_exact() {
 fn reference_target_spherical_chain_is_bit_exact() {
     let (config, x, y) = spherical_fixture();
     let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
-    insta::assert_snapshot!("spherical_chain", render(&model, &x));
+    assert_chain("spherical", &render(&model, &x));
 }
 
 #[cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))]
@@ -112,22 +122,18 @@ fn reference_target_spherical_chain_is_bit_exact() {
 fn reference_target_categorical_chain_is_bit_exact() {
     let (config, x, y) = categorical_fixture();
     let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
-    insta::assert_snapshot!("categorical_chain", render(&model, &x));
+    assert_chain("categorical", &render(&model, &x));
 }
 
-fn stored_columns(path: &str, n_columns: usize) -> Vec<Vec<f64>> {
-    let stored = std::fs::read_to_string(path)
-        .expect("stored snapshot; regenerate on the reference target first");
-    let body = stored
-        .splitn(3, "---\n")
-        .nth(2)
-        .expect("snapshot body after the insta header");
-    parse_columns(body, n_columns)
+fn stored_columns(name: &str, n_columns: usize) -> Vec<Vec<f64>> {
+    let stored = std::fs::read_to_string(chain_path(name))
+        .expect("stored chain; regenerate on the reference target first");
+    parse_columns(&stored, n_columns)
 }
 
 #[test]
 fn posterior_summaries_match_the_stored_chain() {
-    let columns = stored_columns(SNAPSHOT, 4);
+    let columns = stored_columns("gaussian", 4);
     let (config, x, y) = fixture();
     let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
     let rendered = render(&model, &x);
@@ -143,7 +149,7 @@ fn posterior_summaries_match_the_stored_chain() {
 
 #[test]
 fn probit_posterior_summaries_match_the_stored_chain() {
-    let columns = stored_columns(PROBIT_SNAPSHOT, 3);
+    let columns = stored_columns("probit", 3);
     let (config, x, y) = probit_fixture();
     let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
     let rendered = render_probit(&model, &x);
@@ -155,7 +161,7 @@ fn probit_posterior_summaries_match_the_stored_chain() {
 
 #[test]
 fn spherical_posterior_summaries_match_the_stored_chain() {
-    let columns = stored_columns(SPHERICAL_SNAPSHOT, 4);
+    let columns = stored_columns("spherical", 4);
     let (config, x, y) = spherical_fixture();
     let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
     let rendered = render(&model, &x);
@@ -167,7 +173,7 @@ fn spherical_posterior_summaries_match_the_stored_chain() {
 
 #[test]
 fn categorical_posterior_summaries_match_the_stored_chain() {
-    let columns = stored_columns(CATEGORICAL_SNAPSHOT, 4);
+    let columns = stored_columns("categorical", 4);
     let (config, x, y) = categorical_fixture();
     let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
     let rendered = render(&model, &x);
@@ -179,7 +185,7 @@ fn categorical_posterior_summaries_match_the_stored_chain() {
 
 #[test]
 fn heteroscedastic_posterior_summaries_match_the_stored_chain() {
-    let columns = stored_columns(HETEROSCEDASTIC_SNAPSHOT, 6);
+    let columns = stored_columns("heteroscedastic", 6);
     let (config, x, y) = heteroscedastic_fixture();
     let model = thiessen::fit(&config, &x, &y, SEED).unwrap();
     let rendered = render_heteroscedastic(&model, &x);

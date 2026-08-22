@@ -23,8 +23,8 @@ SNAPSHOT = (
     / "crates"
     / "thiessen"
     / "tests"
-    / "snapshots"
-    / "snapshot__gaussian_chain.snap"
+    / "chains"
+    / "gaussian.txt"
 )
 
 #: The fixture rows the core snapshots f(x) at.
@@ -39,9 +39,8 @@ reference_target = pytest.mark.skipif(
 def _stored() -> np.ndarray:
     """Parse the snapshot: one row per draw, sigma then f(x) at each point."""
     lines = SNAPSHOT.read_text().splitlines()
-    body = lines[lines.index("---", 1) + 1 :]
     return np.array(
-        [[float(field) for field in line.split()] for line in body[1:] if line],
+        [[float(field) for field in line.split()] for line in lines[1:] if line],
         dtype=np.float64,
     )
 
