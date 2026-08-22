@@ -29,6 +29,12 @@ says "Sampled values changed" with the reason.
   level codes (categorical, levels learnt at fit, uniform centre
   coordinates), squared into the key. Missing-value weighting is not
   implemented. Outside the semver promise (docs/experimental.md).
+- (experimental) `Metric::Mahalanobis` with `GeometryParams::precision`,
+  a user-supplied row-major p x p matrix over the encoded design, checked
+  at fit (symmetric, positive definite). The active-subspace distance
+  uses the principal submatrix on the active columns, which is not the
+  conditional precision; the identity matrix reproduces Euclidean
+  bit-for-bit. Outside the semver promise (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled

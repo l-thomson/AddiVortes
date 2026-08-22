@@ -179,7 +179,12 @@ impl TryFrom<FittedParts> for Fitted {
         } else {
             parts.categories
         };
-        Geometry::with_categories(&parts.config.mean_params.geometry.metric, p, &categories)?;
+        let geometry =
+            Geometry::with_categories(&parts.config.mean_params.geometry.metric, p, &categories)?;
+        #[cfg(feature = "experimental")]
+        geometry.with_precision(parts.config.mean_params.geometry.precision.as_deref())?;
+        #[cfg(not(feature = "experimental"))]
+        drop(geometry);
         let uses_covariates = |draws: &[Vec<Tessellation>]| {
             draws
                 .iter()
@@ -417,11 +422,15 @@ impl Fitted {
     /// The column structure of the fit, from the configuration and the
     /// stored categorical levels.
     fn geometry(&self) -> Result<Geometry> {
-        Geometry::with_categories(
+        let geometry = Geometry::with_categories(
             &self.config.mean_params.geometry.metric,
             self.scaler.n_cols(),
             &self.categories,
-        )
+        )?;
+        #[cfg(feature = "experimental")]
+        let geometry =
+            geometry.with_precision(self.config.mean_params.geometry.precision.as_deref())?;
+        Ok(geometry)
     }
 
     /// The variance of y given f at each row of `x` for every kept draw,

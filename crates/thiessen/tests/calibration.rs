@@ -126,6 +126,10 @@ enum Space {
     Cosine,
     #[cfg(feature = "experimental")]
     Gower,
+    #[cfg(feature = "experimental")]
+    Mahalanobis {
+        precision: [f64; 4],
+    },
 }
 
 /// One model under test: the pinned-prior configuration and the test
@@ -308,6 +312,23 @@ fn gower_model() -> Model {
         ]),
         space: Space::Gower,
         ..categorical
+    }
+}
+
+/// The Gaussian model under the Mahalanobis distance with a fixed
+/// correlated precision matrix on both columns: the calibration rows,
+/// the Euclidean coordinate laws, only the assignment changes.
+#[cfg(feature = "experimental")]
+fn mahalanobis_model() -> Model {
+    let gaussian = gaussian_model();
+    let precision = [2.0, 0.6, 0.6, 1.0];
+    Model {
+        config: gaussian
+            .config
+            .with_metric(vec![Metric::Mahalanobis, Metric::Mahalanobis])
+            .with_precision(precision.to_vec()),
+        space: Space::Mahalanobis { precision },
+        ..gaussian
     }
 }
 
@@ -540,6 +561,17 @@ impl Model {
                     .sum();
                 let d = sum / dims.len() as f64;
                 return d * d;
+            }
+            #[cfg(feature = "experimental")]
+            Space::Mahalanobis { precision } => {
+                let mut key = 0.0;
+                for (&di, &ci) in dims.iter().zip(centre) {
+                    let diff = row[di] - ci;
+                    for (&dj, &cj) in dims.iter().zip(centre) {
+                        key += diff * precision[di * 2 + dj] * (row[dj] - cj);
+                    }
+                }
+                return key;
             }
             Space::Sphere => {}
         }
@@ -788,6 +820,14 @@ fn sbc_small_ranks_are_uniform_cosine() {
 fn sbc_small_ranks_are_uniform_gower() {
     let model = gower_model();
     let ranks = sbc_ranks(&model, 160, 19, 15, 150, 408);
+    assert_uniform(&model, &ranks, 19);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+fn sbc_small_ranks_are_uniform_mahalanobis() {
+    let model = mahalanobis_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 409);
     assert_uniform(&model, &ranks, 19);
 }
 

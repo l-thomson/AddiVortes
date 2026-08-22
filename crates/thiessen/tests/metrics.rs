@@ -141,3 +141,60 @@ fn the_gower_configuration_serialises_by_kind() {
     let back: Config = serde_json::from_str(&json).unwrap();
     assert_eq!(back, config);
 }
+
+fn mahalanobis_config(precision: Vec<f64>) -> Config {
+    let (config, _, _) = fixture();
+    config
+        .with_metric(vec![Metric::Mahalanobis; 2])
+        .with_precision(precision)
+}
+
+#[test]
+fn mahalanobis_identity_reproduces_the_euclidean_chain() {
+    let (config, x, y) = fixture();
+    let euclidean = fit(&config, &x, &y, SEED).unwrap();
+    let fitted = fit(&mahalanobis_config(vec![1.0, 0.0, 0.0, 1.0]), &x, &y, SEED).unwrap();
+    assert_eq!(euclidean.sigma(), fitted.sigma());
+    assert_eq!(
+        euclidean.predict_draws(&x).unwrap(),
+        fitted.predict_draws(&x).unwrap()
+    );
+}
+
+#[test]
+fn mahalanobis_changes_the_chain_and_round_trips() {
+    let (config, x, y) = fixture();
+    let euclidean = fit(&config, &x, &y, SEED).unwrap();
+    let fitted = fit(&mahalanobis_config(vec![2.0, 0.6, 0.6, 1.0]), &x, &y, SEED).unwrap();
+    assert_ne!(euclidean.sigma(), fitted.sigma());
+    let json = serde_json::to_string(&fitted).unwrap();
+    let back: thiessen::Fitted = serde_json::from_str(&json).unwrap();
+    assert_eq!(fitted.predict(&x).unwrap(), back.predict(&x).unwrap());
+}
+
+#[test]
+fn a_missing_or_misshapen_precision_matrix_is_a_fit_error() {
+    let (config, x, y) = fixture();
+    let bare = config.clone().with_metric(vec![Metric::Mahalanobis; 2]);
+    assert!(fit(&bare, &x, &y, SEED).is_err());
+    assert!(fit(&mahalanobis_config(vec![1.0; 3]), &x, &y, SEED).is_err());
+    // A matrix without a Mahalanobis column is rejected too.
+    assert!(fit(
+        &config.with_precision(vec![1.0, 0.0, 0.0, 1.0]),
+        &x,
+        &y,
+        SEED
+    )
+    .is_err());
+}
+
+#[test]
+fn the_precision_field_is_absent_when_unset() {
+    let json = serde_json::to_string(&Config::new()).unwrap();
+    assert!(!json.contains("precision"), "{json}");
+    let config = mahalanobis_config(vec![2.0, 0.6, 0.6, 1.0]);
+    let json = serde_json::to_string(&config).unwrap();
+    assert!(json.contains(r#""precision":[2.0,0.6,0.6,1.0]"#), "{json}");
+    let back: Config = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+}
