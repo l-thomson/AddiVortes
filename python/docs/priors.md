@@ -35,9 +35,9 @@ paper = Model(
 ).fit(x, y, random_state=1)
 print("cells per tessellation:", round(float(paper.cell_counts().mean()), 2))
 
-default = Model(
-    mean_params=TermParams(tessellations=25), burn_in=50, draws=100
-).fit(x, y, random_state=1)
+default = Model(mean_params=TermParams(tessellations=25), burn_in=50, draws=100).fit(
+    x, y, random_state=1
+)
 print("with lambda_c = 5:     ", round(float(default.cell_counts().mean()), 2))
 ```
 

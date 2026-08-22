@@ -67,8 +67,8 @@ y = x[:, 0] + rng.normal(scale=0.1, size=120)
 
 search = GridSearchCV(
     AddiVortesRegressor(
-    mean_params=TermParams(tessellations=10), burn_in=20, draws=40, random_state=1
-),
+        mean_params=TermParams(tessellations=10), burn_in=20, draws=40, random_state=1
+    ),
     {"mean_params__lambda_c": [5.0, 25.0], "mean_params__k": [2.0, 3.0]},
     cv=3,
 )

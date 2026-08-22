@@ -102,11 +102,12 @@ jobs:
         run: |
           python -c "
           import numpy as np
-          from thiessen import CORE_VERSION, Model
+          from thiessen import CORE_VERSION, Model, TermParams
           n = 40
           x = np.linspace(0.0, 1.0, n).reshape(-1, 1)
           y = 3.0 * x[:, 0] ** 2 - x[:, 0]
-          fitted = Model(m=10, burn_in=20, draws=30).fit(x, y, random_state=1)
+          model = Model(mean_params=TermParams(tessellations=10), burn_in=20, draws=30)
+          fitted = model.fit(x, y, random_state=1)
           assert fitted.predict(x).shape == (n,)
           assert fitted.random_state == 1
           print('core', CORE_VERSION)
@@ -157,10 +158,11 @@ jobs:
           cd ~/elsewhere
           python -c "
           import numpy as np
-          from thiessen import Model
+          from thiessen import Model, TermParams
           x = np.linspace(0.0, 1.0, 40).reshape(-1, 1)
           y = 3.0 * x[:, 0] ** 2 - x[:, 0]
-          assert Model(m=10, burn_in=20, draws=30).fit(x, y, random_state=1).n_draws == 30
+          model = Model(mean_params=TermParams(tessellations=10), burn_in=20, draws=30)
+          assert model.fit(x, y, random_state=1).n_draws == 30
           "
 
   alls-green:
