@@ -1402,3 +1402,53 @@ fn write_csv(name: &str, lines: &[String]) {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(format!("{dir}/{name}"), lines.join("\n") + "\n").unwrap();
 }
+
+/// The covered-configuration list of `docs/calibrated.md`, rendered from
+/// the same constructors the gates run, so the list cannot drift from the
+/// suite. `THIESSEN_UPDATE_DOCS=1` rewrites the file; the experimental
+/// feature is required so the list carries every gated entry.
+#[cfg(feature = "experimental")]
+#[test]
+fn calibrated_configuration_list_is_current() {
+    let entries: [(&str, Model); 13] = [
+        ("gaussian", gaussian_model()),
+        ("probit", probit_model()),
+        ("heteroscedastic", heteroscedastic_model()),
+        ("spherical metric", spherical_model()),
+        ("categorical metric", categorical_model()),
+        ("minkowski metric (experimental)", minkowski_model()),
+        ("cosine metric (experimental)", cosine_model()),
+        ("gower metric (experimental)", gower_model()),
+        ("mahalanobis metric (experimental)", mahalanobis_model()),
+        ("composite metric (experimental)", composite_model()),
+        ("weighted inclusion (experimental)", weighted_model()),
+        ("dart inclusion (experimental)", dart_model()),
+        ("linear cell basis (experimental)", linear_model()),
+    ];
+    let mut rendered = String::from(
+        "# Calibrated configurations\n\n\
+         The configurations the calibration suite covers, one entry per\n\
+         model constructor of `crates/thiessen/tests/calibration.rs`: each\n\
+         runs simulation-based calibration and Geweke tests at two sizes\n\
+         (`docs/testing.md`). Rendered by the suite itself and checked\n\
+         against this file, so the list cannot drift; regenerate with\n\
+         `THIESSEN_UPDATE_DOCS=1 cargo test --features experimental --test\n\
+         calibration calibrated_configuration_list`. Every other\n\
+         combination of the documented options is valid to run and is not\n\
+         separately verified (`docs/models.md`, Validation).\n",
+    );
+    for (name, model) in &entries {
+        let config = serde_json::to_string(&model.config).unwrap();
+        rendered.push_str(&format!("\n## {name}\n\n```json\n{config}\n```\n"));
+    }
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/calibrated.md");
+    if std::env::var_os("THIESSEN_UPDATE_DOCS").is_some() {
+        std::fs::write(path, &rendered).expect("write docs/calibrated.md");
+    }
+    let stored = std::fs::read_to_string(path).expect("docs/calibrated.md");
+    assert_eq!(
+        rendered, stored,
+        "docs/calibrated.md drifted from the calibration suite; \
+         regenerate with THIESSEN_UPDATE_DOCS=1"
+    );
+}

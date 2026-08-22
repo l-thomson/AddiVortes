@@ -62,6 +62,13 @@
 //! names the feature. The table of experimental items and their status is
 //! `docs/experimental.md` in the repository.
 //!
+//! The supported-likelihood boundary (which observation models the crate
+//! can carry, and why) and the validation claim over the configuration
+//! surface are the sections of those names in `docs/models.md`, with the
+//! covered configurations listed in `docs/calibrated.md`; every other
+//! combination of the documented options is valid to run and is not
+//! separately verified.
+//!
 //! # Input data
 //!
 //! `x` is a numeric row-major matrix with at least one column; the response

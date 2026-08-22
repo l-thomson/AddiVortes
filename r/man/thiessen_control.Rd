@@ -61,6 +61,11 @@ configuration or a saved fit naming such an option is rejected with the
 core's message naming the feature. The table of experimental items and
 their status is \code{docs/experimental.md} in the repository. A graduated
 item is accepted here as any other option, with no separate opt-in.
+
+The core's calibration suite covers the configurations listed in
+\code{docs/calibrated.md} in the repository; component options are verified
+in isolation, and every other combination of the documented options is
+valid to run and is not separately verified.
 }
 \examples{
 thiessen_control(tessellations = 50)

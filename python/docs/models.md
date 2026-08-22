@@ -110,6 +110,13 @@ AddiVortes `metric = "C"`.
 ## The stable surface
 
 These three models are the published method and follow semantic versioning.
+The core's calibration suite covers the configurations listed in
+`docs/calibrated.md` in the repository; component options are verified in
+isolation, and every other combination of the documented options is valid
+to run and is not separately verified. The boundary of what the library
+can carry, observation models with an exact conditionally Gaussian
+augmentation, is the section of that name in the repository's
+`docs/models.md`.
 Everything else the core crate adds sits behind its `experimental` Cargo
 feature, which this package does not enable, so a configuration or a saved
 model naming such an option is rejected with the core's message naming the
