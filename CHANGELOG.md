@@ -23,6 +23,12 @@ says "Sampled values changed" with the reason.
   hold, the [-0.5, 0.5] scaling makes the origin data-dependent, and the
   option is intended for covariates that are directions already. Outside
   the semver promise (docs/experimental.md).
+- (experimental) `Metric::Gower` with a per-column kind: the mean, over
+  the active Gower columns, of the range-normalised absolute difference
+  (numeric, the [-0.5, 0.5] scaling) or the plain mismatch of integer
+  level codes (categorical, levels learnt at fit, uniform centre
+  coordinates), squared into the key. Missing-value weighting is not
+  implemented. Outside the semver promise (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled
