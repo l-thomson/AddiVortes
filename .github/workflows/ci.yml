@@ -132,6 +132,53 @@ jobs:
           baseline-root: ${{ runner.temp }}/baseline
           feature-group: default-features
 
+  # Statistical validation is a merge gate, not only a scheduled job. A
+  # pull request that touches the sampler kernel, an outcome model, or the
+  # calibration harness runs the full-size SBC and Geweke gates; other
+  # pull requests stay on the small-size gates in `test`. The ten gates
+  # take about forty seconds of test time on a laptop.
+  calibration-full:
+    name: calibration-full
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      CALIBRATION_DIR: ${{ github.workspace }}/calibration-out
+    steps:
+      # Full history; the base revision is not in a shallow clone.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: kernel
+        run: |
+          hit=false
+          if git diff --name-only \
+            ${{ github.event.pull_request.base.sha }}...HEAD -- \
+            crates/thiessen/src/sampler.rs \
+            crates/thiessen/src/moves.rs \
+            crates/thiessen/src/cells.rs \
+            crates/thiessen/src/outcome.rs \
+            'crates/thiessen/src/models/*' \
+            crates/thiessen/tests/calibration.rs | grep -q .; then
+            hit=true
+          fi
+          echo "hit=$hit" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        if: steps.kernel.outputs.hit == 'true'
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        if: steps.kernel.outputs.hit == 'true'
+      - run: cargo test --locked --release --features experimental --test calibration -- --ignored
+        if: steps.kernel.outputs.hit == 'true'
+      # A failed gate leaves its rank and sample files for the R
+      # evaluation under benchmarks/calibration.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: calibration-full-report
+          path: calibration-out
+
+
   coverage:
     name: coverage
     strategy:
@@ -329,13 +376,14 @@ jobs:
   alls-green:
     name: alls-green
     if: always()
-    needs: [fmt, clippy, test, deny, doc, semver, coverage, cff, py-lint, py-test,
-            py-coverage, py-docs, r-source, r-check]
+    needs: [fmt, clippy, test, deny, doc, semver, calibration-full, coverage, cff,
+            py-lint, py-test, py-coverage, py-docs, r-source, r-check]
     runs-on: ubuntu-latest
     steps:
       - uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-          # semver runs on pull requests only; coverage is informational
-          allowed-skips: semver
+          # semver and calibration-full run on pull requests only; coverage
+          # is informational
+          allowed-skips: semver, calibration-full
           allowed-failures: coverage, py-coverage

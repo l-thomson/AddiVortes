@@ -24,7 +24,11 @@ jobs:
       - uses: taiki-e/install-action@5b4d68e2e660441203ab128a23676f1e4faf1532 # v2
         with:
           tool: cargo-nextest
-      - run: cargo nextest run --locked --features experimental --run-ignored all
+      # The variants tests read the output of the R scripts under
+      # benchmarks/upstream, which is not present here; they run by hand.
+      - run: >
+          cargo nextest run --locked --features experimental --run-ignored all
+          -E 'not binary(variants)'
 
   mutants:
     name: mutants
