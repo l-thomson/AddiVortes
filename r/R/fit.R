@@ -205,6 +205,26 @@ new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
              progress$report, progress$updates),
     call = call_env
   )
+  assemble_fit(fit, design, y, resolved, call,
+               blueprint = blueprint, response_levels = response_levels,
+               call_env = call_env)
+}
+
+#' Assemble the object the methods return from the core's fit list
+#'
+#' @param fit The list `core_fit` or `core_sampler_finish` returns.
+#' @param design The numeric design.
+#' @param y The numeric response.
+#' @param seed The resolved seed.
+#' @param call The call to store.
+#' @param blueprint The hardhat blueprint, or `NULL` for a matrix fit.
+#' @param response_levels The response's factor levels, or `NULL`.
+#' @param call_env The calling environment to report.
+#' @return An object of class `"thiessen"`.
+#' @noRd
+assemble_fit <- function(fit, design, y, seed, call, blueprint = NULL,
+                         response_levels = NULL,
+                         call_env = rlang::caller_env()) {
   for (warning in fit$warnings) {
     rlang::warn(warning, class = "thiessen_warning")
   }
@@ -219,7 +239,7 @@ new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
       n_draws = fit$n_draws,
       in_sample_rmse = fit$in_sample_rmse,
       warnings = fit$warnings,
-      seed = resolved,
+      seed = seed,
       n_features = ncol(design),
       blueprint = blueprint,
       response_levels = response_levels,

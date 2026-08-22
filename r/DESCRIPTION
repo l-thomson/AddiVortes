@@ -22,6 +22,7 @@ Depends: R (>= 4.2)
 Imports:
     hardhat,
     jsonlite,
+    lifecycle,
     posterior,
     progressr,
     rlang,

@@ -10,6 +10,7 @@
 
 use extendr_api::prelude::*;
 use extendr_api::Result;
+use std::cell::RefCell;
 
 fn core_error(error: thiessen::Error) -> Error {
     Error::Other(error.to_string())
@@ -215,6 +216,144 @@ fn core_diagnostics(state_json: &str) -> Result<List> {
     ))
 }
 
+/// A live sampler over the core's Gibbs loop, held behind an external
+/// pointer. `finish` consumes the state; every later call errors.
+struct SamplerHandle {
+    inner: RefCell<Option<thiessen::Sampler>>,
+    data: thiessen::Data,
+    y: RefCell<Vec<f64>>,
+}
+
+fn finished() -> Error {
+    Error::Other("the sampler is finished".to_string())
+}
+
+/// Construct a sampler with the chain-0 seed of `core_fit`, so driving
+/// the configured schedule by hand reproduces a one-chain fit bit for bit.
+#[extendr]
+fn core_sampler_new(
+    config_json: &str,
+    x: RMatrix<f64>,
+    y: &[f64],
+    seed_value: f64,
+) -> Result<ExternalPtr<SamplerHandle>> {
+    let config = config(config_json)?;
+    let data = design(&x)?;
+    let chain = thiessen::chain_seed(seed(seed_value)?, 0);
+    let inner = thiessen::Sampler::new(&config, &data, y, chain).map_err(core_error)?;
+    Ok(ExternalPtr::new(SamplerHandle {
+        inner: RefCell::new(Some(inner)),
+        data,
+        y: RefCell::new(y.to_vec()),
+    }))
+}
+
+/// Run `n` sweeps of the Gibbs loop.
+#[extendr]
+fn core_sampler_step(sampler: ExternalPtr<SamplerHandle>, n: i32) -> Result<()> {
+    let mut inner = sampler.inner.borrow_mut();
+    let live = inner.as_mut().ok_or_else(finished)?;
+    for _ in 0..n.max(0) {
+        live.step();
+    }
+    Ok(())
+}
+
+/// Record the current state as a posterior draw.
+#[extendr]
+fn core_sampler_keep(sampler: ExternalPtr<SamplerHandle>) -> Result<()> {
+    sampler
+        .inner
+        .borrow_mut()
+        .as_mut()
+        .ok_or_else(finished)?
+        .keep();
+    Ok(())
+}
+
+/// Number of draws kept so far.
+#[extendr]
+fn core_sampler_n_kept(sampler: ExternalPtr<SamplerHandle>) -> Result<i32> {
+    Ok(sampler
+        .inner
+        .borrow()
+        .as_ref()
+        .ok_or_else(finished)?
+        .n_kept() as i32)
+}
+
+/// Replace the response on the caller's scale.
+#[extendr]
+fn core_sampler_set_response(sampler: ExternalPtr<SamplerHandle>, y: &[f64]) -> Result<()> {
+    sampler
+        .inner
+        .borrow_mut()
+        .as_mut()
+        .ok_or_else(finished)?
+        .set_response(y)
+        .map_err(core_error)?;
+    *sampler.y.borrow_mut() = y.to_vec();
+    Ok(())
+}
+
+/// The current mean function at the training rows, caller scale.
+#[extendr]
+fn core_sampler_fitted_values(sampler: ExternalPtr<SamplerHandle>) -> Result<Vec<f64>> {
+    Ok(sampler
+        .inner
+        .borrow()
+        .as_ref()
+        .ok_or_else(finished)?
+        .fitted_values())
+}
+
+/// The current variance of y given f at each training row, caller scale.
+#[extendr]
+fn core_sampler_noise_variances(sampler: ExternalPtr<SamplerHandle>) -> Result<Vec<f64>> {
+    Ok(sampler
+        .inner
+        .borrow()
+        .as_ref()
+        .ok_or_else(finished)?
+        .noise_variances())
+}
+
+/// The configuration, with omega and the probit offset resolved.
+#[extendr]
+fn core_sampler_config(sampler: ExternalPtr<SamplerHandle>) -> Result<String> {
+    serde_json::to_string(
+        sampler
+            .inner
+            .borrow()
+            .as_ref()
+            .ok_or_else(finished)?
+            .config(),
+    )
+    .map_err(json_error)
+}
+
+/// The fitted model from the kept draws, pooled as a one-chain fit and
+/// returned in the shape of `core_fit`.
+#[extendr]
+fn core_sampler_finish(sampler: ExternalPtr<SamplerHandle>) -> Result<List> {
+    let live = sampler.inner.borrow_mut().take().ok_or_else(finished)?;
+    let fitted = live.finish().map_err(core_error)?;
+    let y = sampler.y.borrow();
+    let fitted = thiessen::Fitted::pool(&[fitted], &sampler.data, &y).map_err(core_error)?;
+    let fitted_values = fitted.predict(&sampler.data).map_err(core_error)?;
+    let warnings: Vec<String> = fitted.warnings().iter().map(ToString::to_string).collect();
+    Ok(list!(
+        state = serde_json::to_string(&fitted).map_err(json_error)?,
+        config = serde_json::to_string(fitted.config()).map_err(json_error)?,
+        model = fitted.model_name().to_string(),
+        n_chains = 1_i32,
+        n_draws = fitted.n_draws() as i32,
+        in_sample_rmse = fitted.in_sample_rmse(),
+        warnings = warnings,
+        fitted_values = fitted_values
+    ))
+}
+
 extendr_module! {
     mod thiessen;
     fn core_version;
@@ -228,4 +367,13 @@ extendr_module! {
     fn core_sigma;
     fn core_log_lik;
     fn core_diagnostics;
+    fn core_sampler_new;
+    fn core_sampler_step;
+    fn core_sampler_keep;
+    fn core_sampler_n_kept;
+    fn core_sampler_set_response;
+    fn core_sampler_fitted_values;
+    fn core_sampler_noise_variances;
+    fn core_sampler_config;
+    fn core_sampler_finish;
 }

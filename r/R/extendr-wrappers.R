@@ -40,3 +40,29 @@ core_log_lik <- function(state_json, x, y) {
 core_diagnostics <- function(state_json) {
   .Call(wrap__core_diagnostics, state_json)
 }
+
+core_sampler_new <- function(config_json, x, y, seed_value) {
+  .Call(wrap__core_sampler_new, config_json, x, y, seed_value)
+}
+
+core_sampler_step <- function(sampler, n) .Call(wrap__core_sampler_step, sampler, n)
+
+core_sampler_keep <- function(sampler) .Call(wrap__core_sampler_keep, sampler)
+
+core_sampler_n_kept <- function(sampler) .Call(wrap__core_sampler_n_kept, sampler)
+
+core_sampler_set_response <- function(sampler, y) {
+  .Call(wrap__core_sampler_set_response, sampler, y)
+}
+
+core_sampler_fitted_values <- function(sampler) {
+  .Call(wrap__core_sampler_fitted_values, sampler)
+}
+
+core_sampler_noise_variances <- function(sampler) {
+  .Call(wrap__core_sampler_noise_variances, sampler)
+}
+
+core_sampler_config <- function(sampler) .Call(wrap__core_sampler_config, sampler)
+
+core_sampler_finish <- function(sampler) .Call(wrap__core_sampler_finish, sampler)

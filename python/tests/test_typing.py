@@ -89,6 +89,7 @@ def test_the_package_declares_all():
         families,
         model,
         params,
+        sampler,
     )
 
     modules = (
@@ -101,6 +102,7 @@ def test_the_package_declares_all():
         families,
         model,
         params,
+        sampler,
         thiessen,
     )
     for module in modules:
@@ -108,9 +110,9 @@ def test_the_package_declares_all():
 
 
 def test_every_public_callable_has_a_docstring():
-    from thiessen import estimators, families, model, params
+    from thiessen import estimators, families, model, params, sampler
 
-    for module in (model, estimators, families, params):
+    for module in (model, estimators, families, params, sampler):
         for name in module.__all__:
             member = getattr(module, name)
             assert member.__doc__, f"{module.__name__}.{name}"

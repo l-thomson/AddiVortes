@@ -1,0 +1,144 @@
+# The sampler API: the core's Gibbs loop as an object the caller drives.
+
+#' Drive the sampler one call at a time
+#'
+#' `r lifecycle::badge("experimental")`
+#'
+#' The researcher's interface, after the updatable sampler object of dbarts
+#' and the low-level interface of stochtree: construct with the
+#' configuration, the data and a seed, then drive the Gibbs loop yourself.
+#' Burn-in and thinning are the caller's loop, and the response may be
+#' replaced between sweeps, which is what makes censoring, imputation and
+#' custom likelihoods through the response possible. Anything that is not
+#' an outcome family or a setting goes through this loop.
+#'
+#' The response is on the caller's scale through an affine map frozen at
+#' construction, so a response outside the training range is legitimate.
+#' The sampler owns its RNG, seeded at construction with the chain-0 seed
+#' of [thiessen()]; driving the configured schedule by hand reproduces a
+#' one-chain fit bit for bit. The loop cannot rewire tessellation
+#' membership or cell internals. The `burn_in`, `draws` and `thinning`
+#' settings of the control play no part here.
+#'
+#' The returned object holds the loop's verbs:
+#' \describe{
+#'   \item{`$step(n = 1)`}{Run `n` sweeps of the Gibbs loop.}
+#'   \item{`$keep()`}{Record the current state as a posterior draw.}
+#'   \item{`$n_kept()`}{The number of draws kept so far.}
+#'   \item{`$set_response(y)`}{Replace the response, keeping the
+#'     tessellations, the cell values and sigma^2; the next sweep
+#'     conditions on it. Labels in \{0, 1\} under the probit family.}
+#'   \item{`$fitted_values()`}{The current mean function at the training
+#'     rows: f(x_i), or c + f(x_i) under the probit family.}
+#'   \item{`$noise_variances()`}{The current variance of y given f at each
+#'     training row: sigma^2 under the Gaussian model, 1 under the probit
+#'     family (the latent scale), s^2(x_i) under the heteroscedastic
+#'     model.}
+#'   \item{`$finish()`}{The fit of the kept draws, as [thiessen()] returns
+#'     one. Consumes the sampler: every later call on it errors.}
+#' }
+#'
+#' @param x A numeric matrix of covariates, one row per observation. A
+#'   numeric vector is taken as one column.
+#' @param y The response: a numeric vector of length `nrow(x)`. Labels in
+#'   \{0, 1\} under the probit family.
+#' @param control An object of class `"thiessen_control"`, from
+#'   [thiessen_control()].
+#' @param seed The seed. `NULL`, the default, draws one from R's stream,
+#'   so [set.seed()] governs; a whole number in `[0, 2^53]` gives the
+#'   chain that `thiessen()` would run first.
+#'
+#' @return An object of class `"thiessen_sampler"`: an environment holding
+#'   the verbs above.
+#'
+#' @seealso [thiessen()], whose loop this is.
+#'
+#' @examples
+#' fixture <- matrix(seq(0, 1, length.out = 40), ncol = 1)
+#' response <- 3 * fixture[, 1]^2 - fixture[, 1]
+#'
+#' sampler <- thiessen_sampler(fixture, response,
+#'                             thiessen_control(tessellations = 10),
+#'                             seed = 1)
+#' sampler$step(20)
+#' for (draw in seq_len(30)) {
+#'   sampler$step(1)
+#'   sampler$keep()
+#' }
+#' fit <- sampler$finish()
+#' fit$n_draws
+#' @export
+thiessen_sampler <- function(x, y, control = thiessen_control(), seed = NULL) {
+  lifecycle::signal_stage("experimental", "thiessen_sampler()")
+  if (!inherits(control, "thiessen_control")) {
+    thiessen_abort("`control` must come from `thiessen_control()`.")
+  }
+  design <- as_design(x)
+  if (!is.numeric(y) || length(y) != nrow(design)) {
+    thiessen_abort(sprintf(
+      "`y` must be a numeric vector of length %d.", nrow(design)
+    ))
+  }
+  y <- as.double(y)
+  resolved <- resolve_seed(seed)
+  handle <- core_call(core_sampler_new(config_json(control), design, y, resolved))
+  current_y <- y
+
+  self <- new.env(parent = emptyenv())
+  self$step <- function(n = 1) {
+    if (!is.numeric(n) || length(n) != 1L || is.na(n) || n < 0 ||
+          n != trunc(n)) {
+      thiessen_abort("`n` must be a whole number of sweeps.")
+    }
+    core_call(core_sampler_step(handle, as.integer(n)))
+    invisible(NULL)
+  }
+  self$keep <- function() {
+    core_call(core_sampler_keep(handle))
+    invisible(NULL)
+  }
+  self$n_kept <- function() {
+    core_call(core_sampler_n_kept(handle))
+  }
+  self$set_response <- function(y) {
+    if (!is.numeric(y)) {
+      thiessen_abort("`y` must be a numeric vector.")
+    }
+    core_call(core_sampler_set_response(handle, as.double(y)))
+    current_y <<- as.double(y)
+    invisible(NULL)
+  }
+  self$fitted_values <- function() {
+    core_call(core_sampler_fitted_values(handle))
+  }
+  self$noise_variances <- function() {
+    core_call(core_sampler_noise_variances(handle))
+  }
+  self$finish <- function() {
+    fit <- core_call(core_sampler_finish(handle))
+    assemble_fit(fit, design = design, y = current_y, seed = resolved,
+                 call = sys.call(-1L))
+  }
+  class(self) <- "thiessen_sampler"
+  self
+}
+
+#' Print a sampler
+#'
+#' @param x An object of class `"thiessen_sampler"`.
+#' @param ... Ignored.
+#' @return `x`, invisibly.
+#' @examples
+#' design <- matrix(seq(0, 1, length.out = 40), ncol = 1)
+#' print(thiessen_sampler(design, design[, 1]^2,
+#'                        thiessen_control(tessellations = 10), seed = 1))
+#' @export
+print.thiessen_sampler <- function(x, ...) {
+  kept <- tryCatch(x$n_kept(), error = function(condition) NULL)
+  if (is.null(kept)) {
+    cat("<thiessen_sampler> finished\n")
+  } else {
+    cat(sprintf("<thiessen_sampler> %d draw(s) kept\n", kept))
+  }
+  invisible(x)
+}

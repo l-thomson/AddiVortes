@@ -30,6 +30,10 @@
 
 ::: thiessen.estimators.AddiVortesClassifier
 
+## Sampler
+
+::: thiessen.sampler.Sampler
+
 ## Exceptions
 
 ::: thiessen.ThiessenError
