@@ -41,7 +41,7 @@ impl<F: CellFamily> Ensemble<F> {
     ) -> Self {
         let tessellations: Vec<Tessellation> = (0..m)
             .map(|_| {
-                let dim = rng::uniform_index(prior.p, rng);
+                let dim = prior.initial_dim(rng);
                 let centre = prior.coordinate(dim, rng);
                 Tessellation {
                     centres: vec![centre],

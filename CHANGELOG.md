@@ -45,6 +45,14 @@ says "Sampled values changed" with the reason.
   member metric. Manhattan and Cosine entries are now objects
   (`{"manhattan": {}}`, `{"cosine": {}}`), a change within the same
   unreleased series. Outside the semver promise (docs/experimental.md).
+- (experimental) `StructureParams::inclusion` with `Inclusion::Weighted`
+  (bartMachine `cov_prior_vec`): a fixed non-negative weight per column.
+  The subset prior given the dimension count is proportional to the
+  product of member weights, the add-dimension, remove-dimension and
+  swap proposals carry the weights in both directions, a zero weight
+  excludes the column, and equal weights are the uniform prior on its
+  code path, reproducing the default draws exactly. Nothing is sampled.
+  Outside the semver promise (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled
