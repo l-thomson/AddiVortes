@@ -3,7 +3,7 @@
 use std::str::FromStr;
 
 use crate::error::{invalid, Error};
-use crate::outcome::Sigma2Mode;
+use crate::outcome::{RequiredData, Sigma2Mode};
 
 /// The observation model. Selected on [`Config`](crate::Config) and stored
 /// on the fitted model; the sampler's verbs and the prediction surface keep
@@ -43,6 +43,14 @@ impl Model {
         match self {
             Model::Gaussian | Model::Heteroscedastic => Sigma2Mode::Sampled,
             Model::Probit => Sigma2Mode::Fixed(1.0),
+        }
+    }
+
+    /// The response contract the model imposes at fit.
+    pub(crate) fn required_data(self) -> RequiredData {
+        match self {
+            Model::Gaussian | Model::Heteroscedastic => RequiredData::Continuous,
+            Model::Probit => RequiredData::Binary,
         }
     }
 
@@ -142,6 +150,8 @@ mod tests {
         assert!(!Model::Heteroscedastic.has_global_variance());
         assert!(Model::Heteroscedastic.has_variance_ensemble());
         assert!(!Model::Probit.sigma2_mode().permits_variance_ensemble());
+        assert_eq!(Model::Probit.required_data(), RequiredData::Binary);
+        assert_eq!(Model::Gaussian.required_data(), RequiredData::Continuous);
     }
 
     #[cfg(not(feature = "experimental"))]

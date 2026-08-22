@@ -54,14 +54,6 @@ pub(crate) enum RequiredData {
     Binary,
 }
 
-/// Per-observation weights entering the precisions: uniform for the
-/// latent-normal models, one per observation for a scale mixture.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum Weights<'a> {
-    Uniform(f64),
-    PerObservation(&'a [f64]),
-}
-
 /// An observation model behind the mean ensemble.
 ///
 /// The contract: the kernel calls [`draw_extra`](OutcomeModel::draw_extra),
@@ -92,8 +84,10 @@ pub(crate) trait OutcomeModel: std::fmt::Debug {
     /// latent-normal model.
     fn working_response(&mut self, total: &[f64], y: &mut [f64], rng: &mut Rng);
 
-    /// The per-observation weights of this sweep's precisions.
-    fn weights(&self) -> Weights<'_>;
+    /// The per-observation weights of this sweep's precisions: `None` for
+    /// unit weight on every observation (the latent-normal models), one
+    /// weight per observation for a scale mixture.
+    fn weights(&self) -> Option<&[f64]>;
 
     /// What the model does with sigma^2; every scale validity rule is
     /// derived from this value.
@@ -140,8 +134,8 @@ mod tests {
 
         fn working_response(&mut self, _total: &[f64], _y: &mut [f64], _rng: &mut Rng) {}
 
-        fn weights(&self) -> Weights<'_> {
-            Weights::Uniform(1.0)
+        fn weights(&self) -> Option<&[f64]> {
+            None
         }
 
         fn sigma2_mode(&self) -> Sigma2Mode {
@@ -163,13 +157,11 @@ mod tests {
         model.draw_extra(&mut rng);
         model.working_response(&[0.0, 0.0], &mut y, &mut rng);
         assert_eq!(y, vec![0.25, -0.25]);
-        assert_eq!(model.weights(), Weights::Uniform(1.0));
+        assert_eq!(model.weights(), None);
         assert_eq!(model.sigma2_mode(), Sigma2Mode::Sampled);
         assert_eq!(model.required_data(), RequiredData::Continuous);
         assert_ne!(model.required_data(), RequiredData::Binary);
         assert_eq!(model.predictive_quantile(0.3, 1.0, 0.5), Some(0.3));
         assert_eq!(model.predictive_quantile(0.3, 1.0, 0.9), None);
-        let per_observation = [0.5, 2.0];
-        assert_ne!(Weights::PerObservation(&per_observation), model.weights());
     }
 }
