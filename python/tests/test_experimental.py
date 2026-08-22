@@ -58,14 +58,14 @@ def test_the_estimators_reject_a_gated_name(name, gaussian_fixture):
 def test_the_estimators_hold_no_model_list():
     """The estimator passes the name through; the core rejects it."""
     assert AddiVortesRegressor(model="soft")._model_name() == "soft"
-    with pytest.raises(ThiessenError, match="unknown model"):
+    with pytest.raises(ThiessenError, match="unknown variant `soft`"):
         Model(model="soft").validate()
 
 
 def test_a_saved_model_naming_a_gated_option_fails_to_load(gaussian_fixture):
     x, y = gaussian_fixture
     payload = json.loads(Model(**SMALL).fit(x, y, random_state=1)._fitted.to_json())
-    payload["config"]["model"] = "soft"
+    payload["config"]["outcome"] = {"soft": {}}
 
     with pytest.raises(ThiessenError):
         _native.fitted_from_json(json.dumps(payload))

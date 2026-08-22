@@ -2,7 +2,7 @@
 //! priors, what is fixed rather than estimated, the correspondence of its
 //! parameters with the paper and with the BART-family reference
 //! implementation, and the prediction semantics of the fitted model. The
-//! model is selected by [`Config::model`]; every model runs through
+//! model is selected by [`Config::outcome`]; every model runs through
 //! [`fit`] and the [`Sampler`].
 
 use crate::config::Config;
@@ -16,7 +16,7 @@ pub mod gaussian;
 pub mod heteroscedastic;
 pub mod probit;
 
-/// Fit the model named by `config.model`: validate, run `burn_in` sweeps,
+/// Fit the model the configuration names: validate, run `burn_in` sweeps,
 /// then keep every `thinning`-th of the next `draws * thinning` sweeps.
 ///
 /// # Arguments
@@ -48,7 +48,7 @@ pub fn fit_with_progress(
     seed: u64,
     mut progress: impl FnMut(usize, usize),
 ) -> Result<Fitted> {
-    match config.model {
+    match config.model() {
         Model::Gaussian => gaussian::fit(config, x, y, seed, &mut progress),
         Model::Probit => probit::fit(config, x, y, seed, &mut progress),
         Model::Heteroscedastic => heteroscedastic::fit(config, x, y, seed, &mut progress),
@@ -63,16 +63,17 @@ pub(crate) fn run(
     seed: u64,
     progress: &mut dyn FnMut(usize, usize),
 ) -> Result<Fitted> {
-    let total = config.burn_in + config.draws * config.thinning;
+    let schedule = config.general_params.clone();
+    let total = schedule.burn_in + schedule.draws * schedule.thinning;
     let mut sampler = Sampler::new(config, x, y, seed)?;
     let mut completed = 0;
-    for _ in 0..config.burn_in {
+    for _ in 0..schedule.burn_in {
         sampler.step();
         completed += 1;
         progress(completed, total);
     }
-    for _ in 0..config.draws {
-        for _ in 0..config.thinning {
+    for _ in 0..schedule.draws {
+        for _ in 0..schedule.thinning {
             sampler.step();
             completed += 1;
             progress(completed, total);

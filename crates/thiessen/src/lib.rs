@@ -1,7 +1,8 @@
 //! Bayesian additive Voronoi tessellations (AddiVortes; Stone and Gosling
 //! 2025, JCGS 34(3):859-871): the Gaussian, probit and heteroscedastic
 //! models, a Gibbs sampler with a step API, `fit` and `predict`. The model
-//! is chosen by [`Config::model`]; each model's statement, priors and
+//! is chosen by [`Config::outcome`] and the variance-ensemble count; each
+//! model's statement, priors and
 //! prediction semantics are in the [`models`] module documentation.
 //!
 //! # Example
@@ -73,7 +74,7 @@
 //! response standard deviation. More columns than rows fits and returns
 //! [`Warning::MoreFeaturesThanObservations`]. At predict the column count
 //! must match the fitted model; an empty matrix is valid. Each column has
-//! a [`Metric`] ([`Config::metric`]): Euclidean columns are min-max scaled
+//! a [`Metric`] ([`GeometryParams::metric`]): Euclidean columns are min-max scaled
 //! over their training range; spherical columns are coordinates in
 //! radians, a sphere's latitudes then its longitude, and are not scaled;
 //! categorical columns are integer level codes, not scaled, any
@@ -110,7 +111,10 @@ mod tessellation;
 /// The crate version, as the bindings report it.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub use config::Config;
+pub use config::{
+    CellParams, Config, GaussianParams, GeneralParams, GeometryParams, Outcome, ProbitParams,
+    StructureParams, TermParams,
+};
 pub use data::{Data, Warning};
 pub use error::{Error, Result};
 pub use fitted::{Fitted, Interval, Posterior};

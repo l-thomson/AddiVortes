@@ -77,7 +77,10 @@ fn sigma_prior_calibration_holds() {
     let sigma = fitted.sigma();
     let below = sigma.iter().filter(|s| **s < threshold).count() as f64;
     let frequency = below / sigma.len() as f64;
-    let q = fitted.config().q;
+    let q = match &fitted.config().outcome {
+        thiessen::Outcome::Gaussian(params) => params.q,
+        _ => unreachable!("a gaussian fixture"),
+    };
     let tolerance = 4.0 * (q * (1.0 - q) / sigma.len() as f64).sqrt();
     assert!(
         (frequency - q).abs() < tolerance,
@@ -118,11 +121,13 @@ fn prior_predictive_path_and_serde() {
     assert!(predictions.iter().all(|p| p.is_finite()));
     assert!(fitted.prediction_interval(&x, 0.9).is_ok());
 
-    assert!(!Config::default().prior_only);
-    let parsed: Config = serde_json::from_str(r#"{"m": 4}"#).unwrap();
-    assert!(!parsed.prior_only);
-    let parsed: Config = serde_json::from_str(r#"{"prior_only": true}"#).unwrap();
-    assert!(parsed.prior_only);
+    assert!(!Config::default().general_params.prior_only);
+    let parsed: Config =
+        serde_json::from_str(r#"{"mean_params": {"num_tessellations": 4}}"#).unwrap();
+    assert!(!parsed.general_params.prior_only);
+    let parsed: Config =
+        serde_json::from_str(r#"{"general_params": {"prior_only": true}}"#).unwrap();
+    assert!(parsed.general_params.prior_only);
     let back: Config = serde_json::from_str(&serde_json::to_string(&parsed).unwrap()).unwrap();
     assert_eq!(back, parsed);
 }

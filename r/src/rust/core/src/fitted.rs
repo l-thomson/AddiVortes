@@ -179,7 +179,7 @@ impl TryFrom<FittedParts> for Fitted {
         } else {
             parts.categories
         };
-        Geometry::with_categories(&parts.config.metric, p, &categories)?;
+        Geometry::with_categories(&parts.config.mean_params.geometry.metric, p, &categories)?;
         let uses_covariates = |draws: &[Vec<Tessellation>]| {
             draws
                 .iter()
@@ -187,7 +187,7 @@ impl TryFrom<FittedParts> for Fitted {
                 .all(|t| t.dims().iter().all(|&d| d < p))
         };
         for draw in parts.posterior.tessellations() {
-            if draw.len() != parts.config.m {
+            if draw.len() != parts.config.mean_tessellations() {
                 return Err(bad("draws do not hold m tessellations"));
             }
         }
@@ -199,7 +199,7 @@ impl TryFrom<FittedParts> for Fitted {
             ));
         }
         let n_draws = parts.posterior.n_draws();
-        let model = parts.config.model;
+        let model = parts.config.model();
         if (parts.posterior.sigma_sq().len() == n_draws) != model.has_global_variance() {
             return Err(bad(
                 "sigma^2 draws are present exactly under the Gaussian model",
@@ -213,12 +213,13 @@ impl TryFrom<FittedParts> for Fitted {
             ));
         }
         if model.has_variance_ensemble()
-            && parts.posterior.variance_tessellations()[0].len() != parts.config.m_var
+            && parts.posterior.variance_tessellations()[0].len()
+                != parts.config.variance_tessellations()
         {
             return Err(bad("draws do not hold m_var variance tessellations"));
         }
         if model == Model::Probit {
-            match parts.config.offset {
+            match parts.config.offset() {
                 Some(c) if c.is_finite() => {}
                 _ => return Err(bad("a probit fit carries a finite offset")),
             }
@@ -270,7 +271,7 @@ impl Fitted {
 
     /// The model the draws were fitted under.
     pub fn model(&self) -> Model {
-        self.config.model
+        self.config.model()
     }
 
     /// The kept draws of `fits`, in chain order, as one fitted model.
@@ -338,7 +339,7 @@ impl Fitted {
     fn not_applicable(&self, method: &str) -> Error {
         Error::NotApplicable {
             method: method.into(),
-            model: self.config.model,
+            model: self.config.model(),
         }
     }
 
@@ -360,7 +361,7 @@ impl Fitted {
     /// `FeatureCountMismatch`, `NonFiniteFeature`, `InvalidCategoryCode`.
     pub fn predict_draws(&self, x: &Data) -> Result<Vec<Vec<f64>>> {
         let mut latent = self.predict_latent(x)?;
-        if self.config.model == Model::Probit {
+        if self.config.model() == Model::Probit {
             for draw in &mut latent {
                 for v in draw {
                     *v = maths::normal_cdf(*v);
@@ -403,7 +404,11 @@ impl Fitted {
     /// The column structure of the fit, from the configuration and the
     /// stored categorical levels.
     fn geometry(&self) -> Result<Geometry> {
-        Geometry::with_categories(&self.config.metric, self.scaler.n_cols(), &self.categories)
+        Geometry::with_categories(
+            &self.config.mean_params.geometry.metric,
+            self.scaler.n_cols(),
+            &self.categories,
+        )
     }
 
     /// The variance of y given f at each row of `x` for every kept draw,
@@ -420,7 +425,7 @@ impl Fitted {
         data::validate_predict(x, self.scaler.n_cols())?;
         let n = x.n_rows();
         let range_sq = self.scaler.y_range() * self.scaler.y_range();
-        match self.config.model {
+        match self.config.model() {
             Model::Gaussian => Ok(self
                 .posterior
                 .sigma_sq()
@@ -514,7 +519,7 @@ impl Fitted {
     /// (0, 1); the predict errors.
     pub fn prediction_interval(&self, x: &Data, level: f64) -> Result<Vec<Interval>> {
         check_probability(level)?;
-        if self.config.model == Model::Probit {
+        if self.config.model() == Model::Probit {
             return Err(self.not_applicable("prediction_interval"));
         }
         let per_draw = self.predict_draws(x)?;
@@ -560,7 +565,7 @@ impl Fitted {
         if let Some(row) = y.iter().position(|v| !v.is_finite()) {
             return Err(Error::NonFiniteResponse { row });
         }
-        if self.config.model == Model::Probit {
+        if self.config.model() == Model::Probit {
             if let Some(row) = y.iter().position(|&v| v != 0.0 && v != 1.0) {
                 return Err(Error::InvalidLabel { row });
             }
@@ -614,8 +619,8 @@ impl Fitted {
 
     /// The probit offset c; 0 under the other models.
     fn offset(&self) -> f64 {
-        match self.config.model {
-            Model::Probit => self.config.offset.unwrap_or(0.0),
+        match self.config.model() {
+            Model::Probit => self.config.offset().unwrap_or(0.0),
             Model::Gaussian | Model::Heteroscedastic => 0.0,
         }
     }
@@ -832,7 +837,7 @@ mod tests {
         for (l, d) in latent.iter().flatten().zip(draws.iter().flatten()) {
             assert!((maths::normal_cdf(*l) - d).abs() < 1e-15);
         }
-        let offset = model.config().offset.unwrap();
+        let offset = model.config().offset().unwrap();
         assert!(offset.is_finite());
         assert!(model.sigma().is_empty());
         assert!(matches!(
@@ -932,13 +937,20 @@ mod tests {
         let (hetero, _, _) = fitted_heteroscedastic();
         let json = |m: &Fitted| serde_json::to_string(m).unwrap();
         // A Gaussian payload relabelled probit: sigma draws present, no offset.
-        let relabelled = json(&gaussian).replace("\"model\":\"gaussian\"", "\"model\":\"probit\"");
+        let gaussian_outcome = r#""outcome":{"gaussian":{"nu":6.0,"q":0.85}}"#;
+        let relabelled =
+            json(&gaussian).replace(gaussian_outcome, r#""outcome":{"probit":{"offset":0.0}}"#);
+        assert_ne!(relabelled, json(&gaussian));
         assert!(serde_json::from_str::<Fitted>(&relabelled).is_err());
         // A probit payload relabelled Gaussian: no sigma draws.
-        let relabelled = json(&probit).replace("\"model\":\"probit\"", "\"model\":\"gaussian\"");
+        let offset = probit.config().offset().unwrap();
+        let probit_outcome = format!(r#""outcome":{{"probit":{{"offset":{offset:?}}}}}"#);
+        let relabelled = json(&probit).replace(&probit_outcome, gaussian_outcome);
+        assert_ne!(relabelled, json(&probit));
         assert!(serde_json::from_str::<Fitted>(&relabelled).is_err());
-        // A heteroscedastic payload with the wrong m_var.
-        let wrong = json(&hetero).replace("\"m_var\":5", "\"m_var\":6");
+        // A heteroscedastic payload with the wrong variance count.
+        let wrong = json(&hetero).replace("\"num_tessellations\":5", "\"num_tessellations\":6");
+        assert_ne!(wrong, json(&hetero));
         assert!(serde_json::from_str::<Fitted>(&wrong).is_err());
         // A Gaussian payload without the variance field (a pre-0.2 save).
         let old = json(&gaussian).replace(",\"variance_tessellations\":[]", "");

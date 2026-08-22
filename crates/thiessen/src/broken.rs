@@ -129,13 +129,16 @@ mod tests {
     }
 
     fn config(model: Model) -> Config {
-        Config::new()
+        let config = Config::new()
             .with_model(model)
             .with_m(M)
-            .with_m_var(1)
             .with_lambda_c(LAMBDA_C)
             .with_omega(OMEGA)
-            .with_sigma_c(SIGMA_C)
+            .with_sigma_c(SIGMA_C);
+        match model {
+            Model::Heteroscedastic => config.with_m_var(1),
+            Model::Gaussian | Model::Probit => config,
+        }
     }
 
     /// One prior tessellation truncated to full occupancy, by rejection:

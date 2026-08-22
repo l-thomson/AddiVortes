@@ -208,7 +208,7 @@ new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
     list(
       state = fit$state,
       control = structure(
-        jsonlite::fromJSON(fit$config, simplifyVector = FALSE),
+        flatten_config(jsonlite::fromJSON(fit$config, simplifyVector = FALSE)),
         class = "thiessen_control"
       ),
       model = fit$model,

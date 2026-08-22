@@ -7,7 +7,8 @@ use crate::error::{invalid, Error, Result};
 use crate::maths;
 use crate::rng::{standard_normal, uniform_index, Rng};
 
-/// The metric of one covariate column, [`Config::metric`](crate::Config::metric).
+/// The metric of one covariate column,
+/// [`GeometryParams::metric`](crate::GeometryParams::metric).
 /// Columns of different metrics combine additively: the key of a row
 /// against a centre is the sum of the squared distances of its metrics
 /// over the active columns.

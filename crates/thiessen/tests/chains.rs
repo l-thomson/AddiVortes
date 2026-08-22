@@ -32,13 +32,16 @@ fn pooling_stacks_the_draws_in_chain_order() {
 
     let pooled = Fitted::pool(&parts, &x, &y).unwrap();
 
-    assert_eq!(pooled.n_draws(), 3 * config.draws);
+    assert_eq!(pooled.n_draws(), 3 * config.general_params.draws);
     let stacked: Vec<f64> = parts.iter().flat_map(Fitted::sigma).collect();
     assert_eq!(pooled.sigma(), stacked);
     let draws = pooled.predict_draws(&x).unwrap();
-    assert_eq!(draws.len(), 3 * config.draws);
+    assert_eq!(draws.len(), 3 * config.general_params.draws);
     assert_eq!(draws[0], parts[0].predict_draws(&x).unwrap()[0]);
-    assert_eq!(draws[config.draws], parts[1].predict_draws(&x).unwrap()[0]);
+    assert_eq!(
+        draws[config.general_params.draws],
+        parts[1].predict_draws(&x).unwrap()[0]
+    );
 }
 
 #[test]
