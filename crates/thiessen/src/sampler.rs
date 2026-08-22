@@ -4,14 +4,14 @@
 //! fitted model.
 //!
 //! The sampler composes a mean ensemble (Gaussian cell means, additive)
-//! with one of three noise models, chosen by [`Config::model`]: a global
-//! sigma^2 drawn from its inverse-gamma conditional (Gaussian model); a
-//! fixed unit variance with the Albert and Chib (1993) latent response
-//! refreshed before each sweep (probit model); or a variance ensemble
-//! (inverse-gamma cell values, multiplicative) whose product at each
-//! observation is its variance, updated before the mean sweep
-//! (heteroscedastic model; the sweep order of the authors' code, HBART
-//! sweeping mean then variance).
+//! with an outcome model and, for the heteroscedastic model, a variance
+//! ensemble (inverse-gamma cell values, multiplicative) whose product at
+//! each observation is its variance, updated before the mean sweep (the
+//! sweep order of the authors' code, HBART sweeping mean then variance).
+//! The scale of the precisions follows the outcome's mode: a global
+//! sigma^2 drawn from its inverse-gamma conditional under `Sampled`, the
+//! fixed value under `Fixed` (the probit model's unit latent variance),
+//! the ensemble's product when one is attached.
 
 use crate::cells::{GaussianCells, InverseGammaCells};
 use crate::config::Config;
@@ -30,20 +30,80 @@ use crate::rng::{self, Rng};
 use crate::scaler::{self, Scaler};
 use crate::tessellation::Tessellation;
 
-/// The noise model in force.
+/// The outcome model in force, one variant per shipped model; the
+/// variance ensemble is not a variant here because it composes with any
+/// outcome whose scale mode permits it.
 #[derive(Debug, Clone)]
-enum Noise {
-    /// One global variance, scaled space, behind the Gaussian outcome
-    /// model.
-    Gaussian {
-        sigma_sq: f64,
-        outcome: GaussianOutcome,
-    },
-    /// The probit outcome model: unit latent variance, the labels in
-    /// {0, 1} and the offset c of P(y = 1 | x) = Phi(c + f(x)).
+enum Outcome {
+    Gaussian(GaussianOutcome),
     Probit(ProbitOutcome),
-    /// The variance ensemble, whose total at each observation is s^2(x_i).
-    Ensemble(Box<Ensemble<InverseGammaCells>>),
+}
+
+impl Outcome {
+    fn as_probit(&self) -> Option<&ProbitOutcome> {
+        match self {
+            Outcome::Probit(outcome) => Some(outcome),
+            Outcome::Gaussian(_) => None,
+        }
+    }
+
+    fn as_probit_mut(&mut self) -> Option<&mut ProbitOutcome> {
+        match self {
+            Outcome::Probit(outcome) => Some(outcome),
+            Outcome::Gaussian(_) => None,
+        }
+    }
+}
+
+impl OutcomeModel for Outcome {
+    fn required_data(&self) -> RequiredData {
+        match self {
+            Outcome::Gaussian(outcome) => outcome.required_data(),
+            Outcome::Probit(outcome) => outcome.required_data(),
+        }
+    }
+
+    fn init(&mut self, y: &[f64]) {
+        match self {
+            Outcome::Gaussian(outcome) => outcome.init(y),
+            Outcome::Probit(outcome) => outcome.init(y),
+        }
+    }
+
+    fn draw_extra(&mut self, rng: &mut Rng) {
+        match self {
+            Outcome::Gaussian(outcome) => outcome.draw_extra(rng),
+            Outcome::Probit(outcome) => outcome.draw_extra(rng),
+        }
+    }
+
+    fn working_response(&mut self, total: &[f64], y: &mut [f64], rng: &mut Rng) {
+        match self {
+            Outcome::Gaussian(outcome) => outcome.working_response(total, y, rng),
+            Outcome::Probit(outcome) => outcome.working_response(total, y, rng),
+        }
+    }
+
+    fn weights(&self) -> Option<&[f64]> {
+        match self {
+            Outcome::Gaussian(outcome) => outcome.weights(),
+            Outcome::Probit(outcome) => outcome.weights(),
+        }
+    }
+
+    fn sigma2_mode(&self) -> Sigma2Mode {
+        match self {
+            Outcome::Gaussian(outcome) => outcome.sigma2_mode(),
+            Outcome::Probit(outcome) => outcome.sigma2_mode(),
+        }
+    }
+
+    fn predictive_quantile(&self, mean: f64, sd: f64, p: f64) -> Option<f64> {
+        match self {
+            Outcome::Gaussian(outcome) => outcome.predictive_quantile(mean, sd, p),
+            Outcome::Probit(outcome) => outcome.predictive_quantile(mean, sd, p),
+        }
+    }
 }
 
 /// The sampler state for one chain. Construct with [`Sampler::new`], advance
@@ -68,7 +128,13 @@ pub struct Sampler {
     /// latent z - c.
     y: Vec<f64>,
     mean: Ensemble<GaussianCells>,
-    noise: Noise,
+    outcome: Outcome,
+    /// Global sigma^2, scaled space: drawn under the Sampled mode when no
+    /// variance ensemble is attached; otherwise the initial value, unused.
+    sigma_sq: f64,
+    /// The variance ensemble carrying s^2(x) in place of the global
+    /// sigma^2 (H-AddiVortes); `None` for a constant spread.
+    variance: Option<Box<Ensemble<InverseGammaCells>>>,
     /// Per-observation precision of the mean ensemble's observations.
     precision: Vec<f64>,
     /// Calibrated scale of the prior sigma^2 ~ nu lambda / chi^2_nu.
@@ -212,24 +278,28 @@ impl Sampler {
             total,
             &mut rng,
         );
-        let noise = match config.model {
+        let (outcome, variance) = match config.model {
             Model::Gaussian => {
                 let mut outcome = GaussianOutcome;
                 outcome.init(&y_scaled);
-                Noise::Gaussian { sigma_sq, outcome }
+                (Outcome::Gaussian(outcome), None)
             }
             Model::Probit => {
                 let mut outcome = ProbitOutcome::new(config.offset, mean_y);
                 config.offset = Some(outcome.offset());
                 outcome.init(&y_scaled);
-                Noise::Probit(outcome)
+                (Outcome::Probit(outcome), None)
             }
+            // H-AddiVortes: the gaussian outcome with the variance
+            // ensemble carrying the scale in place of the global sigma^2.
             Model::Heteroscedastic => {
+                let mut outcome = GaussianOutcome;
+                outcome.init(&y_scaled);
                 let (nu, lambda_prime) =
                     scaler::variance_cell_prior(config.nu, lambda, config.m_var);
                 // Every variance cell starts at sigma^2 ^ (1 / m') so the
                 // product starts at the initial sigma^2.
-                Noise::Ensemble(Box::new(Ensemble::new(
+                let ensemble = Ensemble::new(
                     InverseGammaCells {
                         nu,
                         lambda: lambda_prime,
@@ -241,7 +311,8 @@ impl Sampler {
                     libm::pow(sigma_sq, 1.0 / config.m_var as f64),
                     sigma_sq,
                     &mut rng,
-                )))
+                );
+                (Outcome::Gaussian(outcome), Some(Box::new(ensemble)))
             }
         };
         // Zero precision removes the likelihood from every conditional:
@@ -265,7 +336,9 @@ impl Sampler {
             x: x_scaled,
             y,
             mean,
-            noise,
+            outcome,
+            sigma_sq,
+            variance,
             precision,
             lambda,
             kept: Posterior::empty(),
@@ -290,20 +363,50 @@ impl Sampler {
         );
     }
 
-    /// The noise model's update; `structural` enables the variance
-    /// ensemble's structural moves, which the conjugate sweep of the
-    /// known-answer tests disables.
+    /// The scale and working-response update; `structural` enables the
+    /// variance ensemble's structural moves, which the conjugate sweep of
+    /// the known-answer tests disables.
     fn update_noise(&mut self, structural: bool) {
         let prior_only = self.config.prior_only;
-        match &mut self.noise {
-            // The Gaussian outcome model: sigma^2 | y, F ~
-            // Inv-Gamma((nu + n) / 2, (nu lambda + sum r_i^2) / 2) with
-            // r = y - F, drawn by the kernel because the mode is Sampled;
-            // under prior-only sampling the prior Inv-Gamma(nu / 2,
-            // nu lambda / 2). The working response is y unchanged and the
-            // weights are unit.
-            Noise::Gaussian { sigma_sq, outcome } => {
-                outcome.draw_extra(&mut self.rng);
+        // The variance ensemble carries the scale: its update, on the
+        // residuals e = y - F, replaces the global sigma^2 draw
+        // (H-AddiVortes has no global sigma^2).
+        if let Some(variance) = &mut self.variance {
+            let residuals: Vec<f64> = self
+                .y
+                .iter()
+                .zip(self.mean.total())
+                .map(|(y, f)| y - f)
+                .collect();
+            if structural {
+                variance.sweep(
+                    &self.x,
+                    &residuals,
+                    &self.precision,
+                    &mut self.rng,
+                    #[cfg(test)]
+                    self.breakage,
+                );
+            } else {
+                #[cfg(test)]
+                variance.conjugate_sweep(&residuals, &self.precision, &mut self.rng);
+                #[cfg(not(test))]
+                unreachable!("the conjugate sweep exists only under test");
+            }
+            if !prior_only {
+                for (w, &s) in self.precision.iter_mut().zip(variance.total()) {
+                    *w = 1.0 / s;
+                }
+            }
+            return;
+        }
+        match self.outcome.sigma2_mode() {
+            // sigma^2 | y, F ~ Inv-Gamma((nu + n) / 2,
+            // (nu lambda + sum r_i^2) / 2) with r = y - F, drawn by the
+            // kernel; under prior-only sampling the prior
+            // Inv-Gamma(nu / 2, nu lambda / 2).
+            Sigma2Mode::Sampled => {
+                self.outcome.draw_extra(&mut self.rng);
                 let nu = self.config.nu;
                 let (shape, scale) = if prior_only {
                     (0.5 * nu, 2.0 / (nu * self.lambda))
@@ -317,11 +420,12 @@ impl Sampler {
                     let n = self.y.len();
                     (0.5 * (nu + n as f64), 2.0 / (nu * self.lambda + rss))
                 };
-                *sigma_sq = 1.0 / rng::gamma(shape, scale, &mut self.rng);
-                outcome.working_response(&[], &mut self.y, &mut self.rng);
+                self.sigma_sq = 1.0 / rng::gamma(shape, scale, &mut self.rng);
+                self.outcome
+                    .working_response(self.mean.total(), &mut self.y, &mut self.rng);
                 if !prior_only {
-                    let scale_precision = 1.0 / *sigma_sq;
-                    match outcome.weights() {
+                    let scale_precision = 1.0 / self.sigma_sq;
+                    match self.outcome.weights() {
                         None => self.precision.iter_mut().for_each(|w| *w = scale_precision),
                         Some(weights) => {
                             for (w, &weight) in self.precision.iter_mut().zip(weights) {
@@ -331,57 +435,26 @@ impl Sampler {
                     }
                 }
             }
-            // The latent response is the outcome model's working response.
-            Noise::Probit(outcome) => {
+            // The scale is fixed and the precisions stand; the outcome
+            // refreshes its latent response.
+            Sigma2Mode::Fixed(_) => {
                 if prior_only {
                     return;
                 }
-                outcome.draw_extra(&mut self.rng);
-                outcome.working_response(self.mean.total(), &mut self.y, &mut self.rng);
+                self.outcome.draw_extra(&mut self.rng);
+                self.outcome
+                    .working_response(self.mean.total(), &mut self.y, &mut self.rng);
             }
-            // The variance ensemble given the residuals e = y - F, then the
-            // precision 1 / s^2(x_i).
-            Noise::Ensemble(variance) => {
-                let residuals: Vec<f64> = self
-                    .y
-                    .iter()
-                    .zip(self.mean.total())
-                    .map(|(y, f)| y - f)
-                    .collect();
-                if structural {
-                    variance.sweep(
-                        &self.x,
-                        &residuals,
-                        &self.precision,
-                        &mut self.rng,
-                        #[cfg(test)]
-                        self.breakage,
-                    );
-                } else {
-                    #[cfg(test)]
-                    variance.conjugate_sweep(&residuals, &self.precision, &mut self.rng);
-                    #[cfg(not(test))]
-                    unreachable!("the conjugate sweep exists only under test");
-                }
-                if !prior_only {
-                    for (w, &s) in self.precision.iter_mut().zip(variance.total()) {
-                        *w = 1.0 / s;
-                    }
-                }
-            }
+            Sigma2Mode::Absent => {}
         }
     }
 
     /// Record the current state as a posterior draw.
     pub fn keep(&mut self) {
-        let sigma_sq = match &self.noise {
-            Noise::Gaussian { sigma_sq, .. } => Some(*sigma_sq),
-            Noise::Probit(_) | Noise::Ensemble(_) => None,
-        };
-        let variance = match &self.noise {
-            Noise::Ensemble(v) => Some(v.tessellations().to_vec()),
-            Noise::Gaussian { .. } | Noise::Probit(_) => None,
-        };
+        let sigma_sq = (self.outcome.sigma2_mode().samples_global_sigma_sq()
+            && self.variance.is_none())
+        .then_some(self.sigma_sq);
+        let variance = self.variance.as_ref().map(|v| v.tessellations().to_vec());
         self.kept
             .push(sigma_sq, self.mean.tessellations().to_vec(), variance);
     }
@@ -408,7 +481,7 @@ impl Sampler {
         if let Some(row) = y.iter().position(|v| !v.is_finite()) {
             return Err(Error::NonFiniteResponse { row });
         }
-        if let Noise::Probit(outcome) = &mut self.noise {
+        if let Some(outcome) = self.outcome.as_probit_mut() {
             if let Some(row) = y.iter().position(|&v| v != 0.0 && v != 1.0) {
                 return Err(Error::InvalidLabel { row });
             }
@@ -438,10 +511,13 @@ impl Sampler {
     pub fn noise_variances(&self) -> Vec<f64> {
         let n = self.y.len();
         let range_sq = self.scaler.y_range() * self.scaler.y_range();
-        match &self.noise {
-            Noise::Gaussian { sigma_sq, .. } => vec![sigma_sq * range_sq; n],
-            Noise::Probit(_) => vec![1.0; n],
-            Noise::Ensemble(v) => v.total().iter().map(|s| s * range_sq).collect(),
+        if let Some(variance) = &self.variance {
+            return variance.total().iter().map(|s| s * range_sq).collect();
+        }
+        match self.outcome.sigma2_mode() {
+            Sigma2Mode::Sampled => vec![self.sigma_sq * range_sq; n],
+            Sigma2Mode::Fixed(value) => vec![value; n],
+            Sigma2Mode::Absent => vec![f64::NAN; n],
         }
     }
 
@@ -450,13 +526,13 @@ impl Sampler {
     /// fixed at 1 on the latent scale and carried by the variance ensemble
     /// respectively.
     pub fn sigma_sq(&self) -> f64 {
-        match &self.noise {
-            Noise::Gaussian { sigma_sq, .. } => *sigma_sq,
-            Noise::Probit(outcome) => match outcome.sigma2_mode() {
-                Sigma2Mode::Fixed(value) => value,
-                Sigma2Mode::Sampled | Sigma2Mode::Absent => 1.0,
-            },
-            Noise::Ensemble(_) => 1.0,
+        if self.variance.is_some() {
+            return 1.0;
+        }
+        match self.outcome.sigma2_mode() {
+            Sigma2Mode::Sampled => self.sigma_sq,
+            Sigma2Mode::Fixed(value) => value,
+            Sigma2Mode::Absent => 1.0,
         }
     }
 
@@ -477,9 +553,9 @@ impl Sampler {
     /// The current variance tessellations, scaled space; empty outside the
     /// heteroscedastic model.
     pub fn variance_tessellations(&self) -> &[Tessellation] {
-        match &self.noise {
-            Noise::Ensemble(v) => v.tessellations(),
-            Noise::Gaussian { .. } | Noise::Probit(_) => &[],
+        match &self.variance {
+            Some(v) => v.tessellations(),
+            None => &[],
         }
     }
 
@@ -495,10 +571,7 @@ impl Sampler {
     }
 
     fn offset(&self) -> f64 {
-        match &self.noise {
-            Noise::Probit(outcome) => outcome.offset(),
-            Noise::Gaussian { .. } | Noise::Ensemble(_) => 0.0,
-        }
+        self.outcome.as_probit().map_or(0.0, ProbitOutcome::offset)
     }
 
     /// The fitted model from the kept draws.
@@ -514,7 +587,7 @@ impl Sampler {
         // The posterior-mean prediction on the response scale: f, or
         // Phi(c + f) under the probit model.
         let offset = self.offset();
-        let probit = matches!(self.noise, Noise::Probit(_));
+        let probit = self.outcome.as_probit().is_some();
         let mut mean_prediction = vec![0.0; n];
         let geometry = self.mean.geometry();
         for draw in self.kept.tessellations() {
@@ -530,9 +603,9 @@ impl Sampler {
         }
         let n_draws = self.kept.n_draws() as f64;
         let range = self.scaler.y_range();
-        let target: &[f64] = match &self.noise {
-            Noise::Probit(outcome) => outcome.labels(),
-            Noise::Gaussian { .. } | Noise::Ensemble(_) => &self.y,
+        let target: &[f64] = match self.outcome.as_probit() {
+            Some(outcome) => outcome.labels(),
+            None => &self.y,
         };
         let in_sample_rmse = (mean_prediction
             .iter()
@@ -585,10 +658,7 @@ impl Sampler {
     }
 
     pub(crate) fn variance_ensemble(&self) -> Option<&Ensemble<InverseGammaCells>> {
-        match &self.noise {
-            Noise::Ensemble(v) => Some(v),
-            _ => None,
-        }
+        self.variance.as_deref()
     }
 }
 
