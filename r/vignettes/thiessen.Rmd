@@ -1,0 +1,99 @@
+---
+title: "Getting started"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+AddiVortes is Bayesian regression on a sum of Voronoi tessellations
+(Stone and Gosling, 2025, *Journal of Computational and Graphical
+Statistics* 34(3), 859-871). It stands to BART as a tessellation stands
+to a tree: a cell is a region of the covariate space rather than a box,
+so a boundary oblique to the axes costs one cell rather than many
+splits. This vignette fits the Gaussian model with the defaults; the
+other published variants have their own vignettes, by their paper names.
+
+## A first fit
+
+`thiessen()` takes a formula and a data frame, a data frame and a
+response, or a numeric matrix and a response. The sweep schedule here is
+short so the vignette builds quickly; the defaults are 200 burn-in
+sweeps and 1000 kept draws.
+
+```{r}
+library(thiessen)
+
+set.seed(1)
+n <- 200
+d <- data.frame(
+  a = runif(n),
+  b = runif(n),
+  g = factor(sample(c("low", "mid", "high"), n, replace = TRUE))
+)
+d$y <- 3 * (d$a - 0.4)^2 + 0.5 * d$b + 0.3 * (d$g == "high") +
+  rnorm(n, sd = 0.1)
+
+control <- thiessen_control(
+  tessellations = 25,
+  general_params = general_params(burn_in = 100, draws = 200)
+)
+fit <- thiessen(y ~ ., d, control, seed = 1)
+fit
+```
+
+A factor covariate becomes d - 1 treatment-contrast indicators, the
+first level as reference, as `model.matrix` encodes one. `predict()`
+returns the posterior mean and matches new data by column name and type:
+
+```{r}
+head(predict(fit, d))
+head(predict(fit, d, interval = "credible", level = 0.9))
+```
+
+`predict(interval = "prediction")` covers a new observation rather than
+the mean, and `type = "draws"` returns the per-draw values.
+
+## The configuration
+
+The configuration has four parts, named as the core stores them: an
+outcome family from `gaussian()` or `probit()`, one `term_params()`
+group per ensemble, and the sweep schedule from `general_params()`.
+`thiessen_control(tessellations = )` is the one shortcut, setting the
+mean ensemble's size. The control-surface vignette walks through every
+group.
+
+```{r}
+thiessen_control(
+  outcome = gaussian(nu = 6, q = 0.85),
+  mean_params = term_params(tessellations = 200, k = 3, lambda_c = 5)
+)
+```
+
+## Reproducibility
+
+`seed = NULL`, the default, draws the chain's seed from R's stream, so
+`set.seed()` governs; a whole number reproduces the same draws for a
+given package version and platform. The resolved seed is on the fit.
+
+```{r}
+again <- thiessen(y ~ ., d, control, seed = 1)
+identical(predict(fit, d), predict(again, d))
+```
+
+## Diagnostics
+
+The established generics are available: `posterior::as_draws_df()`,
+`summary()`, and the rstantools generics `posterior_predict()`,
+`posterior_epred()`, `log_lik()` and `predictive_interval()`. Two or
+more `chains` add rank-normalised split R-hat and effective sample
+sizes, and a fit warns where they cross the usual thresholds.
+
+```{r}
+summary(fit)
+```
