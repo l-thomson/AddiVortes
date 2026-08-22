@@ -35,6 +35,16 @@ says "Sampled values changed" with the reason.
   uses the principal submatrix on the active columns, which is not the
   conditional precision; the identity matrix reproduces Euclidean
   bit-for-bit. Outside the semver promise (docs/experimental.md).
+- (experimental) per-column composite: a `group` label (default 0) on
+  the Minkowski, Manhattan, Cosine and Gower entries. Columns sharing a
+  metric and a label form one group; group distances enter the key as a
+  sum of squares, the composition the sphere and categorical columns
+  already use, so all-Euclidean-like groups reproduce Euclidean
+  bit-for-bit. Every column belongs to exactly one group by
+  construction. The axioms of a composite are those of its weakest
+  member metric. Manhattan and Cosine entries are now objects
+  (`{"manhattan": {}}`, `{"cosine": {}}`), a change within the same
+  unreleased series. Outside the semver promise (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled

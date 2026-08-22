@@ -54,11 +54,20 @@ pub enum Metric {
     Minkowski {
         /// The order, at least 1; 1 is the Manhattan distance.
         p: f64,
+        /// Columns sharing an order and a label form one group; the
+        /// label 0 when omitted.
+        #[serde(default, skip_serializing_if = "group_is_default")]
+        group: usize,
     },
     /// [`Metric::Minkowski`] of order 1 under its usual name.
     /// Experimental (`docs/experimental.md`).
     #[cfg(feature = "experimental")]
-    Manhattan,
+    Manhattan {
+        /// As [`Metric::Minkowski`]: shared with the order-1 Minkowski
+        /// columns of the same label.
+        #[serde(default, skip_serializing_if = "group_is_default")]
+        group: usize,
+    },
     /// Cosine distance, 1 minus the cosine similarity of the active
     /// Cosine coordinates of the row and the centre, squared into the
     /// key. When exactly one of the two vectors is zero the distance is
@@ -69,7 +78,12 @@ pub enum Metric {
     /// N(0, sigma_c^2), as Euclidean; the structural moves are
     /// unchanged. Experimental (`docs/experimental.md`).
     #[cfg(feature = "experimental")]
-    Cosine,
+    Cosine {
+        /// Columns sharing a label form one similarity; the label 0
+        /// when omitted.
+        #[serde(default, skip_serializing_if = "group_is_default")]
+        group: usize,
+    },
     /// One column of the Gower distance (Gower 1971): the mean, over the
     /// active Gower columns, of the per-column distance, squared into
     /// the key. A numeric column contributes its absolute difference on
@@ -85,6 +99,10 @@ pub enum Metric {
     Gower {
         /// The per-column kind.
         kind: GowerKind,
+        /// Columns sharing a label form one average; the label 0 when
+        /// omitted.
+        #[serde(default, skip_serializing_if = "group_is_default")]
+        group: usize,
     },
     /// One column of the Mahalanobis distance under the user-supplied
     /// precision matrix [`GeometryParams::precision`](crate::GeometryParams):
@@ -98,6 +116,13 @@ pub enum Metric {
     /// unchanged. Experimental (`docs/experimental.md`).
     #[cfg(feature = "experimental")]
     Mahalanobis,
+}
+
+/// Whether a group label is the default, for compact serialisation.
+#[cfg(feature = "experimental")]
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn group_is_default(group: &usize) -> bool {
+    *group == 0
 }
 
 /// The per-column kind of [`Metric::Gower`].
@@ -126,15 +151,16 @@ pub(crate) struct Geometry {
     categories: Vec<Vec<f64>>,
     /// 2 / n^2 of each categorical column; 0 for the other columns.
     weights: Vec<f64>,
-    /// Minkowski column groups, (order, columns), one per distinct order.
+    /// Minkowski column groups, (order, label, columns), one per
+    /// distinct pair.
     #[cfg(feature = "experimental")]
-    minkowski: Vec<(f64, Vec<usize>)>,
-    /// The Cosine columns, one group.
+    minkowski: Vec<(f64, usize, Vec<usize>)>,
+    /// The Cosine column groups, (label, columns).
     #[cfg(feature = "experimental")]
-    cosine: Vec<usize>,
-    /// The Gower columns, one group; the kind is in `kinds`.
+    cosine: Vec<(usize, Vec<usize>)>,
+    /// The Gower column groups, (label, columns); the kind is in `kinds`.
     #[cfg(feature = "experimental")]
-    gower: Vec<usize>,
+    gower: Vec<(usize, Vec<usize>)>,
     /// The Mahalanobis columns, one group.
     #[cfg(feature = "experimental")]
     mahalanobis: Vec<usize>,
@@ -205,34 +231,45 @@ impl Geometry {
         }
         #[cfg(feature = "experimental")]
         let minkowski = {
-            let mut groups: Vec<(f64, Vec<usize>)> = Vec::new();
+            let mut groups: Vec<(f64, usize, Vec<usize>)> = Vec::new();
             for (col, kind) in metric.iter().enumerate() {
-                let p = match *kind {
-                    Metric::Minkowski { p } => p,
-                    Metric::Manhattan => 1.0,
+                let (p, group) = match *kind {
+                    Metric::Minkowski { p, group } => (p, group),
+                    Metric::Manhattan { group } => (1.0, group),
                     _ => continue,
                 };
-                match groups.iter_mut().find(|(q, _)| q.to_bits() == p.to_bits()) {
-                    Some((_, cols)) => cols.push(col),
-                    None => groups.push((p, vec![col])),
+                match groups
+                    .iter_mut()
+                    .find(|(q, g, _)| q.to_bits() == p.to_bits() && *g == group)
+                {
+                    Some((_, _, cols)) => cols.push(col),
+                    None => groups.push((p, group, vec![col])),
                 }
             }
             groups
         };
         #[cfg(feature = "experimental")]
-        let cosine: Vec<usize> = metric
-            .iter()
-            .enumerate()
-            .filter(|(_, kind)| **kind == Metric::Cosine)
-            .map(|(col, _)| col)
-            .collect();
+        let by_label = |of: &dyn Fn(&Metric) -> Option<usize>| {
+            let mut groups: Vec<(usize, Vec<usize>)> = Vec::new();
+            for (col, kind) in metric.iter().enumerate() {
+                let Some(group) = of(kind) else { continue };
+                match groups.iter_mut().find(|(g, _)| *g == group) {
+                    Some((_, cols)) => cols.push(col),
+                    None => groups.push((group, vec![col])),
+                }
+            }
+            groups
+        };
         #[cfg(feature = "experimental")]
-        let gower: Vec<usize> = metric
-            .iter()
-            .enumerate()
-            .filter(|(_, kind)| matches!(kind, Metric::Gower { .. }))
-            .map(|(col, _)| col)
-            .collect();
+        let cosine = by_label(&|kind| match kind {
+            Metric::Cosine { group } => Some(*group),
+            _ => None,
+        });
+        #[cfg(feature = "experimental")]
+        let gower = by_label(&|kind| match kind {
+            Metric::Gower { group, .. } => Some(*group),
+            _ => None,
+        });
         Ok(Self {
             kinds: metric.to_vec(),
             spheres,
@@ -379,6 +416,7 @@ impl Geometry {
             #[cfg(feature = "experimental")]
             Metric::Gower {
                 kind: GowerKind::Categorical,
+                ..
             } => true,
             _ => false,
         }
@@ -389,10 +427,11 @@ impl Geometry {
         match self.kinds[col] {
             Metric::Euclidean => true,
             #[cfg(feature = "experimental")]
-            Metric::Minkowski { .. } | Metric::Manhattan | Metric::Cosine => true,
+            Metric::Minkowski { .. } | Metric::Manhattan { .. } | Metric::Cosine { .. } => true,
             #[cfg(feature = "experimental")]
             Metric::Gower {
                 kind: GowerKind::Numeric,
+                ..
             } => true,
             #[cfg(feature = "experimental")]
             Metric::Mahalanobis => true,
@@ -455,14 +494,14 @@ impl Geometry {
                 Metric::Spherical { .. } => {}
                 #[cfg(feature = "experimental")]
                 Metric::Minkowski { .. }
-                | Metric::Manhattan
-                | Metric::Cosine
+                | Metric::Manhattan { .. }
+                | Metric::Cosine { .. }
                 | Metric::Gower { .. }
                 | Metric::Mahalanobis => {}
             }
         }
         #[cfg(feature = "experimental")]
-        for (p, cols) in &self.minkowski {
+        for (p, _, cols) in &self.minkowski {
             let mut sum = 0.0;
             for (&dim, &c) in dims.iter().zip(centre) {
                 if !cols.contains(&dim) {
@@ -484,11 +523,11 @@ impl Geometry {
             };
         }
         #[cfg(feature = "experimental")]
-        if !self.cosine.is_empty() {
+        for (_, cols) in &self.cosine {
             let (mut dot, mut row_sq, mut centre_sq) = (0.0, 0.0, 0.0);
             let mut active = false;
             for (&dim, &c) in dims.iter().zip(centre) {
-                if !self.cosine.contains(&dim) {
+                if !cols.contains(&dim) {
                     continue;
                 }
                 active = true;
@@ -508,11 +547,14 @@ impl Geometry {
             }
         }
         #[cfg(feature = "experimental")]
-        if !self.gower.is_empty() {
+        for (_, cols) in &self.gower {
             let mut sum = 0.0;
             let mut active = 0_usize;
             for (&dim, &c) in dims.iter().zip(centre) {
-                let Metric::Gower { kind } = self.kinds[dim] else {
+                if !cols.contains(&dim) {
+                    continue;
+                }
+                let Metric::Gower { kind, .. } = self.kinds[dim] else {
                     continue;
                 };
                 active += 1;
@@ -579,7 +621,7 @@ impl Geometry {
                     sd: sigma_c,
                 }),
                 #[cfg(feature = "experimental")]
-                Metric::Minkowski { .. } | Metric::Manhattan | Metric::Cosine => {
+                Metric::Minkowski { .. } | Metric::Manhattan { .. } | Metric::Cosine { .. } => {
                     Ok(CoordinateLaw::Normal {
                         mean: 0.0,
                         sd: sigma_c,
@@ -591,7 +633,7 @@ impl Geometry {
                     sd: sigma_c,
                 }),
                 #[cfg(feature = "experimental")]
-                Metric::Gower { kind } => Ok(match kind {
+                Metric::Gower { kind, .. } => Ok(match kind {
                     GowerKind::Numeric => CoordinateLaw::Normal {
                         mean: 0.0,
                         sd: sigma_c,
@@ -917,7 +959,7 @@ mod tests {
 
         #[test]
         fn order_two_matches_euclidean_bit_for_bit() {
-            let g = Geometry::structure(&[Metric::Minkowski { p: 2.0 }; 3], 3).unwrap();
+            let g = Geometry::structure(&[Metric::Minkowski { p: 2.0, group: 0 }; 3], 3).unwrap();
             let e = Geometry::euclidean(3);
             let row = [0.31, -0.47, 0.055];
             let centre = [-0.12, 0.4];
@@ -930,8 +972,8 @@ mod tests {
 
         #[test]
         fn manhattan_equals_order_one() {
-            let m = Geometry::structure(&[Metric::Manhattan; 2], 2).unwrap();
-            let o = Geometry::structure(&[Metric::Minkowski { p: 1.0 }; 2], 2).unwrap();
+            let m = Geometry::structure(&[Metric::Manhattan { group: 0 }; 2], 2).unwrap();
+            let o = Geometry::structure(&[Metric::Minkowski { p: 1.0, group: 0 }; 2], 2).unwrap();
             let row = [0.2, -0.3];
             let key = m.key(&row, &[0, 1], &[-0.1, 0.25]);
             assert_eq!(key, o.key(&row, &[0, 1], &[-0.1, 0.25]));
@@ -943,8 +985,8 @@ mod tests {
             let g = Geometry::structure(
                 &[
                     Metric::Euclidean,
-                    Metric::Minkowski { p: 3.0 },
-                    Metric::Minkowski { p: 3.0 },
+                    Metric::Minkowski { p: 3.0, group: 0 },
+                    Metric::Minkowski { p: 3.0, group: 0 },
                 ],
                 3,
             )
@@ -957,7 +999,10 @@ mod tests {
         #[test]
         fn distinct_orders_are_separate_groups() {
             let g = Geometry::structure(
-                &[Metric::Minkowski { p: 1.0 }, Metric::Minkowski { p: 3.0 }],
+                &[
+                    Metric::Minkowski { p: 1.0, group: 0 },
+                    Metric::Minkowski { p: 3.0, group: 0 },
+                ],
                 2,
             )
             .unwrap();
@@ -967,14 +1012,21 @@ mod tests {
 
         #[test]
         fn an_inactive_group_contributes_nothing() {
-            let g = Geometry::structure(&[Metric::Euclidean, Metric::Manhattan], 2).unwrap();
+            let g = Geometry::structure(&[Metric::Euclidean, Metric::Manhattan { group: 0 }], 2)
+                .unwrap();
             close(g.key(&[0.5, 0.2], &[0], &[0.1]), 0.16);
         }
 
         #[test]
         fn scaled_and_law_follow_euclidean() {
-            let g =
-                Geometry::structure(&[Metric::Minkowski { p: 1.5 }, Metric::Manhattan], 2).unwrap();
+            let g = Geometry::structure(
+                &[
+                    Metric::Minkowski { p: 1.5, group: 0 },
+                    Metric::Manhattan { group: 0 },
+                ],
+                2,
+            )
+            .unwrap();
             assert!(g.scaled(0));
             assert!(g.scaled(1));
             let x = Data::from_rows(&[[0.0, 1.0], [1.0, 2.0]]).unwrap();
@@ -985,7 +1037,7 @@ mod tests {
 
         #[test]
         fn cosine_hand_values() {
-            let g = Geometry::structure(&[Metric::Cosine; 2], 2).unwrap();
+            let g = Geometry::structure(&[Metric::Cosine { group: 0 }; 2], 2).unwrap();
             let dims = [0, 1];
             // Parallel: similarity 1, distance 0.
             close(g.key(&[0.3, 0.4], &dims, &[0.6, 0.8]), 0.0);
@@ -997,7 +1049,7 @@ mod tests {
 
         #[test]
         fn cosine_zero_vectors() {
-            let g = Geometry::structure(&[Metric::Cosine; 2], 2).unwrap();
+            let g = Geometry::structure(&[Metric::Cosine { group: 0 }; 2], 2).unwrap();
             let dims = [0, 1];
             close(g.key(&[0.0, 0.0], &dims, &[0.0, 0.0]), 0.0);
             close(g.key(&[0.0, 0.0], &dims, &[0.3, 0.4]), 1.0);
@@ -1006,8 +1058,15 @@ mod tests {
 
         #[test]
         fn cosine_adds_to_the_euclidean_part() {
-            let g = Geometry::structure(&[Metric::Euclidean, Metric::Cosine, Metric::Cosine], 3)
-                .unwrap();
+            let g = Geometry::structure(
+                &[
+                    Metric::Euclidean,
+                    Metric::Cosine { group: 0 },
+                    Metric::Cosine { group: 0 },
+                ],
+                3,
+            )
+            .unwrap();
             // Euclidean 0.4^2; the cosine pair orthogonal, distance 1.
             close(
                 g.key(&[0.5, 1.0, 0.0], &[0, 1, 2], &[0.1, 0.0, 1.0]),
@@ -1019,7 +1078,11 @@ mod tests {
 
         #[test]
         fn cosine_scaled_and_law_follow_euclidean() {
-            let g = Geometry::structure(&[Metric::Cosine, Metric::Cosine], 2).unwrap();
+            let g = Geometry::structure(
+                &[Metric::Cosine { group: 0 }, Metric::Cosine { group: 0 }],
+                2,
+            )
+            .unwrap();
             assert!(g.scaled(0));
             let x = Data::from_rows(&[[0.0, 1.0], [1.0, 2.0]]).unwrap();
             for law in g.laws(&x, 0.8).unwrap() {
@@ -1031,9 +1094,11 @@ mod tests {
             let metric = [
                 Metric::Gower {
                     kind: GowerKind::Numeric,
+                    group: 0,
                 },
                 Metric::Gower {
                     kind: GowerKind::Categorical,
+                    group: 0,
                 },
             ];
             let levels = [vec![], vec![0.0, 1.0, 2.0]];
@@ -1059,6 +1124,7 @@ mod tests {
                 Metric::Euclidean,
                 Metric::Gower {
                     kind: GowerKind::Numeric,
+                    group: 0,
                 },
             ];
             let g = Geometry::with_categories(&metric, 2, &[vec![], vec![]]).unwrap();
@@ -1070,9 +1136,11 @@ mod tests {
             let metric = [
                 Metric::Gower {
                     kind: GowerKind::Numeric,
+                    group: 0,
                 },
                 Metric::Gower {
                     kind: GowerKind::Categorical,
+                    group: 0,
                 },
             ];
             let x = Data::from_rows(&[[0.0, 1.0], [1.0, 2.0]]).unwrap();
@@ -1124,6 +1192,85 @@ mod tests {
             assert_eq!(
                 g.key(&row, &[0, 1], &centre).to_bits(),
                 e.key(&row, &[0, 1], &centre).to_bits()
+            );
+        }
+
+        #[test]
+        fn separate_groups_compose_by_squared_sum() {
+            // Two order-2 groups: (d0^2 + d1^2) + (d2^2), the Euclidean
+            // sum exactly.
+            let g = Geometry::structure(
+                &[
+                    Metric::Minkowski { p: 2.0, group: 0 },
+                    Metric::Minkowski { p: 2.0, group: 0 },
+                    Metric::Minkowski { p: 2.0, group: 1 },
+                ],
+                3,
+            )
+            .unwrap();
+            let e = Geometry::euclidean(3);
+            let row = [0.31, -0.47, 0.055];
+            let centre = [-0.12, 0.4, 0.2];
+            assert_eq!(
+                g.key(&row, &[0, 1, 2], &centre).to_bits(),
+                e.key(&row, &[0, 1, 2], &centre).to_bits()
+            );
+        }
+
+        #[test]
+        fn cosine_groups_are_separate_similarities() {
+            let one = Geometry::structure(&[Metric::Cosine { group: 0 }; 4], 4).unwrap();
+            let two = Geometry::structure(
+                &[
+                    Metric::Cosine { group: 0 },
+                    Metric::Cosine { group: 0 },
+                    Metric::Cosine { group: 1 },
+                    Metric::Cosine { group: 1 },
+                ],
+                4,
+            )
+            .unwrap();
+            let row = [1.0, 0.0, 0.0, 1.0];
+            let centre = [0.0, 1.0, 0.0, 1.0];
+            let dims = [0, 1, 2, 3];
+            // One similarity over all four coordinates: 1 - 1/2 squared.
+            close(one.key(&row, &dims, &centre), 0.25);
+            // Orthogonal pair (distance 1) plus a parallel pair (0).
+            close(two.key(&row, &dims, &centre), 1.0);
+        }
+
+        #[test]
+        fn gower_groups_are_separate_averages() {
+            let metric = [
+                Metric::Gower {
+                    kind: GowerKind::Numeric,
+                    group: 0,
+                },
+                Metric::Gower {
+                    kind: GowerKind::Numeric,
+                    group: 1,
+                },
+            ];
+            let g = Geometry::with_categories(&metric, 2, &[vec![], vec![]]).unwrap();
+            // Each group averages one column: 0.3^2 + 0.2^2.
+            close(g.key(&[0.1, 0.0], &[0, 1], &[-0.2, 0.2]), 0.09 + 0.04);
+        }
+
+        #[test]
+        fn manhattan_shares_the_order_one_group() {
+            let mixed = Geometry::structure(
+                &[
+                    Metric::Manhattan { group: 0 },
+                    Metric::Minkowski { p: 1.0, group: 0 },
+                ],
+                2,
+            )
+            .unwrap();
+            let named = Geometry::structure(&[Metric::Manhattan { group: 0 }; 2], 2).unwrap();
+            let row = [0.2, -0.3];
+            assert_eq!(
+                mixed.key(&row, &[0, 1], &[-0.1, 0.25]),
+                named.key(&row, &[0, 1], &[-0.1, 0.25])
             );
         }
 
@@ -1194,7 +1341,7 @@ mod tests {
                 c in (-1.0..1.0_f64, -1.0..1.0_f64, -1.0..1.0_f64),
                 p in 1.0..6.0_f64,
             ) {
-                let g = Geometry::structure(&[Metric::Minkowski { p }; 3], 3).unwrap();
+                let g = Geometry::structure(&[Metric::Minkowski { p, group: 0 }; 3], 3).unwrap();
                 let dims = [0, 1, 2];
                 let d = |u: (f64, f64, f64), v: (f64, f64, f64)| {
                     g.key(&[u.0, u.1, u.2], &dims, &[v.0, v.1, v.2]).sqrt()
@@ -1215,7 +1362,7 @@ mod tests {
                 a in (-1.0..1.0_f64, -1.0..1.0_f64, -1.0..1.0_f64),
                 b in (-1.0..1.0_f64, -1.0..1.0_f64, -1.0..1.0_f64),
             ) {
-                let g = Geometry::structure(&[Metric::Cosine; 3], 3).unwrap();
+                let g = Geometry::structure(&[Metric::Cosine { group: 0 }; 3], 3).unwrap();
                 let dims = [0, 1, 2];
                 let d = |u: (f64, f64, f64), v: (f64, f64, f64)| {
                     g.key(&[u.0, u.1, u.2], &dims, &[v.0, v.1, v.2]).sqrt()
@@ -1237,8 +1384,8 @@ mod tests {
                 c in (-0.5..0.5_f64, 0..4_i8),
             ) {
                 let metric = [
-                    Metric::Gower { kind: GowerKind::Numeric },
-                    Metric::Gower { kind: GowerKind::Categorical },
+                    Metric::Gower { kind: GowerKind::Numeric, group: 0 },
+                    Metric::Gower { kind: GowerKind::Categorical, group: 0 },
                 ];
                 let levels = [vec![], vec![0.0, 1.0, 2.0, 3.0]];
                 let g = Geometry::with_categories(&metric, 2, &levels).unwrap();

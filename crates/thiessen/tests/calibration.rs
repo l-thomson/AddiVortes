@@ -130,6 +130,10 @@ enum Space {
     Mahalanobis {
         precision: [f64; 4],
     },
+    #[cfg(feature = "experimental")]
+    Composite {
+        weight: f64,
+    },
 }
 
 /// One model under test: the pinned-prior configuration and the test
@@ -272,8 +276,8 @@ fn minkowski_model() -> Model {
     let gaussian = gaussian_model();
     Model {
         config: gaussian.config.with_metric(vec![
-            Metric::Minkowski { p: 1.0 },
-            Metric::Minkowski { p: 1.0 },
+            Metric::Minkowski { p: 1.0, group: 0 },
+            Metric::Minkowski { p: 1.0, group: 0 },
         ]),
         space: Space::Minkowski { p: 1.0 },
         ..gaussian
@@ -287,9 +291,10 @@ fn minkowski_model() -> Model {
 fn cosine_model() -> Model {
     let gaussian = gaussian_model();
     Model {
-        config: gaussian
-            .config
-            .with_metric(vec![Metric::Cosine, Metric::Cosine]),
+        config: gaussian.config.with_metric(vec![
+            Metric::Cosine { group: 0 },
+            Metric::Cosine { group: 0 },
+        ]),
         space: Space::Cosine,
         ..gaussian
     }
@@ -305,9 +310,11 @@ fn gower_model() -> Model {
         config: categorical.config.with_metric(vec![
             Metric::Gower {
                 kind: GowerKind::Numeric,
+                group: 0,
             },
             Metric::Gower {
                 kind: GowerKind::Categorical,
+                group: 0,
             },
         ]),
         space: Space::Gower,
@@ -329,6 +336,21 @@ fn mahalanobis_model() -> Model {
             .with_precision(precision.to_vec()),
         space: Space::Mahalanobis { precision },
         ..gaussian
+    }
+}
+
+/// The Gaussian model under a composite: a Manhattan column of its own
+/// group and an Eskin categorical column, on the categorical model's
+/// rows and laws.
+#[cfg(feature = "experimental")]
+fn composite_model() -> Model {
+    let categorical = categorical_model();
+    Model {
+        config: categorical
+            .config
+            .with_metric(vec![Metric::Manhattan { group: 0 }, Metric::Categorical]),
+        space: Space::Composite { weight: 2.0 / 16.0 },
+        ..categorical
     }
 }
 
@@ -572,6 +594,26 @@ impl Model {
                     }
                 }
                 return key;
+            }
+            #[cfg(feature = "experimental")]
+            Space::Composite { weight } => {
+                return dims
+                    .iter()
+                    .zip(centre)
+                    .map(|(&dim, c)| match dim {
+                        0 => {
+                            let d = (row[0] - c).abs();
+                            d * d
+                        }
+                        _ => {
+                            if row[1] == *c {
+                                0.0
+                            } else {
+                                weight
+                            }
+                        }
+                    })
+                    .sum();
             }
             Space::Sphere => {}
         }
@@ -828,6 +870,14 @@ fn sbc_small_ranks_are_uniform_gower() {
 fn sbc_small_ranks_are_uniform_mahalanobis() {
     let model = mahalanobis_model();
     let ranks = sbc_ranks(&model, 160, 19, 15, 150, 409);
+    assert_uniform(&model, &ranks, 19);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+fn sbc_small_ranks_are_uniform_composite() {
+    let model = composite_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 410);
     assert_uniform(&model, &ranks, 19);
 }
 
