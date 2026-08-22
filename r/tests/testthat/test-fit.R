@@ -162,3 +162,63 @@ test_that("the heteroscedastic model fits", {
 
   expect_identical(fit$model, "heteroscedastic")
 })
+
+test_that("a non-finite value is rejected, naming its position", {
+  fixture <- small_fixture()
+  x <- fixture$x
+  x[3, 1] <- Inf
+
+  expect_error(
+    thiessen(x, fixture$y, small_control(), seed = 1),
+    "not finite",
+    class = "thiessen_error"
+  )
+  y <- fixture$y
+  y[3] <- -Inf
+  expect_error(
+    thiessen(fixture$x, y, small_control(), seed = 1),
+    "not finite",
+    class = "thiessen_error"
+  )
+})
+
+test_that("zero-length data is rejected", {
+  expect_error(
+    thiessen(matrix(numeric(0), ncol = 1L), numeric(0), small_control(),
+             seed = 1),
+    "observations",
+    class = "thiessen_error"
+  )
+})
+
+test_that("a constant column is rejected, naming the column", {
+  fixture <- small_fixture()
+  x <- cbind(fixture$x[, 1], 1)
+
+  expect_error(
+    thiessen(x, fixture$y, small_control(), seed = 1),
+    "constant",
+    class = "thiessen_error"
+  )
+})
+
+test_that("a list column is refused", {
+  fixture <- small_fixture()
+  frame <- data.frame(y = fixture$y, a = fixture$x[, 1])
+  frame$b <- I(as.list(seq_len(nrow(frame))))
+
+  expect_error(thiessen(y ~ ., frame, small_control(), seed = 1), "list")
+})
+
+test_that("a numeric column with foreign attributes fits as its values", {
+  fixture <- small_fixture()
+  decorated <- fixture$x[, 1]
+  attr(decorated, "unit") <- "metres"
+  frame <- data.frame(y = fixture$y, a = decorated, b = fixture$x[, 2])
+  plain <- data.frame(y = fixture$y, a = fixture$x[, 1], b = fixture$x[, 2])
+
+  with_attributes <- thiessen(y ~ ., frame, small_control(), seed = 1)
+  without <- thiessen(y ~ ., plain, small_control(), seed = 1)
+
+  expect_identical(fitted(with_attributes), fitted(without))
+})

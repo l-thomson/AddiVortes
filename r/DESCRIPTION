@@ -20,6 +20,7 @@ Encoding: UTF-8
 Language: en-GB
 Depends: R (>= 4.2)
 Imports:
+    graphics,
     hardhat,
     jsonlite,
     lifecycle,
@@ -31,13 +32,16 @@ Imports:
 Suggests:
     bayesplot,
     callr,
+    grDevices,
     knitr,
     loo,
     rmarkdown,
+    srr,
     testthat (>= 3.0.0),
     tidybayes
 VignetteBuilder: knitr
-Roxygen: list(markdown = TRUE, load = "source")
+Roxygen: list(markdown = TRUE, load = "source",
+    roclets = c("namespace", "rd", "srr::srr_stats_roclet"))
 Config/testthat/edition: 3
 Config/thiessen/core-version: 0.3.0
 SystemRequirements: Cargo (Rust's package manager), rustc >= 1.74

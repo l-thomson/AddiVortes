@@ -42,6 +42,7 @@ reference:
   - sigma.thiessen
   - summary.thiessen
   - print.thiessen
+  - plot.thiessen
 - title: Posterior and rstantools generics
   contents:
   - as_draws_df.thiessen

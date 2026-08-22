@@ -15,7 +15,11 @@
 #' `"categorical"`.
 #'
 #' A factor response must have two levels and becomes 0 and 1 with the first
-#' level as the zero, as `glm` treats one.
+#' level as the zero, as `glm` treats one. An ordered factor is encoded as
+#' an unordered one; the ordering is not used.
+#'
+#' Missing (`NA`) and non-finite values in the covariates or the response
+#' are rejected with an error; no row is dropped silently.
 #'
 #' `stats::update()` works on a fit: the call is stored, so
 #' `update(fit, seed = 2)` refits with that argument replaced.
@@ -88,6 +92,9 @@
 #' )
 #' fit <- thiessen(x, y, control, seed = 1)
 #' fit
+#'
+#' # Two chains add the convergence diagnostics; one chain reports none.
+#' thiessen(x, y, control, seed = 1, chains = 2)
 #'
 #' frame <- data.frame(y = y, a = x[, 1], b = factor(x[, 2] > 0))
 #' thiessen(y ~ a + b, frame, control, seed = 1)

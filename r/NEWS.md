@@ -46,6 +46,12 @@
   `thiessen()` returns. Burn-in and thinning are the caller's loop, the
   response may be replaced between sweeps, and driving the configured
   schedule by hand reproduces a one-chain fit bit for bit.
+* `plot()` on a fit traces the per-draw diagnostics, one panel per
+  quantity and one line per chain; distributional displays go through
+  `posterior::as_draws_df()` and bayesplot.
+* Conformance with the rOpenSci statistical software standards (general
+  and Bayesian) is tagged through srr in `R/srr-stats-standards.R`, every
+  standard met or waived with its reason.
 * `thiessen_diagnostics()` returns the per-draw sigma, mean cells and mean
   active covariates, with the chain each draw comes from, and
   `variable_inclusion()` the share of the active dimensions falling on each

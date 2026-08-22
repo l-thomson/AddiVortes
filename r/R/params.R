@@ -55,7 +55,8 @@ term_params <- function(tessellations = NULL, k = 3, lambda_c = 5,
 #'   list whose entries are `"euclidean"`, `"categorical"`, or
 #'   `list(spherical = list(sphere = i))` for one coordinate of the sphere
 #'   labelled `i`, its latitudes first and its longitude last, in radians.
-#'   `NULL`, the default, is Euclidean on every column. Non-Euclidean
+#'   `NULL`, the default, is Euclidean on every column. Entries are
+#'   matched case-sensitively, so `"Euclidean"` is rejected. Non-Euclidean
 #'   columns are not scaled.
 #' @param sigma_c Prior and proposal standard deviation sigma_c of a
 #'   centre coordinate in the scaled space. Default 0.8.
