@@ -54,6 +54,7 @@ nav:
   - Input data: data.md
   - scikit-learn: sklearn.md
   - arviz: arviz.md
+  - Sampler API: sampler.md
   - Reproducibility: reproducibility.md
   - Testing: testing.md
   - API reference: api.md

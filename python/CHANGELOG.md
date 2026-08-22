@@ -10,6 +10,14 @@ the core crate version the package builds against, which
 
 ### Added
 
+- `thiessen.sampler.Sampler` (experimental): the core's Gibbs loop driven
+  one call at a time, after the updatable sampler of dbarts and the
+  low-level interface of stochtree. `step(n)`, `keep`, `set_response`,
+  `fitted_values`, `noise_variances`, and `finish()` returning the
+  ordinary `FittedModel`. Burn-in and thinning are the caller's loop, the
+  response may be replaced between sweeps, and driving the configured
+  schedule by hand reproduces `fit` bit for bit at the same seed.
+
 - `Model`, the configuration, in the shape the core stores it: an outcome
   family from `gaussian(nu, q)` or `probit(offset)`, one `TermParams` group
   per ensemble (`mean_params`, `variance_params`), the flat run-length

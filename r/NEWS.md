@@ -36,6 +36,12 @@
   repeat the warning, where R-hat exceeds 1.01 or an effective sample size
   falls below 400 (Vehtari and others, 2021); a fit of one chain says so
   instead.
+* `thiessen_sampler()` (experimental) drives the core's Gibbs loop one
+  call at a time: `$step(n)`, `$keep()`, `$set_response()`,
+  `$fitted_values()`, `$noise_variances()`, `$finish()` returning the fit
+  `thiessen()` returns. Burn-in and thinning are the caller's loop, the
+  response may be replaced between sweeps, and driving the configured
+  schedule by hand reproduces a one-chain fit bit for bit.
 * `thiessen_diagnostics()` returns the per-draw sigma, mean cells and mean
   active covariates, with the chain each draw comes from, and
   `variable_inclusion()` the share of the active dimensions falling on each

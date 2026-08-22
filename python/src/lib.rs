@@ -231,6 +231,111 @@ impl Fitted {
     }
 }
 
+/// A live sampler over the core's Gibbs loop.
+///
+/// Owns its RNG, seeded at construction with the chain-0 seed of `fit`, so
+/// driving the configured schedule by hand reproduces `fit` bit for bit.
+/// `finish` consumes the state; every later call fails.
+#[pyclass(module = "thiessen._native", name = "Sampler")]
+pub struct Sampler {
+    inner: Option<thiessen::Sampler>,
+    data: thiessen::Data,
+    y: Vec<f64>,
+}
+
+impl Sampler {
+    fn live(&self) -> PyResult<&thiessen::Sampler> {
+        self.inner
+            .as_ref()
+            .ok_or_else(|| ThiessenError::new_err("the sampler is finished"))
+    }
+
+    fn live_mut(&mut self) -> PyResult<&mut thiessen::Sampler> {
+        self.inner
+            .as_mut()
+            .ok_or_else(|| ThiessenError::new_err("the sampler is finished"))
+    }
+}
+
+#[pymethods]
+impl Sampler {
+    #[new]
+    fn new(
+        config_json: &str,
+        x: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        seed: u64,
+    ) -> PyResult<Self> {
+        let config = config(config_json)?;
+        let data = design(&x)?;
+        let y = response(&y);
+        let chain = thiessen::chain_seed(seed, 0);
+        let inner = thiessen::Sampler::new(&config, &data, &y, chain).map_err(core_error)?;
+        Ok(Self {
+            inner: Some(inner),
+            data,
+            y,
+        })
+    }
+
+    /// Run `n` sweeps of the Gibbs loop.
+    fn step(&mut self, n: usize) -> PyResult<()> {
+        let sampler = self.live_mut()?;
+        for _ in 0..n {
+            sampler.step();
+        }
+        Ok(())
+    }
+
+    /// Record the current state as a posterior draw.
+    fn keep(&mut self) -> PyResult<()> {
+        self.live_mut()?.keep();
+        Ok(())
+    }
+
+    /// Replace the response on the caller's scale.
+    fn set_response(&mut self, y: PyReadonlyArray1<'_, f64>) -> PyResult<()> {
+        let values = response(&y);
+        self.live_mut()?.set_response(&values).map_err(core_error)?;
+        self.y = values;
+        Ok(())
+    }
+
+    /// The current mean function at the training rows, caller scale.
+    fn fitted_values<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        Ok(PyArray1::from_vec(py, self.live()?.fitted_values()))
+    }
+
+    /// The variance of y given f at each training row, caller scale.
+    fn noise_variances<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        Ok(PyArray1::from_vec(py, self.live()?.noise_variances()))
+    }
+
+    /// Number of draws kept so far.
+    #[getter]
+    fn n_kept(&self) -> PyResult<usize> {
+        Ok(self.live()?.n_kept())
+    }
+
+    /// The configuration, with omega and the probit offset resolved.
+    #[getter]
+    fn config(&self) -> PyResult<String> {
+        serde_json::to_string(self.live()?.config())
+            .map_err(|e| ThiessenError::new_err(e.to_string()))
+    }
+
+    /// The fitted model from the kept draws, pooled as a one-chain fit.
+    fn finish(&mut self) -> PyResult<Fitted> {
+        let sampler = self
+            .inner
+            .take()
+            .ok_or_else(|| ThiessenError::new_err("the sampler is finished"))?;
+        let fitted = sampler.finish().map_err(core_error)?;
+        let inner = thiessen::Fitted::pool(&[fitted], &self.data, &self.y).map_err(core_error)?;
+        Ok(Fitted { inner })
+    }
+}
+
 /// Fit the model of the configuration to `x` and `y` under `seed`, running
 /// `n_chains` chains seeded by [`thiessen::chain_seed`] and pooling their
 /// draws.
@@ -274,6 +379,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("EXPERIMENTAL", cfg!(feature = "experimental"))?;
     m.add("ThiessenError", m.py().get_type::<ThiessenError>())?;
     m.add_class::<Fitted>()?;
+    m.add_class::<Sampler>()?;
     m.add_function(wrap_pyfunction!(fit, m)?)?;
     m.add_function(wrap_pyfunction!(fitted_from_json, m)?)?;
     m.add_function(wrap_pyfunction!(validate_config, m)?)?;
