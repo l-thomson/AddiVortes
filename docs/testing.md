@@ -89,10 +89,19 @@ each be rejected by the small SBC gate. The nightly mutation report is informati
 
 ### Binding contracts
 
-Once the Python and R packages
-exist (in development), each asserts the same seed gives the same draws through the
-binding as through the core, and that encodings match the documented
-contract.
+Each binding asserts, on the reference target, that the same seed gives
+the core's stored chain bit-exact through its own surface, for the
+Gaussian, probit and heteroscedastic models, and that a Gaussian fit
+driven through the sampler API matches `fit` bit for bit. Parity with the
+configuration spec is tested in both directions: the fully populated
+surface must be accepted by the core, and every option of the core's
+serialised defaults must be reachable from the surface, with the
+unexposed groups named in the test. Both suites assert the same factor
+encoding on one shared fixture (treatment contrasts, first level as
+reference), and `docs/parity.md`, the table mapping every core option to
+its place on each surface, is rendered from the spec by
+`tools/parity_table.py` and checked against the committed file, so drift
+is a test failure.
 
 ## Numbers
 

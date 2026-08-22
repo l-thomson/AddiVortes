@@ -50,6 +50,10 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='2000-01-01 00:00Z' 
 # the package tarball does not otherwise carry.
 cp "$root/crates/thiessen/tests/chains/gaussian.txt" \
   "$root/r/tests/testthat/core-gaussian-chain.txt"
+cp "$root/crates/thiessen/tests/chains/probit.txt" \
+  "$root/r/tests/testthat/core-probit-chain.txt"
+cp "$root/crates/thiessen/tests/chains/heteroscedastic.txt" \
+  "$root/r/tests/testthat/core-heteroscedastic-chain.txt"
 
 sed -i "s|^Config/thiessen/core-version: .*|Config/thiessen/core-version: $version|" \
   "$root/r/DESCRIPTION"
