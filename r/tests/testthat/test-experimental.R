@@ -27,7 +27,7 @@ test_that("a gated name is rejected", {
 })
 
 test_that("the rejection comes from the core, not from a list here", {
-  expect_error(thiessen_control(model = "soft"), "unknown model")
+  expect_error(thiessen_control(model = "soft"), "unknown variant")
   expect_false(any(grepl("soft", deparse(body(thiessen_control)), fixed = TRUE)))
 })
 
