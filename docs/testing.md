@@ -21,11 +21,13 @@ self-consistent sampler.
 
 In `tests/determinism.rs` and `tests/snapshot.rs`. The same seed, crate version and target triple
 give identical draws; a fixed-seed chain is stored under
-`tests/snapshots/` and checked bit-exact on `x86_64-unknown-linux-gnu`,
+`tests/chains/` and checked bit-exact on `x86_64-unknown-linux-gnu`,
 with other targets checking posterior summaries within Monte Carlo
 error. They detect unintended changes to sampled values, including
 platform drift; they say nothing about statistical correctness. The
-regeneration procedure is in [CONTRIBUTING.md](../CONTRIBUTING.md).
+chain files are sampled-value snapshots, separate from the
+config-referencing snapshots `insta` manages, and are regenerated only
+by the deliberate procedure in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ### Known answers
 

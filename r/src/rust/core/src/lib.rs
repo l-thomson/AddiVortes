@@ -35,7 +35,7 @@
 //! never draw by draw. Patch releases preserve sampled values for a fixed
 //! seed; minor releases may change them and the changelog entry says
 //! "Sampled values changed" with the reason. Fixed-seed chains are stored
-//! under `tests/snapshots/` and checked bit-exact on the reference target;
+//! under `tests/chains/` and checked bit-exact on the reference target;
 //! other targets check posterior summaries against the stored chain within
 //! Monte Carlo error. The testing strategy, from unit tests to
 //! simulation-based calibration, is `docs/testing.md` in the repository.

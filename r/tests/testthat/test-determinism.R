@@ -7,7 +7,7 @@ POINTS <- c(1L, 18L, 34L)
 
 stored_chain <- function() {
   lines <- readLines(test_path("core-gaussian-chain.txt"))
-  body <- lines[(which(lines == "---")[2] + 2):length(lines)]
+  body <- lines[-1]
   body <- body[nzchar(body)]
   matrix(
     as.double(unlist(strsplit(body, " ", fixed = TRUE))),
