@@ -80,7 +80,7 @@ fn the_linear_basis_needs_scaled_columns() {
 
 #[test]
 fn the_variance_slot_keeps_the_constant_basis() {
-    let json = r#"{"variance_params": {"num_tessellations": 2, "cell": {"basis": "linear"}}}"#;
+    let json = r#"{"variance_params": {"tessellations": 2, "cell": {"basis": "linear"}}}"#;
     let config: Config = serde_json::from_str(json).unwrap();
     assert!(config.validate().is_err());
 }

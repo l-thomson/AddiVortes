@@ -1,7 +1,7 @@
 # Models
 
 The observation models the crate fits, selected by `Config::outcome`
-and, for H-AddiVortes, `variance_params.num_tessellations`. Each
+and, for H-AddiVortes, `variance_params.tessellations`. Each
 entry states the model, its priors, what is fixed rather than estimated,
 the correspondence of its parameters with the paper and with the
 BART-family reference implementation, and what the fitted model returns.
@@ -98,7 +98,7 @@ is the Bernoulli log-likelihood; `prediction_interval` and
 `in_sample_rmse` is the root Brier score. Input: labels in {0, 1} with
 both present; anything else is `Error::InvalidLabel`.
 
-## Heteroscedastic (`Outcome::Gaussian` with `variance_params.num_tessellations` above 0)
+## Heteroscedastic (`Outcome::Gaussian` with `variance_params.tessellations` above 0)
 
 H-AddiVortes; the structure is that of HBART (Pratola, Chipman, George
 and McCulloch 2020):
