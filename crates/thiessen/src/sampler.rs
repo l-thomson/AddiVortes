@@ -209,6 +209,8 @@ impl Sampler {
         let omega = config.omega_for(p);
         data::validate_fit(x, y, omega)?;
         let geometry = Geometry::fit(&config.mean_params.geometry.metric, x)?;
+        #[cfg(feature = "experimental")]
+        let geometry = geometry.with_precision(config.mean_params.geometry.precision.as_deref())?;
         let laws = geometry.laws(x, config.mean_params.geometry.sigma_c)?;
         if config.outcome.required_data() == RequiredData::Binary {
             if let Some(row) = y.iter().position(|&v| v != 0.0 && v != 1.0) {

@@ -161,6 +161,15 @@ pub struct GeometryParams {
     /// Centre-coordinate prior and proposal standard deviation sigma_c
     /// (scaled space). Default 0.8.
     pub sigma_c: f64,
+    /// The precision matrix of the Mahalanobis metric, row-major p x p
+    /// over the encoded design; required exactly when a column's metric
+    /// is [`Metric::Mahalanobis`]. Checked at fit: symmetric, positive
+    /// definite. The active-subspace distance uses the principal
+    /// submatrix on the active columns, which is not the conditional
+    /// precision. Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub precision: Option<Vec<f64>>,
 }
 
 impl Default for GeometryParams {
@@ -168,6 +177,8 @@ impl Default for GeometryParams {
         Self {
             metric: Vec::new(),
             sigma_c: 0.8,
+            #[cfg(feature = "experimental")]
+            precision: None,
         }
     }
 }
@@ -343,6 +354,16 @@ impl Config {
     pub fn with_metric(mut self, metric: Vec<Metric>) -> Self {
         self.mean_params.geometry.metric.clone_from(&metric);
         self.variance_params.geometry.metric = metric;
+        self
+    }
+
+    /// The Mahalanobis precision matrix, row-major p x p over the
+    /// encoded design, both slots. Experimental.
+    #[cfg(feature = "experimental")]
+    #[must_use]
+    pub fn with_precision(mut self, precision: Vec<f64>) -> Self {
+        self.mean_params.geometry.precision = Some(precision.clone());
+        self.variance_params.geometry.precision = Some(precision);
         self
     }
 

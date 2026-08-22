@@ -86,6 +86,18 @@ pub enum Metric {
         /// The per-column kind.
         kind: GowerKind,
     },
+    /// One column of the Mahalanobis distance under the user-supplied
+    /// precision matrix [`GeometryParams::precision`](crate::GeometryParams):
+    /// the quadratic form of the active Mahalanobis coordinate
+    /// differences under the principal submatrix on those columns, which
+    /// is not the conditional precision. The matrix indexes the encoded
+    /// design and is checked at fit: p x p, symmetric, positive
+    /// definite. The identity matrix reproduces Euclidean exactly.
+    /// Columns are scaled to [-0.5, 0.5]; centre coordinates
+    /// N(0, sigma_c^2), as Euclidean; the structural moves are
+    /// unchanged. Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    Mahalanobis,
 }
 
 /// The per-column kind of [`Metric::Gower`].
@@ -123,6 +135,13 @@ pub(crate) struct Geometry {
     /// The Gower columns, one group; the kind is in `kinds`.
     #[cfg(feature = "experimental")]
     gower: Vec<usize>,
+    /// The Mahalanobis columns, one group.
+    #[cfg(feature = "experimental")]
+    mahalanobis: Vec<usize>,
+    /// The row-major p x p precision matrix of the Mahalanobis columns;
+    /// empty until [`Geometry::with_precision`].
+    #[cfg(feature = "experimental")]
+    precision: Vec<f64>,
 }
 
 impl Geometry {
@@ -140,6 +159,10 @@ impl Geometry {
             cosine: Vec::new(),
             #[cfg(feature = "experimental")]
             gower: Vec::new(),
+            #[cfg(feature = "experimental")]
+            mahalanobis: Vec::new(),
+            #[cfg(feature = "experimental")]
+            precision: Vec::new(),
         }
     }
 
@@ -222,6 +245,15 @@ impl Geometry {
             cosine,
             #[cfg(feature = "experimental")]
             gower,
+            #[cfg(feature = "experimental")]
+            mahalanobis: metric
+                .iter()
+                .enumerate()
+                .filter(|(_, kind)| matches!(kind, Metric::Mahalanobis))
+                .map(|(col, _)| col)
+                .collect(),
+            #[cfg(feature = "experimental")]
+            precision: Vec::new(),
         })
     }
 
@@ -288,6 +320,46 @@ impl Geometry {
         Ok(geometry)
     }
 
+    /// Attach and check the Mahalanobis precision matrix: required
+    /// exactly when a column is Mahalanobis, row-major p x p, symmetric,
+    /// positive definite (by Cholesky).
+    ///
+    /// # Errors
+    ///
+    /// `InvalidHyperparameter` for `geometry.precision`.
+    #[cfg(feature = "experimental")]
+    pub(crate) fn with_precision(mut self, precision: Option<&[f64]>) -> Result<Self> {
+        let bad = |reason: String| invalid("geometry.precision", reason);
+        let p = self.kinds.len();
+        let Some(matrix) = precision else {
+            if self.mahalanobis.is_empty() {
+                return Ok(self);
+            }
+            return Err(bad("required when a column's metric is mahalanobis".into()));
+        };
+        if self.mahalanobis.is_empty() {
+            return Err(bad("set without a mahalanobis column".into()));
+        }
+        if matrix.len() != p * p {
+            return Err(bad(format!(
+                "must be row-major p x p over the design: {} entries for p = {p}",
+                matrix.len()
+            )));
+        }
+        for i in 0..p {
+            for j in 0..i {
+                if matrix[i * p + j] != matrix[j * p + i] {
+                    return Err(bad(format!("must be symmetric: entries ({i}, {j})")));
+                }
+            }
+        }
+        if !cholesky_positive_definite(matrix, p) {
+            return Err(bad("must be positive definite".into()));
+        }
+        self.precision = matrix.to_vec();
+        Ok(self)
+    }
+
     fn set_categories(&mut self, col: usize, levels: Vec<f64>) {
         let n = levels.len() as f64;
         self.weights[col] = 2.0 / (n * n);
@@ -322,6 +394,8 @@ impl Geometry {
             Metric::Gower {
                 kind: GowerKind::Numeric,
             } => true,
+            #[cfg(feature = "experimental")]
+            Metric::Mahalanobis => true,
             _ => false,
         }
     }
@@ -355,8 +429,11 @@ impl Geometry {
         let mut key = 0.0;
         let plain = self.spheres.is_empty() && self.weights.iter().all(|&w| w == 0.0);
         #[cfg(feature = "experimental")]
-        let plain =
-            plain && self.minkowski.is_empty() && self.cosine.is_empty() && self.gower.is_empty();
+        let plain = plain
+            && self.minkowski.is_empty()
+            && self.cosine.is_empty()
+            && self.gower.is_empty()
+            && self.mahalanobis.is_empty();
         if plain {
             for (&dim, &c) in dims.iter().zip(centre) {
                 let diff = row[dim] - c;
@@ -380,7 +457,8 @@ impl Geometry {
                 Metric::Minkowski { .. }
                 | Metric::Manhattan
                 | Metric::Cosine
-                | Metric::Gower { .. } => {}
+                | Metric::Gower { .. }
+                | Metric::Mahalanobis => {}
             }
         }
         #[cfg(feature = "experimental")]
@@ -448,6 +526,22 @@ impl Geometry {
                 key += d * d;
             }
         }
+        #[cfg(feature = "experimental")]
+        if !self.mahalanobis.is_empty() {
+            let p = self.kinds.len();
+            for (&di, &ci) in dims.iter().zip(centre) {
+                if !matches!(self.kinds[di], Metric::Mahalanobis) {
+                    continue;
+                }
+                let diff = row[di] - ci;
+                for (&dj, &cj) in dims.iter().zip(centre) {
+                    if !matches!(self.kinds[dj], Metric::Mahalanobis) {
+                        continue;
+                    }
+                    key += diff * self.precision[di * p + dj] * (row[dj] - cj);
+                }
+            }
+        }
         for (s, cols) in self.spheres.iter().enumerate() {
             if dims.iter().all(|&dim| self.sphere_of[dim] != Some(s)) {
                 continue;
@@ -491,6 +585,11 @@ impl Geometry {
                         sd: sigma_c,
                     })
                 }
+                #[cfg(feature = "experimental")]
+                Metric::Mahalanobis => Ok(CoordinateLaw::Normal {
+                    mean: 0.0,
+                    sd: sigma_c,
+                }),
                 #[cfg(feature = "experimental")]
                 Metric::Gower { kind } => Ok(match kind {
                     GowerKind::Numeric => CoordinateLaw::Normal {
@@ -562,6 +661,33 @@ fn sphere_angle_sq(cols: &[usize], coordinate: &dyn Fn(usize) -> (f64, f64)) -> 
         };
     }
     angle * angle
+}
+
+/// Whether the row-major n x n symmetric matrix is positive definite,
+/// by the Cholesky factorisation: every pivot strictly positive and
+/// finite.
+#[cfg(feature = "experimental")]
+fn cholesky_positive_definite(a: &[f64], n: usize) -> bool {
+    let mut l = a.to_vec();
+    for j in 0..n {
+        let mut d = l[j * n + j];
+        for k in 0..j {
+            d -= l[j * n + k] * l[j * n + k];
+        }
+        if !(d.is_finite() && d > 0.0) {
+            return false;
+        }
+        let root = d.sqrt();
+        l[j * n + j] = root;
+        for i in j + 1..n {
+            let mut v = l[i * n + j];
+            for k in 0..j {
+                v -= l[i * n + k] * l[j * n + k];
+            }
+            l[i * n + j] = v / root;
+        }
+    }
+    true
 }
 
 /// The prior and proposal law of one centre coordinate.
@@ -968,6 +1094,56 @@ mod tests {
             assert!(g.scaled(0));
             assert!(!g.scaled(1));
         }
+
+        fn mahalanobis2(matrix: &[f64]) -> Geometry {
+            Geometry::structure(&[Metric::Mahalanobis; 2], 2)
+                .unwrap()
+                .with_precision(Some(matrix))
+                .unwrap()
+        }
+
+        #[test]
+        fn mahalanobis_hand_values() {
+            let g = mahalanobis2(&[2.0, 0.6, 0.6, 1.0]);
+            // diff = (0.3, -0.5): 2 * 0.09 + 2 * 0.6 * -0.15 + 0.25.
+            close(
+                g.key(&[0.1, -0.2], &[0, 1], &[-0.2, 0.3]),
+                2.0 * 0.09 + 2.0 * 0.6 * 0.3 * -0.5 + 0.25,
+            );
+            // Single active column: the principal submatrix is (2).
+            close(g.key(&[0.1, -0.2], &[0], &[-0.2]), 2.0 * 0.09);
+            close(g.key(&[0.1, -0.2], &[1], &[0.3]), 0.25);
+        }
+
+        #[test]
+        fn mahalanobis_identity_matches_euclidean_bit_for_bit() {
+            let g = mahalanobis2(&[1.0, 0.0, 0.0, 1.0]);
+            let e = Geometry::euclidean(2);
+            let row = [0.31, -0.47];
+            let centre = [-0.12, 0.4];
+            assert_eq!(
+                g.key(&row, &[0, 1], &centre).to_bits(),
+                e.key(&row, &[0, 1], &centre).to_bits()
+            );
+        }
+
+        #[test]
+        fn the_precision_matrix_is_checked() {
+            let g = || Geometry::structure(&[Metric::Mahalanobis; 2], 2).unwrap();
+            assert!(g().with_precision(None).is_err());
+            assert!(g().with_precision(Some(&[1.0, 0.0, 0.0])).is_err());
+            assert!(g().with_precision(Some(&[1.0, 0.5, 0.4, 1.0])).is_err());
+            // Symmetric but indefinite.
+            assert!(g().with_precision(Some(&[1.0, 2.0, 2.0, 1.0])).is_err());
+            assert!(g().with_precision(Some(&[2.0, 0.6, 0.6, 1.0])).is_ok());
+            // A matrix without a Mahalanobis column is rejected; None is fine.
+            let plain = Geometry::euclidean(2);
+            assert!(plain
+                .clone()
+                .with_precision(Some(&[1.0, 0.0, 0.0, 1.0]))
+                .is_err());
+            assert!(plain.with_precision(None).is_ok());
+        }
     }
 
     mod props {
@@ -1074,6 +1250,33 @@ mod tests {
                 prop_assert!(d(a, a) == 0.0);
                 prop_assert!((d(a, b) - d(b, a)).abs() < 1e-12);
                 prop_assert!(d(a, c) <= d(a, b) + d(b, c) + 1e-12);
+            }
+        }
+
+        // The Mahalanobis distance under a positive definite matrix is a
+        // norm: all four axioms, also against an added Euclidean column.
+        #[cfg(feature = "experimental")]
+        proptest! {
+            #[test]
+            fn mahalanobis_axioms(
+                a in (-1.0..1.0_f64, -1.0..1.0_f64, -1.0..1.0_f64),
+                b in (-1.0..1.0_f64, -1.0..1.0_f64, -1.0..1.0_f64),
+                c in (-1.0..1.0_f64, -1.0..1.0_f64, -1.0..1.0_f64),
+            ) {
+                let metric = [Metric::Mahalanobis, Metric::Mahalanobis, Metric::Euclidean];
+                let precision = [2.0, 0.6, 0.0, 0.6, 1.0, 0.0, 0.0, 0.0, 1.0];
+                let g = Geometry::structure(&metric, 3)
+                    .unwrap()
+                    .with_precision(Some(&precision))
+                    .unwrap();
+                let dims = [0, 1, 2];
+                let d = |u: (f64, f64, f64), v: (f64, f64, f64)| {
+                    g.key(&[u.0, u.1, u.2], &dims, &[v.0, v.1, v.2]).sqrt()
+                };
+                prop_assert!(d(a, b) >= 0.0);
+                prop_assert!(d(a, a) == 0.0);
+                prop_assert!((d(a, b) - d(b, a)).abs() < 1e-12);
+                prop_assert!(d(a, c) <= d(a, b) + d(b, c) + 1e-9);
             }
         }
     }

@@ -45,3 +45,17 @@ fn gower_metric_is_rejected() {
     let err = serde_json::from_str::<Config>(json).unwrap_err();
     assert!(err.to_string().contains("gower"), "{err}");
 }
+
+#[test]
+fn mahalanobis_metric_is_rejected() {
+    let json = r#"{"mean_params": {"geometry": {"metric": ["mahalanobis"]}}}"#;
+    let err = serde_json::from_str::<Config>(json).unwrap_err();
+    assert!(err.to_string().contains("mahalanobis"), "{err}");
+}
+
+#[test]
+fn the_precision_field_is_rejected() {
+    let json = r#"{"mean_params": {"geometry": {"precision": [1.0, 0.0, 0.0, 1.0]}}}"#;
+    let err = serde_json::from_str::<Config>(json).unwrap_err();
+    assert!(err.to_string().contains("precision"), "{err}");
+}
