@@ -59,6 +59,17 @@ pub enum Metric {
     /// Experimental (`docs/experimental.md`).
     #[cfg(feature = "experimental")]
     Manhattan,
+    /// Cosine distance, 1 minus the cosine similarity of the active
+    /// Cosine coordinates of the row and the centre, squared into the
+    /// key. When exactly one of the two vectors is zero the distance is
+    /// 1; when both are zero it is 0. The distance is not a metric (the
+    /// triangle inequality fails); the [-0.5, 0.5] covariate scaling
+    /// makes the origin data-dependent, so the option is intended for
+    /// covariates that are directions already. Centre coordinates
+    /// N(0, sigma_c^2), as Euclidean; the structural moves are
+    /// unchanged. Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    Cosine,
 }
 
 /// The column structure of a fit: the metric of each column, the columns
@@ -78,6 +89,9 @@ pub(crate) struct Geometry {
     /// Minkowski column groups, (order, columns), one per distinct order.
     #[cfg(feature = "experimental")]
     minkowski: Vec<(f64, Vec<usize>)>,
+    /// The Cosine columns, one group.
+    #[cfg(feature = "experimental")]
+    cosine: Vec<usize>,
 }
 
 impl Geometry {
@@ -91,6 +105,8 @@ impl Geometry {
             weights: vec![0.0; p],
             #[cfg(feature = "experimental")]
             minkowski: Vec::new(),
+            #[cfg(feature = "experimental")]
+            cosine: Vec::new(),
         }
     }
 
@@ -147,6 +163,13 @@ impl Geometry {
             }
             groups
         };
+        #[cfg(feature = "experimental")]
+        let cosine: Vec<usize> = metric
+            .iter()
+            .enumerate()
+            .filter(|(_, kind)| **kind == Metric::Cosine)
+            .map(|(col, _)| col)
+            .collect();
         Ok(Self {
             kinds: metric.to_vec(),
             spheres,
@@ -155,6 +178,8 @@ impl Geometry {
             weights: vec![0.0; p],
             #[cfg(feature = "experimental")]
             minkowski,
+            #[cfg(feature = "experimental")]
+            cosine,
         })
     }
 
@@ -238,7 +263,7 @@ impl Geometry {
         match self.kinds[col] {
             Metric::Euclidean => true,
             #[cfg(feature = "experimental")]
-            Metric::Minkowski { .. } | Metric::Manhattan => true,
+            Metric::Minkowski { .. } | Metric::Manhattan | Metric::Cosine => true,
             _ => false,
         }
     }
@@ -272,7 +297,7 @@ impl Geometry {
         let mut key = 0.0;
         let plain = self.spheres.is_empty() && self.weights.iter().all(|&w| w == 0.0);
         #[cfg(feature = "experimental")]
-        let plain = plain && self.minkowski.is_empty();
+        let plain = plain && self.minkowski.is_empty() && self.cosine.is_empty();
         if plain {
             for (&dim, &c) in dims.iter().zip(centre) {
                 let diff = row[dim] - c;
@@ -293,7 +318,7 @@ impl Geometry {
                 }
                 Metric::Spherical { .. } => {}
                 #[cfg(feature = "experimental")]
-                Metric::Minkowski { .. } | Metric::Manhattan => {}
+                Metric::Minkowski { .. } | Metric::Manhattan | Metric::Cosine => {}
             }
         }
         #[cfg(feature = "experimental")]
@@ -317,6 +342,30 @@ impl Geometry {
             } else {
                 maths::powf(sum, 2.0 / *p)
             };
+        }
+        #[cfg(feature = "experimental")]
+        if !self.cosine.is_empty() {
+            let (mut dot, mut row_sq, mut centre_sq) = (0.0, 0.0, 0.0);
+            let mut active = false;
+            for (&dim, &c) in dims.iter().zip(centre) {
+                if !self.cosine.contains(&dim) {
+                    continue;
+                }
+                active = true;
+                dot += row[dim] * c;
+                row_sq += row[dim] * row[dim];
+                centre_sq += c * c;
+            }
+            if active {
+                let d = if row_sq == 0.0 && centre_sq == 0.0 {
+                    0.0
+                } else if row_sq == 0.0 || centre_sq == 0.0 {
+                    1.0
+                } else {
+                    (1.0 - dot / (row_sq.sqrt() * centre_sq.sqrt())).clamp(0.0, 2.0)
+                };
+                key += d * d;
+            }
         }
         for (s, cols) in self.spheres.iter().enumerate() {
             if dims.iter().all(|&dim| self.sphere_of[dim] != Some(s)) {
@@ -355,10 +404,12 @@ impl Geometry {
                     sd: sigma_c,
                 }),
                 #[cfg(feature = "experimental")]
-                Metric::Minkowski { .. } | Metric::Manhattan => Ok(CoordinateLaw::Normal {
-                    mean: 0.0,
-                    sd: sigma_c,
-                }),
+                Metric::Minkowski { .. } | Metric::Manhattan | Metric::Cosine => {
+                    Ok(CoordinateLaw::Normal {
+                        mean: 0.0,
+                        sd: sigma_c,
+                    })
+                }
                 Metric::Categorical => Ok(CoordinateLaw::Uniform {
                     levels: self.categories[col].clone(),
                 }),
@@ -714,6 +765,50 @@ mod tests {
                 assert_eq!(law, CoordinateLaw::Normal { mean: 0.0, sd: 0.8 });
             }
         }
+
+        #[test]
+        fn cosine_hand_values() {
+            let g = Geometry::structure(&[Metric::Cosine; 2], 2).unwrap();
+            let dims = [0, 1];
+            // Parallel: similarity 1, distance 0.
+            close(g.key(&[0.3, 0.4], &dims, &[0.6, 0.8]), 0.0);
+            // Orthogonal: similarity 0, distance 1.
+            close(g.key(&[1.0, 0.0], &dims, &[0.0, 1.0]), 1.0);
+            // Opposite: similarity -1, distance 2, squared 4.
+            close(g.key(&[0.3, 0.4], &dims, &[-0.3, -0.4]), 4.0);
+        }
+
+        #[test]
+        fn cosine_zero_vectors() {
+            let g = Geometry::structure(&[Metric::Cosine; 2], 2).unwrap();
+            let dims = [0, 1];
+            close(g.key(&[0.0, 0.0], &dims, &[0.0, 0.0]), 0.0);
+            close(g.key(&[0.0, 0.0], &dims, &[0.3, 0.4]), 1.0);
+            close(g.key(&[0.3, 0.4], &dims, &[0.0, 0.0]), 1.0);
+        }
+
+        #[test]
+        fn cosine_adds_to_the_euclidean_part() {
+            let g = Geometry::structure(&[Metric::Euclidean, Metric::Cosine, Metric::Cosine], 3)
+                .unwrap();
+            // Euclidean 0.4^2; the cosine pair orthogonal, distance 1.
+            close(
+                g.key(&[0.5, 1.0, 0.0], &[0, 1, 2], &[0.1, 0.0, 1.0]),
+                0.16 + 1.0,
+            );
+            // Only the Euclidean column active: no cosine term.
+            close(g.key(&[0.5, 1.0, 0.0], &[0], &[0.1]), 0.16);
+        }
+
+        #[test]
+        fn cosine_scaled_and_law_follow_euclidean() {
+            let g = Geometry::structure(&[Metric::Cosine, Metric::Cosine], 2).unwrap();
+            assert!(g.scaled(0));
+            let x = Data::from_rows(&[[0.0, 1.0], [1.0, 2.0]]).unwrap();
+            for law in g.laws(&x, 0.8).unwrap() {
+                assert_eq!(law, CoordinateLaw::Normal { mean: 0.0, sd: 0.8 });
+            }
+        }
     }
 
     mod props {
@@ -773,6 +868,27 @@ mod tests {
                 prop_assert!(d(a, a) == 0.0);
                 prop_assert!((d(a, b) - d(b, a)).abs() < 1e-12);
                 prop_assert!(d(a, c) <= d(a, b) + d(b, c) + 1e-9);
+            }
+        }
+
+        // Cosine keeps non-negativity, self-distance zero and symmetry;
+        // the triangle inequality does not hold and is not asserted.
+        #[cfg(feature = "experimental")]
+        proptest! {
+            #[test]
+            fn cosine_axioms(
+                a in (-1.0..1.0_f64, -1.0..1.0_f64, -1.0..1.0_f64),
+                b in (-1.0..1.0_f64, -1.0..1.0_f64, -1.0..1.0_f64),
+            ) {
+                let g = Geometry::structure(&[Metric::Cosine; 3], 3).unwrap();
+                let dims = [0, 1, 2];
+                let d = |u: (f64, f64, f64), v: (f64, f64, f64)| {
+                    g.key(&[u.0, u.1, u.2], &dims, &[v.0, v.1, v.2]).sqrt()
+                };
+                prop_assert!(d(a, b) >= 0.0);
+                prop_assert!(d(a, a) < 1e-7);
+                prop_assert!((d(a, b) - d(b, a)).abs() < 1e-12);
+                prop_assert!(d(a, b) <= 2.0);
             }
         }
     }
