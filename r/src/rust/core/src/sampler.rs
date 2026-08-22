@@ -23,6 +23,7 @@ use crate::geometry::Geometry;
 use crate::maths;
 use crate::model::Model;
 use crate::models::gaussian::GaussianOutcome;
+use crate::models::probit::ProbitOutcome;
 use crate::moves::Prior;
 use crate::outcome::{OutcomeModel, RequiredData, Sigma2Mode};
 use crate::rng::{self, Rng};
@@ -38,9 +39,9 @@ enum Noise {
         sigma_sq: f64,
         outcome: GaussianOutcome,
     },
-    /// Unit latent variance; the labels in {0, 1} and the offset c of
-    /// P(y = 1 | x) = Phi(c + f(x)).
-    Unit { labels: Vec<f64>, offset: f64 },
+    /// The probit outcome model: unit latent variance, the labels in
+    /// {0, 1} and the offset c of P(y = 1 | x) = Phi(c + f(x)).
+    Probit(ProbitOutcome),
     /// The variance ensemble, whose total at each observation is s^2(x_i).
     Ensemble(Box<Ensemble<InverseGammaCells>>),
 }
@@ -180,10 +181,11 @@ impl Sampler {
                 (scaler, x_scaled, y_scaled, lambda, sigma_hat * sigma_hat)
             }
         };
-        let sigma_mu_sq = match config.model {
-            Model::Probit => scaler::probit_sigma_mu_sq(config.k, config.m),
-            Model::Gaussian | Model::Heteroscedastic => scaler::sigma_mu_sq(config.k, config.m),
+        let half_width = match config.model {
+            Model::Probit => ProbitOutcome::CELL_PRIOR_HALF_WIDTH,
+            Model::Gaussian | Model::Heteroscedastic => GaussianOutcome::CELL_PRIOR_HALF_WIDTH,
         };
+        let sigma_mu_sq = scaler::sigma_mu_sq(half_width, config.k, config.m);
         let prior = Prior {
             p,
             omega,
@@ -217,14 +219,10 @@ impl Sampler {
                 Noise::Gaussian { sigma_sq, outcome }
             }
             Model::Probit => {
-                let offset = config
-                    .offset
-                    .unwrap_or_else(|| maths::normal_quantile(mean_y));
-                config.offset = Some(offset);
-                Noise::Unit {
-                    labels: y_scaled.clone(),
-                    offset,
-                }
+                let mut outcome = ProbitOutcome::new(config.offset, mean_y);
+                config.offset = Some(outcome.offset());
+                outcome.init(&y_scaled);
+                Noise::Probit(outcome)
             }
             Model::Heteroscedastic => {
                 let (nu, lambda_prime) =
@@ -333,23 +331,13 @@ impl Sampler {
                     }
                 }
             }
-            // z_i ~ N(c + f(x_i), 1) truncated to z_i > 0 when y_i = 1 and
-            // z_i < 0 when y_i = 0; the working response is z_i - c.
-            Noise::Unit { labels, offset } => {
+            // The latent response is the outcome model's working response.
+            Noise::Probit(outcome) => {
                 if prior_only {
                     return;
                 }
-                for ((slot, &label), &f) in
-                    self.y.iter_mut().zip(labels.iter()).zip(self.mean.total())
-                {
-                    let mean = f + *offset;
-                    let z = if label == 1.0 {
-                        mean + rng::truncated_standard_normal_above(-mean, &mut self.rng)
-                    } else {
-                        mean - rng::truncated_standard_normal_above(mean, &mut self.rng)
-                    };
-                    *slot = z - *offset;
-                }
+                outcome.draw_extra(&mut self.rng);
+                outcome.working_response(self.mean.total(), &mut self.y, &mut self.rng);
             }
             // The variance ensemble given the residuals e = y - F, then the
             // precision 1 / s^2(x_i).
@@ -388,11 +376,11 @@ impl Sampler {
     pub fn keep(&mut self) {
         let sigma_sq = match &self.noise {
             Noise::Gaussian { sigma_sq, .. } => Some(*sigma_sq),
-            Noise::Unit { .. } | Noise::Ensemble(_) => None,
+            Noise::Probit(_) | Noise::Ensemble(_) => None,
         };
         let variance = match &self.noise {
             Noise::Ensemble(v) => Some(v.tessellations().to_vec()),
-            Noise::Gaussian { .. } | Noise::Unit { .. } => None,
+            Noise::Gaussian { .. } | Noise::Probit(_) => None,
         };
         self.kept
             .push(sigma_sq, self.mean.tessellations().to_vec(), variance);
@@ -420,11 +408,11 @@ impl Sampler {
         if let Some(row) = y.iter().position(|v| !v.is_finite()) {
             return Err(Error::NonFiniteResponse { row });
         }
-        if let Noise::Unit { labels, .. } = &mut self.noise {
+        if let Noise::Probit(outcome) = &mut self.noise {
             if let Some(row) = y.iter().position(|&v| v != 0.0 && v != 1.0) {
                 return Err(Error::InvalidLabel { row });
             }
-            labels.copy_from_slice(y);
+            outcome.set_labels(y);
             return Ok(());
         }
         for (slot, &v) in self.y.iter_mut().zip(y) {
@@ -452,7 +440,7 @@ impl Sampler {
         let range_sq = self.scaler.y_range() * self.scaler.y_range();
         match &self.noise {
             Noise::Gaussian { sigma_sq, .. } => vec![sigma_sq * range_sq; n],
-            Noise::Unit { .. } => vec![1.0; n],
+            Noise::Probit(_) => vec![1.0; n],
             Noise::Ensemble(v) => v.total().iter().map(|s| s * range_sq).collect(),
         }
     }
@@ -464,7 +452,11 @@ impl Sampler {
     pub fn sigma_sq(&self) -> f64 {
         match &self.noise {
             Noise::Gaussian { sigma_sq, .. } => *sigma_sq,
-            Noise::Unit { .. } | Noise::Ensemble(_) => 1.0,
+            Noise::Probit(outcome) => match outcome.sigma2_mode() {
+                Sigma2Mode::Fixed(value) => value,
+                Sigma2Mode::Sampled | Sigma2Mode::Absent => 1.0,
+            },
+            Noise::Ensemble(_) => 1.0,
         }
     }
 
@@ -487,7 +479,7 @@ impl Sampler {
     pub fn variance_tessellations(&self) -> &[Tessellation] {
         match &self.noise {
             Noise::Ensemble(v) => v.tessellations(),
-            Noise::Gaussian { .. } | Noise::Unit { .. } => &[],
+            Noise::Gaussian { .. } | Noise::Probit(_) => &[],
         }
     }
 
@@ -504,7 +496,7 @@ impl Sampler {
 
     fn offset(&self) -> f64 {
         match &self.noise {
-            Noise::Unit { offset, .. } => *offset,
+            Noise::Probit(outcome) => outcome.offset(),
             Noise::Gaussian { .. } | Noise::Ensemble(_) => 0.0,
         }
     }
@@ -522,7 +514,7 @@ impl Sampler {
         // The posterior-mean prediction on the response scale: f, or
         // Phi(c + f) under the probit model.
         let offset = self.offset();
-        let probit = matches!(self.noise, Noise::Unit { .. });
+        let probit = matches!(self.noise, Noise::Probit(_));
         let mut mean_prediction = vec![0.0; n];
         let geometry = self.mean.geometry();
         for draw in self.kept.tessellations() {
@@ -539,7 +531,7 @@ impl Sampler {
         let n_draws = self.kept.n_draws() as f64;
         let range = self.scaler.y_range();
         let target: &[f64] = match &self.noise {
-            Noise::Unit { labels, .. } => labels,
+            Noise::Probit(outcome) => outcome.labels(),
             Noise::Gaussian { .. } | Noise::Ensemble(_) => &self.y,
         };
         let in_sample_rmse = (mean_prediction

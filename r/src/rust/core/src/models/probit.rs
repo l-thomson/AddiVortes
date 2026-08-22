@@ -63,6 +63,89 @@ use crate::config::Config;
 use crate::data::Data;
 use crate::error::Result;
 use crate::fitted::Fitted;
+use crate::maths;
+use crate::outcome::{OutcomeModel, RequiredData, Sigma2Mode};
+use crate::rng::{self, Rng};
+
+/// The probit outcome behind the [`OutcomeModel`] contract: labels in
+/// {0, 1}, a fixed offset c, and the Albert and Chib (1993) latent
+/// response refreshed each sweep by the Robert (1995) truncated draw. The
+/// latent variance is fixed at 1, so the scale mode is `Fixed(1.0)` and
+/// no variance ensemble may attach.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ProbitOutcome {
+    labels: Vec<f64>,
+    offset: f64,
+}
+
+impl ProbitOutcome {
+    /// The half-width of the cell-mean prior on the latent scale:
+    /// sigma_mu = 3 / (k sqrt m), so the prior on f puts high probability
+    /// on [-3, 3] (Chipman, George and McCulloch 2010, s. 4).
+    pub(crate) const CELL_PRIOR_HALF_WIDTH: f64 = 3.0;
+
+    /// An outcome with the offset resolved: the configured value, or
+    /// Phi^-1(ybar) (the BART package's `binaryOffset`).
+    pub(crate) fn new(offset: Option<f64>, mean_y: f64) -> Self {
+        Self {
+            labels: Vec::new(),
+            offset: offset.unwrap_or_else(|| maths::normal_quantile(mean_y)),
+        }
+    }
+
+    /// The offset c of P(y = 1 | x) = Phi(c + f(x)).
+    pub(crate) fn offset(&self) -> f64 {
+        self.offset
+    }
+
+    /// The labels the latent response conditions on.
+    pub(crate) fn labels(&self) -> &[f64] {
+        &self.labels
+    }
+
+    /// Replace the labels; the caller validates them.
+    pub(crate) fn set_labels(&mut self, y: &[f64]) {
+        self.labels.copy_from_slice(y);
+    }
+}
+
+impl OutcomeModel for ProbitOutcome {
+    fn required_data(&self) -> RequiredData {
+        RequiredData::Binary
+    }
+
+    fn init(&mut self, y: &[f64]) {
+        self.labels = y.to_vec();
+    }
+
+    fn draw_extra(&mut self, _rng: &mut Rng) {}
+
+    /// z_i ~ N(c + f(x_i), 1) truncated to z_i > 0 when y_i = 1 and
+    /// z_i < 0 when y_i = 0; the working response is z_i - c.
+    fn working_response(&mut self, total: &[f64], y: &mut [f64], rng: &mut Rng) {
+        for ((slot, &label), &f) in y.iter_mut().zip(self.labels.iter()).zip(total) {
+            let mean = f + self.offset;
+            let z = if label == 1.0 {
+                mean + rng::truncated_standard_normal_above(-mean, rng)
+            } else {
+                mean - rng::truncated_standard_normal_above(mean, rng)
+            };
+            *slot = z - self.offset;
+        }
+    }
+
+    fn weights(&self) -> Option<&[f64]> {
+        None
+    }
+
+    fn sigma2_mode(&self) -> Sigma2Mode {
+        Sigma2Mode::Fixed(1.0)
+    }
+
+    fn predictive_quantile(&self, _mean: f64, _sd: f64, _p: f64) -> Option<f64> {
+        None
+    }
+}
 
 /// Fit the probit model with the shared sweep schedule.
 pub(crate) fn fit(
@@ -73,6 +156,34 @@ pub(crate) fn fit(
     progress: &mut dyn FnMut(usize, usize),
 ) -> Result<Fitted> {
     super::run(config, x, y, seed, progress)
+}
+
+#[cfg(test)]
+mod outcome_tests {
+    use super::*;
+    use crate::rng::chain_rng;
+
+    #[test]
+    fn the_probit_outcome_answers_the_contract() {
+        let labels = [1.0, 0.0, 1.0];
+        let mut outcome = ProbitOutcome::new(None, 2.0 / 3.0);
+        assert!((maths::normal_cdf(outcome.offset()) - 2.0 / 3.0).abs() < 1e-9);
+        assert_eq!(ProbitOutcome::new(Some(0.25), 0.5).offset(), 0.25);
+        outcome.init(&labels);
+        assert_eq!(outcome.labels(), &labels);
+        assert_eq!(outcome.required_data(), RequiredData::Binary);
+        assert_eq!(outcome.sigma2_mode(), Sigma2Mode::Fixed(1.0));
+        assert_eq!(outcome.weights(), None);
+        assert_eq!(outcome.predictive_quantile(0.0, 1.0, 0.5), None);
+        let mut rng = chain_rng(11);
+        let mut y = vec![0.0; 3];
+        outcome.working_response(&[0.0, 0.0, 0.0], &mut y, &mut rng);
+        for (z, &label) in y.iter().zip(&labels) {
+            assert_eq!((z + outcome.offset() > 0.0), label == 1.0);
+        }
+        outcome.set_labels(&[0.0, 1.0, 0.0]);
+        assert_eq!(outcome.labels(), &[0.0, 1.0, 0.0]);
+    }
 }
 
 #[cfg(test)]

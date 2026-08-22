@@ -60,6 +60,13 @@ pub(crate) fn fit(
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub(crate) struct GaussianOutcome;
 
+impl GaussianOutcome {
+    /// The half-width of the cell-mean prior on the response scaled to
+    /// [-0.5, 0.5]: sigma_mu = 0.5 / (k sqrt m) (Stone and Gosling 2025,
+    /// s. 2.3.2; Chipman, George and McCulloch 2010, s. 2.2.3).
+    pub(crate) const CELL_PRIOR_HALF_WIDTH: f64 = 0.5;
+}
+
 impl OutcomeModel for GaussianOutcome {
     fn required_data(&self) -> RequiredData {
         RequiredData::Continuous
