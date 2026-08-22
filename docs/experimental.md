@@ -19,6 +19,7 @@ evidence. Removing the gate is a minor version bump.
 
 | Item | Kind | Configuration | Feature since | Calibration | Status | Tracking issue |
 |---|---|---|---|---|---|---|
+| Minkowski distance (Manhattan as p = 1) | distance | `geometry.metric` entries `{"minkowski": {"p": ...}}`, `"manhattan"` | 0.3.0 | conformance, small SBC at p = 1 | experimental | [#61](https://github.com/l-thomson/thiessen/pull/61) |
 
 Columns: the configuration field or `Model` variant; the first core version
 carrying the item behind the feature; calibration status (SBC and Geweke

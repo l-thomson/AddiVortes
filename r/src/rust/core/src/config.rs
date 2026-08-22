@@ -615,6 +615,17 @@ fn validate_term(slot: &str, params: &TermParams) -> Result<()> {
     positive(&format!("{slot}.k"), params.k)?;
     positive(&format!("{slot}.lambda_c"), params.lambda_c)?;
     positive(&format!("{slot}.geometry.sigma_c"), params.geometry.sigma_c)?;
+    #[cfg(feature = "experimental")]
+    for kind in &params.geometry.metric {
+        if let Metric::Minkowski { p } = *kind {
+            if !(p.is_finite() && p >= 1.0) {
+                return Err(invalid(
+                    &format!("{slot}.geometry.metric"),
+                    format!("the Minkowski order must be at least 1, got {p}"),
+                ));
+            }
+        }
+    }
     if let Some(omega) = params.structure.omega {
         positive(&format!("{slot}.structure.omega"), omega)?;
     }
@@ -631,6 +642,21 @@ mod tests {
             config.validate(),
             Err(Error::InvalidHyperparameter { ref name, .. }) if name == field
         ));
+    }
+
+    #[cfg(feature = "experimental")]
+    #[test]
+    fn a_minkowski_order_below_one_is_rejected() {
+        for p in [0.5, f64::NAN, f64::INFINITY] {
+            rejects(
+                Config::new().with_metric(vec![Metric::Minkowski { p }]),
+                "mean_params.geometry.metric",
+            );
+        }
+        assert!(Config::new()
+            .with_metric(vec![Metric::Minkowski { p: 1.0 }])
+            .validate()
+            .is_ok());
     }
 
     #[test]

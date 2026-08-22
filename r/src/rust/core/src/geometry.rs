@@ -12,7 +12,8 @@ use crate::rng::{standard_normal, uniform_index, Rng};
 /// Columns of different metrics combine additively: the key of a row
 /// against a centre is the sum of the squared distances of its metrics
 /// over the active columns.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(not(feature = "experimental"), derive(Eq))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum Metric {
@@ -41,6 +42,23 @@ pub enum Metric {
     /// coordinates are uniform over the levels. A non-integer value is
     /// rejected at fit and predict.
     Categorical,
+    /// Minkowski distance of order `p` >= 1 on the column scaled to
+    /// [-0.5, 0.5] over its training range; centre coordinates
+    /// N(0, sigma_c^2), as Euclidean. The active Minkowski columns of one
+    /// order form a group contributing (sum_d |x_d - c_d|^p)^(2 / p) to
+    /// the key, so p = 2 reproduces Euclidean exactly. The centre prior
+    /// and the structural moves are those of Euclidean; only the
+    /// assignment of rows to cells changes. Experimental
+    /// (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    Minkowski {
+        /// The order, at least 1; 1 is the Manhattan distance.
+        p: f64,
+    },
+    /// [`Metric::Minkowski`] of order 1 under its usual name.
+    /// Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    Manhattan,
 }
 
 /// The column structure of a fit: the metric of each column, the columns
@@ -57,6 +75,9 @@ pub(crate) struct Geometry {
     categories: Vec<Vec<f64>>,
     /// 2 / n^2 of each categorical column; 0 for the other columns.
     weights: Vec<f64>,
+    /// Minkowski column groups, (order, columns), one per distinct order.
+    #[cfg(feature = "experimental")]
+    minkowski: Vec<(f64, Vec<usize>)>,
 }
 
 impl Geometry {
@@ -68,6 +89,8 @@ impl Geometry {
             sphere_of: vec![None; p],
             categories: vec![Vec::new(); p],
             weights: vec![0.0; p],
+            #[cfg(feature = "experimental")]
+            minkowski: Vec::new(),
         }
     }
 
@@ -108,12 +131,30 @@ impl Geometry {
                 sphere_of[col] = Some(index);
             }
         }
+        #[cfg(feature = "experimental")]
+        let minkowski = {
+            let mut groups: Vec<(f64, Vec<usize>)> = Vec::new();
+            for (col, kind) in metric.iter().enumerate() {
+                let p = match *kind {
+                    Metric::Minkowski { p } => p,
+                    Metric::Manhattan => 1.0,
+                    _ => continue,
+                };
+                match groups.iter_mut().find(|(q, _)| q.to_bits() == p.to_bits()) {
+                    Some((_, cols)) => cols.push(col),
+                    None => groups.push((p, vec![col])),
+                }
+            }
+            groups
+        };
         Ok(Self {
             kinds: metric.to_vec(),
             spheres,
             sphere_of,
             categories: vec![Vec::new(); p],
             weights: vec![0.0; p],
+            #[cfg(feature = "experimental")]
+            minkowski,
         })
     }
 
@@ -194,7 +235,12 @@ impl Geometry {
 
     /// Whether column `col` is min-max scaled by the [`Scaler`](crate::Scaler).
     pub(crate) fn scaled(&self, col: usize) -> bool {
-        self.kinds[col] == Metric::Euclidean
+        match self.kinds[col] {
+            Metric::Euclidean => true,
+            #[cfg(feature = "experimental")]
+            Metric::Minkowski { .. } | Metric::Manhattan => true,
+            _ => false,
+        }
     }
 
     /// Every categorical value of `x` is an integer.
@@ -224,7 +270,10 @@ impl Geometry {
     /// coordinates `centre` on the columns `dims`, in `dims` order.
     pub(crate) fn key(&self, row: &[f64], dims: &[usize], centre: &[f64]) -> f64 {
         let mut key = 0.0;
-        if self.spheres.is_empty() && self.weights.iter().all(|&w| w == 0.0) {
+        let plain = self.spheres.is_empty() && self.weights.iter().all(|&w| w == 0.0);
+        #[cfg(feature = "experimental")]
+        let plain = plain && self.minkowski.is_empty();
+        if plain {
             for (&dim, &c) in dims.iter().zip(centre) {
                 let diff = row[dim] - c;
                 key += diff * diff;
@@ -243,7 +292,31 @@ impl Geometry {
                     }
                 }
                 Metric::Spherical { .. } => {}
+                #[cfg(feature = "experimental")]
+                Metric::Minkowski { .. } | Metric::Manhattan => {}
             }
+        }
+        #[cfg(feature = "experimental")]
+        for (p, cols) in &self.minkowski {
+            let mut sum = 0.0;
+            for (&dim, &c) in dims.iter().zip(centre) {
+                if !cols.contains(&dim) {
+                    continue;
+                }
+                let diff = (row[dim] - c).abs();
+                sum += if *p == 2.0 {
+                    diff * diff
+                } else {
+                    maths::powf(diff, *p)
+                };
+            }
+            key += if *p == 2.0 {
+                sum
+            } else if *p == 1.0 {
+                sum * sum
+            } else {
+                maths::powf(sum, 2.0 / *p)
+            };
         }
         for (s, cols) in self.spheres.iter().enumerate() {
             if dims.iter().all(|&dim| self.sphere_of[dim] != Some(s)) {
@@ -278,6 +351,11 @@ impl Geometry {
         (0..p)
             .map(|col| match self.kinds[col] {
                 Metric::Euclidean => Ok(CoordinateLaw::Normal {
+                    mean: 0.0,
+                    sd: sigma_c,
+                }),
+                #[cfg(feature = "experimental")]
+                Metric::Minkowski { .. } | Metric::Manhattan => Ok(CoordinateLaw::Normal {
                     mean: 0.0,
                     sd: sigma_c,
                 }),
@@ -565,6 +643,79 @@ mod tests {
         assert!(g.laws(&wide, 0.8).is_err());
     }
 
+    #[cfg(feature = "experimental")]
+    mod minkowski {
+        use super::*;
+
+        #[test]
+        fn order_two_matches_euclidean_bit_for_bit() {
+            let g = Geometry::structure(&[Metric::Minkowski { p: 2.0 }; 3], 3).unwrap();
+            let e = Geometry::euclidean(3);
+            let row = [0.31, -0.47, 0.055];
+            let centre = [-0.12, 0.4];
+            let dims = [2, 0];
+            assert_eq!(
+                g.key(&row, &dims, &centre).to_bits(),
+                e.key(&row, &dims, &centre).to_bits()
+            );
+        }
+
+        #[test]
+        fn manhattan_equals_order_one() {
+            let m = Geometry::structure(&[Metric::Manhattan; 2], 2).unwrap();
+            let o = Geometry::structure(&[Metric::Minkowski { p: 1.0 }; 2], 2).unwrap();
+            let row = [0.2, -0.3];
+            let key = m.key(&row, &[0, 1], &[-0.1, 0.25]);
+            assert_eq!(key, o.key(&row, &[0, 1], &[-0.1, 0.25]));
+            close(key, (0.3_f64 + 0.55).powi(2));
+        }
+
+        #[test]
+        fn a_group_adds_to_the_euclidean_part() {
+            let g = Geometry::structure(
+                &[
+                    Metric::Euclidean,
+                    Metric::Minkowski { p: 3.0 },
+                    Metric::Minkowski { p: 3.0 },
+                ],
+                3,
+            )
+            .unwrap();
+            let key = g.key(&[0.5, 0.2, -0.1], &[0, 1, 2], &[0.1, -0.2, 0.3]);
+            let group: f64 = 0.4_f64.powi(3) + 0.4_f64.powi(3);
+            close(key, 0.16 + group.powf(2.0 / 3.0));
+        }
+
+        #[test]
+        fn distinct_orders_are_separate_groups() {
+            let g = Geometry::structure(
+                &[Metric::Minkowski { p: 1.0 }, Metric::Minkowski { p: 3.0 }],
+                2,
+            )
+            .unwrap();
+            let key = g.key(&[0.5, 0.2], &[0, 1], &[0.1, -0.2]);
+            close(key, 0.16 + 0.4_f64.powi(3).powf(2.0 / 3.0));
+        }
+
+        #[test]
+        fn an_inactive_group_contributes_nothing() {
+            let g = Geometry::structure(&[Metric::Euclidean, Metric::Manhattan], 2).unwrap();
+            close(g.key(&[0.5, 0.2], &[0], &[0.1]), 0.16);
+        }
+
+        #[test]
+        fn scaled_and_law_follow_euclidean() {
+            let g =
+                Geometry::structure(&[Metric::Minkowski { p: 1.5 }, Metric::Manhattan], 2).unwrap();
+            assert!(g.scaled(0));
+            assert!(g.scaled(1));
+            let x = Data::from_rows(&[[0.0, 1.0], [1.0, 2.0]]).unwrap();
+            for law in g.laws(&x, 0.8).unwrap() {
+                assert_eq!(law, CoordinateLaw::Normal { mean: 0.0, sd: 0.8 });
+            }
+        }
+    }
+
     mod props {
         use super::*;
         use proptest::prelude::*;
@@ -599,6 +750,28 @@ mod tests {
                 prop_assert!(d(a, b) >= 0.0);
                 prop_assert!(d(a, a) < 1e-7);
                 prop_assert!((d(a, b) - d(b, a)).abs() < 1e-9);
+                prop_assert!(d(a, c) <= d(a, b) + d(b, c) + 1e-9);
+            }
+        }
+
+        // The Minkowski key is a squared distance for every order p >= 1.
+        #[cfg(feature = "experimental")]
+        proptest! {
+            #[test]
+            fn minkowski_axioms(
+                a in (-1.0..1.0_f64, -1.0..1.0_f64, -1.0..1.0_f64),
+                b in (-1.0..1.0_f64, -1.0..1.0_f64, -1.0..1.0_f64),
+                c in (-1.0..1.0_f64, -1.0..1.0_f64, -1.0..1.0_f64),
+                p in 1.0..6.0_f64,
+            ) {
+                let g = Geometry::structure(&[Metric::Minkowski { p }; 3], 3).unwrap();
+                let dims = [0, 1, 2];
+                let d = |u: (f64, f64, f64), v: (f64, f64, f64)| {
+                    g.key(&[u.0, u.1, u.2], &dims, &[v.0, v.1, v.2]).sqrt()
+                };
+                prop_assert!(d(a, b) >= 0.0);
+                prop_assert!(d(a, a) == 0.0);
+                prop_assert!((d(a, b) - d(b, a)).abs() < 1e-12);
                 prop_assert!(d(a, c) <= d(a, b) + d(b, c) + 1e-9);
             }
         }

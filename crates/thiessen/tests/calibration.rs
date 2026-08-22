@@ -113,7 +113,13 @@ impl Law {
 enum Space {
     Euclidean,
     Sphere,
-    Categorical { weight: f64 },
+    Categorical {
+        weight: f64,
+    },
+    #[cfg(feature = "experimental")]
+    Minkowski {
+        p: f64,
+    },
 }
 
 /// One model under test: the pinned-prior configuration and the test
@@ -244,6 +250,22 @@ fn categorical_model() -> Model {
         rows,
         space: Space::Categorical { weight: 2.0 / 16.0 },
         laws,
+        ..gaussian
+    }
+}
+
+/// The Gaussian model under the Manhattan metric (Minkowski p = 1) on
+/// both columns: the calibration rows, the Euclidean coordinate laws,
+/// only the assignment of rows to cells changes.
+#[cfg(feature = "experimental")]
+fn minkowski_model() -> Model {
+    let gaussian = gaussian_model();
+    Model {
+        config: gaussian.config.with_metric(vec![
+            Metric::Minkowski { p: 1.0 },
+            Metric::Minkowski { p: 1.0 },
+        ]),
+        space: Space::Minkowski { p: 1.0 },
         ..gaussian
     }
 }
@@ -438,6 +460,15 @@ impl Model {
                         }
                     })
                     .sum();
+            }
+            #[cfg(feature = "experimental")]
+            Space::Minkowski { p } => {
+                let sum: f64 = dims
+                    .iter()
+                    .zip(centre)
+                    .map(|(&dim, c)| (row[dim] - c).abs().powf(p))
+                    .sum();
+                return sum.powf(2.0 / p);
             }
             Space::Sphere => {}
         }
@@ -662,6 +693,14 @@ fn sbc_small_ranks_are_uniform_spherical() {
 fn sbc_small_ranks_are_uniform_categorical() {
     let model = categorical_model();
     let ranks = sbc_ranks(&model, 160, 19, 15, 150, 405);
+    assert_uniform(&model, &ranks, 19);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+fn sbc_small_ranks_are_uniform_minkowski() {
+    let model = minkowski_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 406);
     assert_uniform(&model, &ranks, 19);
 }
 
