@@ -97,12 +97,12 @@ group_config <- function(control) {
   if (length(geometry) > 0L) term$geometry <- geometry
   if (!is.null(control$omega)) term$structure <- list(omega = control$omega)
   mean_params <- term
-  if (!is.null(control$m)) mean_params$num_tessellations <- control$m
+  if (!is.null(control$m)) mean_params$tessellations <- control$m
   variance_params <- term[intersect(names(term), c("geometry", "structure"))]
   if (heteroscedastic) {
     m_var <- control$m_var
     if (is.null(m_var)) m_var <- 40L
-    variance_params$num_tessellations <- m_var
+    variance_params$tessellations <- m_var
   }
   grouped <- list(outcome = stats::setNames(list(outcome), kind))
   if (length(mean_params) > 0L) grouped$mean_params <- mean_params
@@ -126,10 +126,10 @@ flatten_config <- function(grouped) {
   mean_params <- grouped$mean_params
   variance <- grouped$variance_params
   general <- grouped$general_params
-  m_var <- variance$num_tessellations
+  m_var <- variance$tessellations
   if (is.null(m_var)) m_var <- 0L
   gaussian <- identical(kind, "gaussian")
-  m <- mean_params$num_tessellations
+  m <- mean_params$tessellations
   if (is.null(m)) m <- 200L
   list(
     model = if (gaussian && m_var > 0L) "heteroscedastic" else kind,

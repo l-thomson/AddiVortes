@@ -45,7 +45,7 @@ fn hyperparameters_are_validated_at_the_boundary() {
             .validate()
             .unwrap_err(),
         Error::InvalidHyperparameter { ref name, .. }
-            if name == "variance_params.num_tessellations"
+            if name == "variance_params.tessellations"
     ));
     assert!(Config::new().with_m_var(0).validate().is_ok());
 }

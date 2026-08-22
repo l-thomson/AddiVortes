@@ -107,7 +107,7 @@ def _grouped(flat: Mapping[str, Any]) -> dict[str, Any]:
     mean = dict(term)
     m = flat.pop("m", None)
     if m is not None:
-        mean["num_tessellations"] = m
+        mean["tessellations"] = m
 
     # The slots share geometry and structure; the ensemble count is the
     # variance slot's own.
@@ -116,7 +116,7 @@ def _grouped(flat: Mapping[str, Any]) -> dict[str, Any]:
         key: value for key, value in term.items() if key in ("geometry", "structure")
     }
     if heteroscedastic:
-        variance["num_tessellations"] = m_var if m_var is not None else 40
+        variance["tessellations"] = m_var if m_var is not None else 40
 
     general = {
         name: flat.pop(name)
@@ -145,10 +145,10 @@ def _flat_config(grouped: Mapping[str, Any]) -> dict[str, Any]:
     general = grouped.get("general_params", {})
     geometry = mean.get("geometry", {})
     structure = mean.get("structure", {})
-    m_var = variance.get("num_tessellations") or 0
+    m_var = variance.get("tessellations") or 0
     return {
         "model": "heteroscedastic" if kind == "gaussian" and m_var > 0 else kind,
-        "m": mean.get("num_tessellations", 200) or 200,
+        "m": mean.get("tessellations", 200) or 200,
         "nu": params.get("nu", 6.0) if kind == "gaussian" else 6.0,
         "q": params.get("q", 0.85) if kind == "gaussian" else 0.85,
         "k": mean.get("k"),

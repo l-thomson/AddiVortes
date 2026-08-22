@@ -154,9 +154,9 @@ says "Sampled values changed" with the reason.
   prior (`Outcome::Gaussian(GaussianParams { nu, q })`,
   `Outcome::Probit(ProbitParams { offset })`); `mean_params` and
   `variance_params` are one term-group struct instantiated per slot
-  (`num_tessellations`, `k`, `lambda_c`, `geometry` with `metric` and
+  (`tessellations`, `k`, `lambda_c`, `geometry` with `metric` and
   `sigma_c`, `structure` with `omega`, `cell`); `general_params` is the
-  sweep schedule. H-AddiVortes is `variance_params.num_tessellations`
+  sweep schedule. H-AddiVortes is `variance_params.tessellations`
   above 0 in place of a `Model` variant, defaulting to the paper's 40
   through `with_model`. Validity is derived from the outcome's scale
   mode: a variance ensemble under probit is rejected at config

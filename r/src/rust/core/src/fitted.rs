@@ -968,7 +968,7 @@ mod tests {
         assert_ne!(relabelled, json(&probit));
         assert!(serde_json::from_str::<Fitted>(&relabelled).is_err());
         // A heteroscedastic payload with the wrong variance count.
-        let wrong = json(&hetero).replace("\"num_tessellations\":5", "\"num_tessellations\":6");
+        let wrong = json(&hetero).replace("\"tessellations\":5", "\"tessellations\":6");
         assert_ne!(wrong, json(&hetero));
         assert!(serde_json::from_str::<Fitted>(&wrong).is_err());
         // A Gaussian payload without the variance field (a pre-0.2 save).

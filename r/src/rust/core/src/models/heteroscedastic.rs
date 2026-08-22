@@ -1,5 +1,5 @@
 //! The heteroscedastic model, the Gaussian outcome with
-//! `variance_params.num_tessellations` above 0 (H-AddiVortes;
+//! `variance_params.tessellations` above 0 (H-AddiVortes;
 //! the structure is that of HBART, Pratola, Chipman, George and McCulloch
 //! 2020):
 //!

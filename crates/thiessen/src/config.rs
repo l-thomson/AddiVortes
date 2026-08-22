@@ -19,7 +19,7 @@ use crate::outcome::{RequiredData, Sigma2Mode};
 #[serde(rename_all = "snake_case")]
 pub enum Outcome {
     /// y = f(x) + e, e ~ N(0, sigma^2) (Stone and Gosling 2025). With
-    /// `variance_params.num_tessellations` above 0 the spread is the
+    /// `variance_params.tessellations` above 0 the spread is the
     /// variance ensemble's product s^2(x) in place of the global sigma^2
     /// (H-AddiVortes).
     Gaussian(GaussianParams),
@@ -106,7 +106,7 @@ pub struct TermParams {
     /// 200 on the mean slot and to 0 on the variance slot; 0 on the
     /// variance slot is a constant spread, above 0 is H-AddiVortes (the
     /// paper's count is 40).
-    pub num_tessellations: Option<usize>,
+    pub tessellations: Option<usize>,
     /// Cell-value prior spread k: sigma_mu = w / (k sqrt m) with the
     /// half-width w the outcome model owns. Default 3. The variance
     /// ensemble's inverse-gamma cells do not use it.
@@ -127,7 +127,7 @@ pub struct TermParams {
 impl Default for TermParams {
     fn default() -> Self {
         Self {
-            num_tessellations: None,
+            tessellations: None,
             k: 3.0,
             lambda_c: 5.0,
             geometry: GeometryParams::default(),
@@ -140,12 +140,12 @@ impl Default for TermParams {
 impl TermParams {
     /// The count in force on the mean slot: the field, or 200.
     pub(crate) fn mean_tessellations(&self) -> usize {
-        self.num_tessellations.unwrap_or(200)
+        self.tessellations.unwrap_or(200)
     }
 
     /// The count in force on the variance slot: the field, or 0.
     pub(crate) fn variance_tessellations(&self) -> usize {
-        self.num_tessellations.unwrap_or(0)
+        self.tessellations.unwrap_or(0)
     }
 }
 
@@ -396,14 +396,14 @@ impl Config {
     /// Mean-ensemble size m.
     #[must_use]
     pub fn with_m(mut self, m: usize) -> Self {
-        self.mean_params.num_tessellations = Some(m);
+        self.mean_params.tessellations = Some(m);
         self
     }
 
     /// Variance-ensemble size m'; above 0 is H-AddiVortes.
     #[must_use]
     pub fn with_m_var(mut self, m_var: usize) -> Self {
-        self.variance_params.num_tessellations = Some(m_var);
+        self.variance_params.tessellations = Some(m_var);
         self
     }
 
@@ -592,8 +592,8 @@ impl Config {
 
     /// The resolved counts and omega, written back at fit.
     pub(crate) fn resolve(&mut self, omega: f64) {
-        self.mean_params.num_tessellations = Some(self.mean_tessellations());
-        self.variance_params.num_tessellations = Some(self.variance_tessellations());
+        self.mean_params.tessellations = Some(self.mean_tessellations());
+        self.variance_params.tessellations = Some(self.variance_tessellations());
         self.mean_params.structure.omega = Some(omega);
         self.variance_params.structure.omega = Some(omega);
     }
@@ -607,10 +607,7 @@ impl Config {
     /// boundary.
     pub fn validate(&self) -> Result<()> {
         if self.mean_tessellations() < 1 {
-            return Err(invalid(
-                "mean_params.num_tessellations",
-                "must be at least 1",
-            ));
+            return Err(invalid("mean_params.tessellations", "must be at least 1"));
         }
         validate_term("mean_params", &self.mean_params)?;
         match &self.outcome {
@@ -635,7 +632,7 @@ impl Config {
         if m_var > 0 {
             if !self.outcome.sigma2_mode().permits_variance_ensemble() {
                 return Err(invalid(
-                    "variance_params.num_tessellations",
+                    "variance_params.tessellations",
                     "a variance ensemble needs a sampled sigma^2 to carry, and the \
                      probit latent scale is fixed at 1 for identification",
                 ));
@@ -745,7 +742,7 @@ impl TryFrom<ConfigParts> for Config {
         if legacy {
             return Err(invalid(
                 "model",
-                "the flat configuration is replaced by `outcome`, `mean_params`,                  `variance_params` and `general_params`; `model` is the `outcome`                  variant, with a variance ensemble as `variance_params.num_tessellations`",
+                "the flat configuration is replaced by `outcome`, `mean_params`,                  `variance_params` and `general_params`; `model` is the `outcome`                  variant, with a variance ensemble as `variance_params.tessellations`",
             ));
         }
         Ok(Self {
@@ -866,7 +863,7 @@ mod tests {
 
     #[test]
     fn every_field_in_force_is_checked() {
-        rejects(Config::new().with_m(0), "mean_params.num_tessellations");
+        rejects(Config::new().with_m(0), "mean_params.tessellations");
         rejects(Config::new().with_nu(0.0), "nu");
         rejects(Config::new().with_q(1.0), "q");
         rejects(Config::new().with_k(f64::NAN), "mean_params.k");
@@ -901,7 +898,7 @@ mod tests {
         rejects(hetero.clone().with_nu(2.0), "nu");
         rejects(
             Config::new().with_outcome(Outcome::probit()).with_m_var(4),
-            "variance_params.num_tessellations",
+            "variance_params.tessellations",
         );
         let message = Config::new()
             .with_outcome(Outcome::probit())
@@ -950,7 +947,7 @@ mod tests {
         let back: Config = serde_json::from_str(&json).unwrap();
         assert_eq!(back, config);
         let partial: Config =
-            serde_json::from_str(r#"{"mean_params": {"num_tessellations": 7}}"#).unwrap();
+            serde_json::from_str(r#"{"mean_params": {"tessellations": 7}}"#).unwrap();
         assert_eq!(partial, Config::new().with_m(7));
         // A partially specified variance slot keeps the slot's resolution.
         let partial: Config = serde_json::from_str(r#"{"variance_params": {"k": 2.0}}"#).unwrap();
@@ -999,8 +996,8 @@ mod tests {
     fn resolve_writes_the_counts_and_omega_back() {
         let mut config = Config::new().with_m_var(4);
         config.resolve(2.5);
-        assert_eq!(config.mean_params.num_tessellations, Some(200));
-        assert_eq!(config.variance_params.num_tessellations, Some(4));
+        assert_eq!(config.mean_params.tessellations, Some(200));
+        assert_eq!(config.variance_params.tessellations, Some(4));
         assert_eq!(config.mean_params.structure.omega, Some(2.5));
         assert_eq!(config.variance_params.structure.omega, Some(2.5));
     }

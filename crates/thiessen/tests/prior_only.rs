@@ -122,8 +122,7 @@ fn prior_predictive_path_and_serde() {
     assert!(fitted.prediction_interval(&x, 0.9).is_ok());
 
     assert!(!Config::default().general_params.prior_only);
-    let parsed: Config =
-        serde_json::from_str(r#"{"mean_params": {"num_tessellations": 4}}"#).unwrap();
+    let parsed: Config = serde_json::from_str(r#"{"mean_params": {"tessellations": 4}}"#).unwrap();
     assert!(!parsed.general_params.prior_only);
     let parsed: Config =
         serde_json::from_str(r#"{"general_params": {"prior_only": true}}"#).unwrap();
