@@ -188,7 +188,8 @@ impl Sampler {
                 format!("must be finite and positive, got {lambda}"),
             ));
         }
-        if config.model == Model::Probit && config.offset.is_none() {
+        if matches!(config.outcome, crate::config::Outcome::Probit(_)) && config.offset().is_none()
+        {
             return Err(crate::error::invalid(
                 "offset",
                 "must be set under the pinned prior of the probit model",
@@ -208,26 +209,27 @@ impl Sampler {
         let p = x.n_cols();
         let omega = config.omega_for(p);
         data::validate_fit(x, y, omega)?;
-        let geometry = Geometry::fit(&config.metric, x)?;
-        let laws = geometry.laws(x, config.sigma_c)?;
-        if config.model.required_data() == RequiredData::Binary {
+        let geometry = Geometry::fit(&config.mean_params.geometry.metric, x)?;
+        let laws = geometry.laws(x, config.mean_params.geometry.sigma_c)?;
+        if config.model().required_data() == RequiredData::Binary {
             if let Some(row) = y.iter().position(|&v| v != 0.0 && v != 1.0) {
                 return Err(Error::InvalidLabel { row });
             }
         }
         let mut config = config.clone();
-        config.omega = Some(omega);
+        config.resolve(omega);
         let warnings = data::fit_warnings(x);
         let n = x.n_rows();
 
         // Response scaling, lambda and the initial sigma^2 at the model
         // boundary: the probit model keeps the response unscaled and its
         // initial scale is the mode's fixed value.
-        let fixed_scale = match config.model.sigma2_mode() {
+        let fixed_scale = match config.model().sigma2_mode() {
             Sigma2Mode::Fixed(value) => value,
             Sigma2Mode::Sampled | Sigma2Mode::Absent => 1.0,
         };
-        let (scaler, x_scaled, y_scaled, lambda, sigma_sq) = match (config.model, pinned_lambda) {
+        let (nu, q) = config.sigma2_prior();
+        let (scaler, x_scaled, y_scaled, lambda, sigma_sq) = match (config.model(), pinned_lambda) {
             (Model::Probit, Some(lambda)) => (
                 Scaler::identity(p),
                 x.clone(),
@@ -243,19 +245,23 @@ impl Sampler {
             (_, None) => {
                 let (scaler, x_scaled, y_scaled) = Scaler::fit(x, y, &geometry);
                 let sigma_hat = scaler::sigma_hat(&x_scaled, &y_scaled);
-                let lambda = scaler::calibrate_lambda(config.nu, config.q, sigma_hat);
+                let lambda = scaler::calibrate_lambda(nu, q, sigma_hat);
                 (scaler, x_scaled, y_scaled, lambda, sigma_hat * sigma_hat)
             }
         };
-        let half_width = match config.model {
+        let m = config.mean_tessellations();
+        let half_width = match config.model() {
             Model::Probit => ProbitOutcome::CELL_PRIOR_HALF_WIDTH,
             Model::Gaussian | Model::Heteroscedastic => GaussianOutcome::CELL_PRIOR_HALF_WIDTH,
         };
-        let sigma_mu_sq = scaler::sigma_mu_sq(half_width, config.k, config.m);
+        let sigma_mu_sq = scaler::sigma_mu_sq(half_width, config.mean_params.k, m);
+        // Both slots declare identical geometry and structure, so the
+        // variance prior differs from the mean prior only where its group
+        // does.
         let prior = Prior {
             p,
             omega,
-            lambda_c: config.lambda_c,
+            lambda_c: config.mean_params.lambda_c,
             geometry,
             laws,
         };
@@ -265,28 +271,28 @@ impl Sampler {
         // Initial state: m single-cell tessellations on one covariate each,
         // every cell mean ybar / m so the ensemble fit starts at ybar; under
         // the probit model f starts at 0 and the offset carries the mean.
-        let (cell_value, total) = match config.model {
+        let (cell_value, total) = match config.model() {
             Model::Probit => (0.0, 0.0),
-            Model::Gaussian | Model::Heteroscedastic => (mean_y / config.m as f64, mean_y),
+            Model::Gaussian | Model::Heteroscedastic => (mean_y / m as f64, mean_y),
         };
         let mean = Ensemble::new(
             GaussianCells { sigma_mu_sq },
             prior.clone(),
             &x_scaled,
-            config.m,
+            m,
             cell_value,
             total,
             &mut rng,
         );
-        let (outcome, variance) = match config.model {
+        let (outcome, variance) = match config.model() {
             Model::Gaussian => {
                 let mut outcome = GaussianOutcome;
                 outcome.init(&y_scaled);
                 (Outcome::Gaussian(outcome), None)
             }
             Model::Probit => {
-                let mut outcome = ProbitOutcome::new(config.offset, mean_y);
-                config.offset = Some(outcome.offset());
+                let mut outcome = ProbitOutcome::new(config.offset(), mean_y);
+                config.set_offset(outcome.offset());
                 outcome.init(&y_scaled);
                 (Outcome::Probit(outcome), None)
             }
@@ -295,20 +301,24 @@ impl Sampler {
             Model::Heteroscedastic => {
                 let mut outcome = GaussianOutcome;
                 outcome.init(&y_scaled);
-                let (nu, lambda_prime) =
-                    scaler::variance_cell_prior(config.nu, lambda, config.m_var);
+                let m_var = config.variance_tessellations();
+                let (nu_prime, lambda_prime) = scaler::variance_cell_prior(nu, lambda, m_var);
+                let variance_prior = Prior {
+                    lambda_c: config.variance_params.lambda_c,
+                    ..prior
+                };
                 // Every variance cell starts at sigma^2 ^ (1 / m') so the
                 // product starts at the initial sigma^2.
                 let ensemble = Ensemble::new(
                     InverseGammaCells {
-                        nu,
+                        nu: nu_prime,
                         lambda: lambda_prime,
-                        prior_only: config.prior_only,
+                        prior_only: config.general_params.prior_only,
                     },
-                    prior,
+                    variance_prior,
                     &x_scaled,
-                    config.m_var,
-                    libm::pow(sigma_sq, 1.0 / config.m_var as f64),
+                    m_var,
+                    libm::pow(sigma_sq, 1.0 / m_var as f64),
                     sigma_sq,
                     &mut rng,
                 );
@@ -318,12 +328,12 @@ impl Sampler {
         // Zero precision removes the likelihood from every conditional:
         // the integrated-likelihood terms of the acceptance ratio vanish
         // and the cell means are drawn from N(0, sigma_mu^2).
-        let precision = if config.prior_only {
+        let precision = if config.general_params.prior_only {
             vec![0.0; n]
         } else {
             vec![1.0 / sigma_sq; n]
         };
-        let y = match config.model {
+        let y = match config.model() {
             Model::Probit => vec![0.0; n],
             Model::Gaussian | Model::Heteroscedastic => y_scaled,
         };
@@ -367,7 +377,7 @@ impl Sampler {
     /// variance ensemble's structural moves, which the conjugate sweep of
     /// the known-answer tests disables.
     fn update_noise(&mut self, structural: bool) {
-        let prior_only = self.config.prior_only;
+        let prior_only = self.config.general_params.prior_only;
         // The variance ensemble carries the scale: its update, on the
         // residuals e = y - F, replaces the global sigma^2 draw
         // (H-AddiVortes has no global sigma^2).
@@ -407,7 +417,7 @@ impl Sampler {
             // Inv-Gamma(nu / 2, nu lambda / 2).
             Sigma2Mode::Sampled => {
                 self.outcome.draw_extra(&mut self.rng);
-                let nu = self.config.nu;
+                let (nu, _) = self.config.sigma2_prior();
                 let (shape, scale) = if prior_only {
                     (0.5 * nu, 2.0 / (nu * self.lambda))
                 } else {
@@ -816,7 +826,7 @@ mod tests {
 
         let mut sampler = Sampler::new(&config, &x, &labels, 1).unwrap();
         let share = labels.iter().sum::<f64>() / 30.0;
-        let offset = sampler.config().offset.unwrap();
+        let offset = sampler.config().offset().unwrap();
         assert!((maths::normal_cdf(offset) - share).abs() < 1e-9);
         // The response is unscaled and f starts at 0, so the fitted values
         // start at the offset.
@@ -883,7 +893,7 @@ mod tests {
     fn omega_is_resolved_on_the_sampler_config() {
         let (x, y) = toy(10);
         let sampler = Sampler::new(&small(), &x, &y, 1).unwrap();
-        assert_eq!(sampler.config().omega, Some(1.0));
+        assert_eq!(sampler.config().mean_params.structure.omega, Some(1.0));
     }
 
     #[test]
@@ -1044,7 +1054,7 @@ mod tests {
             assert!(stats.n.iter().all(|&c| c > 0.0));
             let sigma_mu_sq = sampler.mean_sigma_mu_sq();
             let (ref_sigma_sq, ref_mus) =
-                quadrature_reference(&stats, sampler.config.nu, lambda, sigma_mu_sq);
+                quadrature_reference(&stats, sampler.config.sigma2_prior().0, lambda, sigma_mu_sq);
 
             for _ in 0..200 {
                 sampler.conjugate_sweep();

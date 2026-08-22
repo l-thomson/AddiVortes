@@ -81,6 +81,22 @@ says "Sampled values changed" with the reason.
 
 ### Changed
 
+- Breaking: the configuration is four groups. `outcome` names the
+  observation model and carries its own parameters and the sigma^2
+  prior (`Outcome::Gaussian(GaussianParams { nu, q })`,
+  `Outcome::Probit(ProbitParams { offset })`); `mean_params` and
+  `variance_params` are one term-group struct instantiated per slot
+  (`num_tessellations`, `k`, `lambda_c`, `geometry` with `metric` and
+  `sigma_c`, `structure` with `omega`, `cell`); `general_params` is the
+  sweep schedule. H-AddiVortes is `variance_params.num_tessellations`
+  above 0 in place of a `Model` variant, defaulting to the paper's 40
+  through `with_model`. Validity is derived from the outcome's scale
+  mode: a variance ensemble under probit is rejected at config
+  assembly, naming identification. The `with_*` setters remain and
+  write into the groups; geometry and structure setters write both
+  slots, which must agree while per-ensemble geometry awaits its
+  identification argument. Sampled values are unchanged for a fixed
+  seed.
 - `Config` is non-exhaustive; construct it with `Config::new` and the
   `with_*` setters.
 - A response lying exactly on a least-squares fit no longer degenerates

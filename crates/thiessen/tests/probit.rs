@@ -35,9 +35,9 @@ fn labels_are_validated_at_the_boundary() {
     let fitted = fit(&config(), &x, &[0.0, 1.0, 1.0, 0.0], 1).unwrap();
     assert_eq!(fitted.model(), Model::Probit);
     // The default offset is Phi^-1(ybar) = 0 at ybar = 1/2.
-    assert!(fitted.config().offset.unwrap().abs() < 1e-9);
+    assert!(fitted.config().offset().unwrap().abs() < 1e-9);
     let explicit = fit(&config().with_offset(0.3), &x, &[0.0, 1.0, 1.0, 0.0], 1).unwrap();
-    assert_eq!(explicit.config().offset, Some(0.3));
+    assert_eq!(explicit.config().offset(), Some(0.3));
 }
 
 /// A probit Friedman function: P(y = 1 | x) = Phi(f(x)) with f the

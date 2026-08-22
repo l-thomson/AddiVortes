@@ -8,7 +8,8 @@ use common::{fixture, SEED};
 fn every_sweep_is_reported_once_in_order() {
     let (config, x, y) = fixture();
     let config = config.with_thinning(2);
-    let total = config.burn_in + config.draws * config.thinning;
+    let schedule = &config.general_params;
+    let total = schedule.burn_in + schedule.draws * schedule.thinning;
     let mut seen = Vec::new();
     thiessen::fit_with_progress(&config, &x, &y, SEED, |completed, reported| {
         seen.push((completed, reported));

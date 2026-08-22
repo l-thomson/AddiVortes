@@ -7,12 +7,13 @@ use thiessen::Config;
 
 #[test]
 fn unknown_config_field_is_rejected() {
-    let err = serde_json::from_str::<Config>(r#"{"m": 5, "membership": "soft"}"#).unwrap_err();
+    let json = r#"{"mean_params": {"geometry": {"membership": "soft"}}}"#;
+    let err = serde_json::from_str::<Config>(json).unwrap_err();
     assert!(err.to_string().contains("membership"), "{err}");
 }
 
 #[test]
-fn unknown_model_is_rejected() {
-    let err = serde_json::from_str::<Config>(r#"{"model": "robust"}"#).unwrap_err();
+fn unknown_outcome_is_rejected() {
+    let err = serde_json::from_str::<Config>(r#"{"outcome": {"robust": {}}}"#).unwrap_err();
     assert!(err.to_string().contains("robust"), "{err}");
 }

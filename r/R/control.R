@@ -64,7 +64,7 @@ thiessen_control <- function(model = NULL, m = NULL, nu = NULL, q = NULL,
                              lambda_c = NULL, burn_in = NULL, draws = NULL,
                              thinning = NULL, prior_only = NULL,
                              offset = NULL, m_var = NULL, metric = NULL) {
-  defaults <- jsonlite::fromJSON(core_defaults(), simplifyVector = FALSE)
+  defaults <- flatten_config(jsonlite::fromJSON(core_defaults(), simplifyVector = FALSE))
   given <- list(
     model = model, m = m, nu = nu, q = q, k = k, sigma_c = sigma_c,
     omega = omega, lambda_c = lambda_c, burn_in = burn_in, draws = draws,

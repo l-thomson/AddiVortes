@@ -63,8 +63,88 @@ config_json <- function(control, call = rlang::caller_env()) {
       call = call
     )
   }
-  fields <- unclass(control)
-  jsonlite::toJSON(fields, auto_unbox = TRUE, digits = NA, null = "null")
+  jsonlite::toJSON(
+    group_config(unclass(control)),
+    auto_unbox = TRUE, digits = NA, null = "null"
+  )
+}
+
+#' Arrange the flat control fields into the core's parameter groups
+#'
+#' @param control A named list of the flat control fields.
+#' @return A named list in the core's grouped shape.
+#' @noRd
+group_config <- function(control) {
+  named_empty <- structure(list(), names = character(0))
+  model <- control$model
+  if (is.null(model)) model <- "gaussian"
+  heteroscedastic <- identical(model, "heteroscedastic")
+  kind <- if (identical(model, "probit")) "probit" else "gaussian"
+  outcome <- named_empty
+  if (identical(kind, "gaussian")) {
+    if (!is.null(control$nu)) outcome$nu <- control$nu
+    if (!is.null(control$q)) outcome$q <- control$q
+  } else if (!is.null(control$offset)) {
+    outcome$offset <- control$offset
+  }
+  term <- named_empty
+  if (!is.null(control$k)) term$k <- control$k
+  if (!is.null(control$lambda_c)) term$lambda_c <- control$lambda_c
+  geometry <- named_empty
+  if (!is.null(control$sigma_c)) geometry$sigma_c <- control$sigma_c
+  if (!is.null(control$metric)) geometry$metric <- control$metric
+  if (length(geometry) > 0L) term$geometry <- geometry
+  if (!is.null(control$omega)) term$structure <- list(omega = control$omega)
+  mean_params <- term
+  if (!is.null(control$m)) mean_params$num_tessellations <- control$m
+  variance_params <- term[intersect(names(term), c("geometry", "structure"))]
+  if (heteroscedastic) {
+    m_var <- control$m_var
+    if (is.null(m_var)) m_var <- 40L
+    variance_params$num_tessellations <- m_var
+  }
+  grouped <- list(outcome = stats::setNames(list(outcome), kind))
+  if (length(mean_params) > 0L) grouped$mean_params <- mean_params
+  if (length(variance_params) > 0L) grouped$variance_params <- variance_params
+  general <- named_empty
+  for (name in c("burn_in", "draws", "thinning", "prior_only")) {
+    if (!is.null(control[[name]])) general[[name]] <- control[[name]]
+  }
+  if (length(general) > 0L) grouped$general_params <- general
+  grouped
+}
+
+#' The flat control fields of a grouped configuration
+#'
+#' @param grouped The core's grouped configuration as a named list.
+#' @return A named list of the flat control fields.
+#' @noRd
+flatten_config <- function(grouped) {
+  kind <- names(grouped$outcome)[[1L]]
+  params <- grouped$outcome[[1L]]
+  mean_params <- grouped$mean_params
+  variance <- grouped$variance_params
+  general <- grouped$general_params
+  m_var <- variance$num_tessellations
+  if (is.null(m_var)) m_var <- 0L
+  gaussian <- identical(kind, "gaussian")
+  list(
+    model = if (gaussian && m_var > 0L) "heteroscedastic" else kind,
+    m = mean_params$num_tessellations,
+    nu = if (gaussian && !is.null(params$nu)) params$nu else 6,
+    q = if (gaussian && !is.null(params$q)) params$q else 0.85,
+    k = mean_params$k,
+    sigma_c = mean_params$geometry$sigma_c,
+    omega = mean_params$structure$omega,
+    lambda_c = mean_params$lambda_c,
+    burn_in = general$burn_in,
+    draws = general$draws,
+    thinning = general$thinning,
+    prior_only = general$prior_only,
+    offset = if (identical(kind, "probit")) params$offset else NULL,
+    m_var = if (m_var > 0L) m_var else 40L,
+    metric = mean_params$geometry$metric
+  )
 }
 
 #' Coerce a design to the numeric matrix the core takes

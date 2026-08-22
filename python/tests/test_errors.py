@@ -65,7 +65,7 @@ def test_the_core_rejects_an_unknown_configuration_field():
 
 
 def test_an_unknown_model_is_rejected():
-    with pytest.raises(ThiessenError, match="unknown model"):
+    with pytest.raises(ThiessenError, match="unknown variant `quantile`"):
         Model(model="quantile").validate()
 
 

@@ -30,13 +30,23 @@ fn toy() -> (Data, Vec<f64>) {
 #[test]
 fn hyperparameters_are_validated_at_the_boundary() {
     let (x, y) = toy();
-    assert!(matches!(
-        fit(&config().with_m_var(0), &x, &y, 1).unwrap_err(),
-        Error::InvalidHyperparameter { ref name, .. } if name == "m_var"
-    ));
+    // A zero variance count is a constant spread, not an error.
+    let plain = fit(&config().with_m_var(0), &x, &y, 1).unwrap();
+    assert_eq!(plain.model(), Model::Gaussian);
     assert!(matches!(
         fit(&config().with_nu(2.0), &x, &y, 1).unwrap_err(),
         Error::InvalidHyperparameter { ref name, .. } if name == "nu"
+    ));
+    // The ensemble needs a sampled scale: rejected under probit, at
+    // config assembly and before data.
+    assert!(matches!(
+        thiessen::Config::new()
+            .with_outcome(thiessen::Outcome::probit())
+            .with_m_var(4)
+            .validate()
+            .unwrap_err(),
+        Error::InvalidHyperparameter { ref name, .. }
+            if name == "variance_params.num_tessellations"
     ));
     assert!(Config::new().with_m_var(0).validate().is_ok());
 }

@@ -32,6 +32,14 @@ const HETEROSCEDASTIC_QUANTITIES: [&str; 10] = [
 ];
 const F_ROWS: [usize; 3] = [10, 25, 40];
 
+/// The Gaussian outcome's sigma^2 prior (nu, q) of a configuration.
+fn gaussian_prior(config: &Config) -> (f64, f64) {
+    match &config.outcome {
+        thiessen::Outcome::Gaussian(params) => (params.nu, params.q),
+        _ => unreachable!("the tests read nu and q under gaussian"),
+    }
+}
+
 /// Significance 0.01 per test family, Bonferroni-split across the
 /// quantities. Gaussian: alpha' = 0.01 / 6 for SBC (chi^2_19 42.198,
 /// chi^2_99 145.404), 0.01 / 7 for Geweke (chi^2_7 23.440, chi^2_3
@@ -285,18 +293,19 @@ impl Model {
             Kind::Gaussian | Kind::Heteroscedastic => 0.5,
             Kind::Probit => 3.0,
         };
-        scale / (self.config.k * (self.config.m as f64).sqrt())
+        scale / (self.config.mean_params.k * (self.config.mean_tessellations() as f64).sqrt())
     }
 
     fn offset(&self) -> f64 {
-        self.config.offset.unwrap_or(0.0)
+        self.config.offset().unwrap_or(0.0)
     }
 
     /// (nu', lambda') of one variance cell.
     fn variance_cell_prior(&self) -> (f64, f64) {
-        let root = 1.0 / self.config.m_var as f64;
+        let root = 1.0 / self.config.variance_tessellations() as f64;
+        let (nu, _) = gaussian_prior(&self.config);
         (
-            2.0 / (1.0 - (1.0 - 2.0 / self.config.nu).powf(root)),
+            2.0 / (1.0 - (1.0 - 2.0 / nu).powf(root)),
             self.lambda.powf(root),
         )
     }
@@ -310,9 +319,15 @@ impl Model {
         value: &dyn Fn(&mut TestRng) -> f64,
     ) -> DrawnTessellation {
         let p = self.x.n_cols();
-        let theta = self.config.omega.unwrap_or(3.0_f64.min(p as f64)) / p as f64;
+        let theta = self
+            .config
+            .mean_params
+            .structure
+            .omega
+            .unwrap_or(3.0_f64.min(p as f64))
+            / p as f64;
         loop {
-            let b = 1 + rng.poisson(self.config.lambda_c);
+            let b = 1 + rng.poisson(self.config.mean_params.lambda_c);
             let mut d = 1;
             for _ in 0..p - 1 {
                 if rng.uniform() < theta {
@@ -351,20 +366,20 @@ impl Model {
     /// 1.
     fn prior_draw(&self, rng: &mut TestRng) -> PriorDraw {
         let sigma_mu = self.sigma_mu();
-        let tessellations = (0..self.config.m)
+        let tessellations = (0..self.config.mean_tessellations())
             .map(|_| self.prior_tessellation(rng, &|rng| sigma_mu * rng.normal()))
             .collect();
         let sigma_sq = match self.kind {
             Kind::Gaussian => {
                 let chi_sq = -2.0 * (rng.uniform().ln() + rng.uniform().ln() + rng.uniform().ln());
-                self.config.nu * self.lambda / chi_sq
+                gaussian_prior(&self.config).0 * self.lambda / chi_sq
             }
             Kind::Probit | Kind::Heteroscedastic => 1.0,
         };
         let variance = match self.kind {
             Kind::Heteroscedastic => {
                 let (nu, lambda) = self.variance_cell_prior();
-                (0..self.config.m_var)
+                (0..self.config.variance_tessellations())
                     .map(|_| {
                         self.prior_tessellation(rng, &|rng| 0.5 * nu * lambda / rng.gamma(0.5 * nu))
                     })

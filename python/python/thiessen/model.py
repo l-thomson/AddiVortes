@@ -17,7 +17,7 @@ import numpy.typing as npt
 
 from . import _native
 from ._arrays import _as_design, _as_response
-from ._config import FIELDS, _config_json
+from ._config import FIELDS, _config_json, _flat_config
 from ._convergence import _warn_convergence
 from ._inference import _to_inference_data
 from ._seed import SeedLike, _resolve_seed
@@ -282,7 +282,7 @@ class FittedModel:
     def config(self) -> dict[str, Any]:
         """dict: The resolved configuration, every field set."""
         parsed: dict[str, Any] = json.loads(self._fitted.config)
-        return parsed
+        return _flat_config(parsed)
 
     @property
     def n_draws(self) -> int:

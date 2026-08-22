@@ -1,6 +1,7 @@
 # Models
 
-The observation models the crate fits, selected by `Config::model`. Each
+The observation models the crate fits, selected by `Config::outcome`
+and, for H-AddiVortes, `variance_params.num_tessellations`. Each
 entry states the model, its priors, what is fixed rather than estimated,
 the correspondence of its parameters with the paper and with the
 BART-family reference implementation, and what the fitted model returns.
@@ -125,8 +126,11 @@ prior mean of the Gaussian model's sigma^2; without the matching the
 product of m' cell values has a mean and spread that grow with m' (HBART
 s. 3.2). nu > 2 is required. The variance ensemble shares lambda_c, omega
 and sigma_c with the mean ensemble; every variance cell starts at
-sigma_hat^(2 / m'), so s^2 starts at sigma_hat^2. Configuration: `m_var`
-(m', default 40).
+sigma_hat^(2 / m'), so s^2 starts at sigma_hat^2. Configuration: the
+Gaussian outcome with `variance_params.num_tessellations` above 0
+(`Config::new().with_m_var(40)`; the paper's m' is 40, and
+`with_model(Model::Heteroscedastic)` supplies it while the flat
+discriminator lasts).
 
 Fitted model: `predict` is the posterior mean of f(x); `predict_variance`
 is s_d^2(x) per draw on the caller's scale (the square of `rbart`'s
