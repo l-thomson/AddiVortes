@@ -1,9 +1,12 @@
 """scikit-learn estimators over the core.
 
-`AddiVortesRegressor` fits the Gaussian and heteroscedastic models;
-`AddiVortesClassifier` fits the binary probit model. Both meet the
-scikit-learn estimator contract, so they compose with `Pipeline`,
-`GridSearchCV`, `cross_val_score` and `sklearn.inspection`.
+`AddiVortesRegressor` fits the Gaussian model, with the heteroscedastic
+extension when a variance ensemble is attached; `AddiVortesClassifier`
+fits the binary probit model. Both meet the scikit-learn estimator
+contract, so they compose with `Pipeline`, `GridSearchCV`,
+`cross_val_score` and `sklearn.inspection`, and the parameter groups
+implement ``get_params``/``set_params``, so grid search routes into them:
+``{"mean_params__tessellations": [50, 200]}``.
 
 Requires scikit-learn 1.6 or later, the `sklearn` extra.
 """
@@ -11,7 +14,7 @@ Requires scikit-learn 1.6 or later, the `sklearn` extra.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Literal, Union, overload
+from typing import Any, Literal, overload
 
 import numpy as np
 import numpy.typing as npt
@@ -21,18 +24,15 @@ from sklearn.utils.validation import check_is_fitted, validate_data
 
 from . import _native
 from ._arrays import _as_response
-from ._config import FIELDS, _config_json
+from ._config import _config_json
 from ._convergence import _warn_convergence
 from ._encoding import Encoding, columns_of, resolve_mask
 from ._seed import SeedLike, _resolve_seed
+from .families import Gaussian, Probit
 from .model import _emit_warnings, _resolve_chains
+from .params import MetricEntry, TermParams
 
 __all__ = ["AddiVortesClassifier", "AddiVortesRegressor"]
-
-MetricEntry = Union[str, "dict[str, dict[str, int]]"]
-
-#: Parameters that are not fields of the core's configuration.
-_NON_CONFIG = frozenset({"random_state", "categorical_features", "n_chains"})
 
 
 class _BaseAddiVortes(BaseEstimator):
@@ -41,34 +41,22 @@ class _BaseAddiVortes(BaseEstimator):
     def __init__(
         self,
         *,
-        m: int = 200,
-        nu: float = 6.0,
-        q: float = 0.85,
-        k: float = 3.0,
-        sigma_c: float = 0.8,
-        omega: float | None = None,
-        lambda_c: float = 5.0,
+        mean_params: TermParams | None = None,
+        variance_params: TermParams | None = None,
         burn_in: int = 200,
         draws: int = 1000,
         thinning: int = 1,
         prior_only: bool = False,
-        metric: Sequence[MetricEntry] | None = None,
         categorical_features: str | Sequence[Any] | None = None,
         n_chains: int = 1,
         random_state: SeedLike = None,
     ) -> None:
-        self.m = m
-        self.nu = nu
-        self.q = q
-        self.k = k
-        self.sigma_c = sigma_c
-        self.omega = omega
-        self.lambda_c = lambda_c
+        self.mean_params = mean_params
+        self.variance_params = variance_params
         self.burn_in = burn_in
         self.draws = draws
         self.thinning = thinning
         self.prior_only = prior_only
-        self.metric = metric
         self.categorical_features = categorical_features
         self.n_chains = n_chains
         self.random_state = random_state
@@ -79,22 +67,30 @@ class _BaseAddiVortes(BaseEstimator):
         tags.target_tags.required = True
         return tags
 
-    def _config(self, model: str, core_metric: list[MetricEntry]) -> str:
-        params = {
-            name: getattr(self, name, None)
-            for name in FIELDS
-            if name not in {"model", "metric"}
-        }
-        params["model"] = model
+    def _user_metric(self) -> Sequence[MetricEntry] | None:
+        """Return the metric declared over the input columns."""
+        if self.mean_params is None or self.mean_params.geometry is None:
+            return None
+        return self.mean_params.geometry.metric
+
+    def _config(self, core_metric: list[MetricEntry]) -> str:
         varies = any(entry != "euclidean" for entry in core_metric)
-        params["metric"] = core_metric if varies else None
-        return _config_json(params)
+        return _config_json(
+            self._outcome(),
+            self.mean_params,
+            self.variance_params,
+            self.burn_in,
+            self.draws,
+            self.thinning,
+            self.prior_only,
+            core_metric=core_metric if varies else None,
+        )
 
     def _encode_fit(self, x: Any) -> npt.NDArray[np.float64]:
         """Learn the categorical encoding and return the core's design."""
         columns = columns_of(x)
         mask = resolve_mask(self.categorical_features, x, len(columns))
-        self._encoding = Encoding.fit(columns, mask, self.metric)
+        self._encoding = Encoding.fit(columns, mask, self._user_metric())
         return self._encoding.transform(columns)
 
     def _encode_predict(self, x: Any) -> npt.NDArray[np.float64]:
@@ -116,7 +112,7 @@ class _BaseAddiVortes(BaseEstimator):
             self._encoding = Encoding.fit(
                 columns_of(x_checked),
                 np.zeros(x_checked.shape[1], dtype=bool),
-                self.metric,
+                self._user_metric(),
             )
             return x_checked, y_checked
         names = getattr(x, "columns", None)
@@ -138,7 +134,7 @@ class _BaseAddiVortes(BaseEstimator):
         self.random_state_ = seed
         design = np.ascontiguousarray(x, dtype=np.float64)
         self._fitted: _native.Fitted = _native.fit(
-            self._config(self._model_name(), self._encoding.core_metric),
+            self._config(self._encoding.core_metric),
             design,
             _as_response(y),
             seed,
@@ -147,7 +143,7 @@ class _BaseAddiVortes(BaseEstimator):
         _emit_warnings(self._fitted, stacklevel=4)
         _warn_convergence(self._fitted, chains, design, stacklevel=4)
 
-    def _model_name(self) -> str:
+    def _outcome(self) -> Gaussian | Probit:
         raise NotImplementedError
 
     def __getstate__(self) -> dict[str, Any]:
@@ -172,33 +168,18 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
 
     Parameters
     ----------
-    model : {'gaussian', 'heteroscedastic'}, default='gaussian'
-        The observation model. 'gaussian' draws one sigma^2 per sweep;
-        'heteroscedastic' carries an ensemble of variance tessellations, so
-        the residual variance varies with x. Binary responses need
-        `AddiVortesClassifier`.
-    m_var : int, default=40
-        Heteroscedastic model only: the number m' of variance tessellations.
-    m : int, default=200
-        Ensemble size m of the mean function.
-    nu : float, default=6.0
-        sigma^2 prior degrees of freedom nu.
-    q : float, default=0.85
-        sigma^2 prior calibration quantile q, Pr(sigma < sigma_hat) = q.
-    k : float, default=3.0
-        Cell-mean prior spread k: sigma_mu = 0.5 / (k sqrt(m)) on the response
-        scaled to [-0.5, 0.5], or 3 / (k sqrt(m)) on the latent scale under
-        the probit model (Chipman, George and McCulloch, 2010, s. 4).
-    sigma_c : float, default=0.8
-        Centre-coordinate prior and proposal standard deviation sigma_c.
-    omega : float, default=None
-        Dimension-count prior parameter omega; omega / p is the prior
-        probability of including a covariate. `None` resolves to
-        min(3, n_features_in_) at fit, so the default is valid for any input.
-    lambda_c : float, default=5.0
-        Cell-count prior rate lambda_c: b - 1 ~ Poisson(lambda_c). The default
-        follows AddiVortes >= 0.6.8. Stone and Gosling (2025), s. 2.3, report
-        25; pass ``lambda_c=25`` for the paper's setting.
+    outcome : Gaussian, optional
+        The outcome family, from `thiessen.gaussian`. `None` is
+        ``gaussian()``. Binary responses need `AddiVortesClassifier`.
+    variance_params : TermParams, optional
+        The ensemble describing the spread. `None`, the default, keeps the
+        spread constant; a positive tessellation count selects the
+        heteroscedastic model, so the residual variance varies with x. The
+        ensembles share one covariate space, declared on `mean_params`.
+    mean_params : TermParams, optional
+        The ensemble describing the average. `None` takes the core's
+        defaults: 200 tessellations, k=3, lambda_c=5, Euclidean geometry.
+        Grid search routes into it: ``mean_params__tessellations``.
     burn_in : int, default=200
         Burn-in sweeps discarded.
     draws : int, default=1000
@@ -207,18 +188,15 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
         Every `thinning`-th sweep after burn-in is kept.
     prior_only : bool, default=False
         Switch the likelihood off, so the chain draws from the prior.
-    metric : sequence, default=None
-        The metric of each input column: ``'euclidean'``, ``'categorical'``,
-        or ``{'spherical': {'sphere': k}}``. `None` is Euclidean throughout.
     categorical_features : None, 'from_dtype' or array_like, default=None
         The categorical columns. `None` takes the input as numeric; for a
         column that needs encoding, either name it here or encode it yourself
         with ``OneHotEncoder(drop='first')`` in a `ColumnTransformer`.
         'from_dtype' reads the pandas categorical dtypes; an array of indices
         or a boolean mask names the columns. A named column becomes d - 1
-        treatment-contrast indicators, the first level as reference, unless its
-        `metric` entry is ``'categorical'``, in which case it passes as
-        integer level codes.
+        treatment-contrast indicators, the first level as reference, unless
+        its entry in the geometry's ``metric`` is ``'categorical'``, in which
+        case it passes as integer level codes.
     n_chains : int, default=1
         The number of chains to run. Each chain has its own seed, derived
         from the resolved seed in the core, and the draws of the chains are
@@ -227,8 +205,8 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
         which needs arviz.
     random_state : int, Generator, RandomState or None, default=None
         The seed. An integer passes through to the core unchanged, so
-        `AddiVortesRegressor(random_state=1)` and `Model(random_state=1)` draw
-        alike.
+        `AddiVortesRegressor(random_state=1)` and `Model(random_state=1)`
+        draw alike.
 
     Attributes
     ----------
@@ -242,6 +220,7 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
     See Also
     --------
     AddiVortesClassifier : The binary probit model.
+    thiessen.TermParams : One ensemble's parameters.
 
     Notes
     -----
@@ -251,66 +230,58 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
     Examples
     --------
     >>> import numpy as np
+    >>> from thiessen import TermParams
     >>> from thiessen.estimators import AddiVortesRegressor
     >>> rng = np.random.default_rng(0)
     >>> X = rng.uniform(size=(60, 2))
     >>> y = 3.0 * (X[:, 0] - 0.4) ** 2 + 0.5 * X[:, 1]
-    >>> model = AddiVortesRegressor(m=10, burn_in=20, draws=40, random_state=1)
+    >>> model = AddiVortesRegressor(mean_params=TermParams(tessellations=10),
+    ...                             burn_in=20, draws=40, random_state=1)
     >>> model.fit(X, y).predict(X).shape
     (60,)
 
-    The paper's cell-count prior is a keyword argument:
+    The paper's cell-count prior is a group parameter:
 
-    >>> paper = AddiVortesRegressor(lambda_c=25, m=10, burn_in=20, draws=40)
+    >>> paper = AddiVortesRegressor(mean_params=TermParams(lambda_c=25.0))
     """
 
     def __init__(
         self,
         *,
-        model: str = "gaussian",
-        m_var: int = 40,
-        m: int = 200,
-        nu: float = 6.0,
-        q: float = 0.85,
-        k: float = 3.0,
-        sigma_c: float = 0.8,
-        omega: float | None = None,
-        lambda_c: float = 5.0,
+        outcome: Gaussian | None = None,
+        mean_params: TermParams | None = None,
+        variance_params: TermParams | None = None,
         burn_in: int = 200,
         draws: int = 1000,
         thinning: int = 1,
         prior_only: bool = False,
-        metric: Sequence[MetricEntry] | None = None,
         categorical_features: str | Sequence[Any] | None = None,
         n_chains: int = 1,
         random_state: SeedLike = None,
     ) -> None:
         super().__init__(
-            m=m,
-            nu=nu,
-            q=q,
-            k=k,
-            sigma_c=sigma_c,
-            omega=omega,
-            lambda_c=lambda_c,
+            mean_params=mean_params,
+            variance_params=variance_params,
             burn_in=burn_in,
             draws=draws,
             thinning=thinning,
             prior_only=prior_only,
-            metric=metric,
             categorical_features=categorical_features,
             n_chains=n_chains,
             random_state=random_state,
         )
-        self.model = model
-        self.m_var = m_var
+        self.outcome = outcome
 
-    def _model_name(self) -> str:
-        # Every other name goes to the core, which holds the list of models
-        # and names the `experimental` feature for a gated one.
-        if self.model == "probit":
-            raise ValueError("model='probit' is a classifier; use AddiVortesClassifier")
-        return self.model
+    def _outcome(self) -> Gaussian | Probit:
+        # The estimator holds no family list of its own: any family object
+        # other than probit passes through for the core to validate.
+        if self.outcome is None:
+            return Gaussian()
+        if isinstance(self.outcome, Probit):
+            raise ValueError(
+                "probit() is a classification family; use AddiVortesClassifier"
+            )
+        return self.outcome
 
     def fit(self, X: Any, y: Any) -> AddiVortesRegressor:
         """Fit the model.
@@ -402,29 +373,17 @@ class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
 
     Parameters
     ----------
-    offset : float, default=None
-        The offset c. `None` resolves to Phi^-1(ybar) at fit, the BART
-        `binaryOffset` default.
-    m : int, default=200
-        Ensemble size m of the mean function.
-    nu : float, default=6.0
-        sigma^2 prior degrees of freedom nu.
-    q : float, default=0.85
-        sigma^2 prior calibration quantile q, Pr(sigma < sigma_hat) = q.
-    k : float, default=3.0
-        Cell-mean prior spread k: sigma_mu = 0.5 / (k sqrt(m)) on the response
-        scaled to [-0.5, 0.5], or 3 / (k sqrt(m)) on the latent scale under
-        the probit model (Chipman, George and McCulloch, 2010, s. 4).
-    sigma_c : float, default=0.8
-        Centre-coordinate prior and proposal standard deviation sigma_c.
-    omega : float, default=None
-        Dimension-count prior parameter omega; omega / p is the prior
-        probability of including a covariate. `None` resolves to
-        min(3, n_features_in_) at fit, so the default is valid for any input.
-    lambda_c : float, default=5.0
-        Cell-count prior rate lambda_c: b - 1 ~ Poisson(lambda_c). The default
-        follows AddiVortes >= 0.6.8. Stone and Gosling (2025), s. 2.3, report
-        25; pass ``lambda_c=25`` for the paper's setting.
+    outcome : Probit, optional
+        The outcome family, from `thiessen.probit`. `None` is ``probit()``,
+        whose offset resolves to Phi^-1(ybar) at fit.
+    variance_params : TermParams, optional
+        Not available: the probit latent scale is fixed at 1 for
+        identification, so the core rejects a positive tessellation count
+        here.
+    mean_params : TermParams, optional
+        The ensemble describing the average. `None` takes the core's
+        defaults: 200 tessellations, k=3, lambda_c=5, Euclidean geometry.
+        Grid search routes into it: ``mean_params__tessellations``.
     burn_in : int, default=200
         Burn-in sweeps discarded.
     draws : int, default=1000
@@ -433,18 +392,15 @@ class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
         Every `thinning`-th sweep after burn-in is kept.
     prior_only : bool, default=False
         Switch the likelihood off, so the chain draws from the prior.
-    metric : sequence, default=None
-        The metric of each input column: ``'euclidean'``, ``'categorical'``,
-        or ``{'spherical': {'sphere': k}}``. `None` is Euclidean throughout.
     categorical_features : None, 'from_dtype' or array_like, default=None
         The categorical columns. `None` takes the input as numeric; for a
         column that needs encoding, either name it here or encode it yourself
         with ``OneHotEncoder(drop='first')`` in a `ColumnTransformer`.
         'from_dtype' reads the pandas categorical dtypes; an array of indices
         or a boolean mask names the columns. A named column becomes d - 1
-        treatment-contrast indicators, the first level as reference, unless its
-        `metric` entry is ``'categorical'``, in which case it passes as
-        integer level codes.
+        treatment-contrast indicators, the first level as reference, unless
+        its entry in the geometry's ``metric`` is ``'categorical'``, in which
+        case it passes as integer level codes.
     n_chains : int, default=1
         The number of chains to run. Each chain has its own seed, derived
         from the resolved seed in the core, and the draws of the chains are
@@ -453,8 +409,8 @@ class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
         which needs arviz.
     random_state : int, Generator, RandomState or None, default=None
         The seed. An integer passes through to the core unchanged, so
-        `AddiVortesRegressor(random_state=1)` and `Model(random_state=1)` draw
-        alike.
+        `AddiVortesRegressor(random_state=1)` and `Model(random_state=1)`
+        draw alike.
 
     Attributes
     ----------
@@ -470,15 +426,18 @@ class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
     See Also
     --------
     AddiVortesRegressor : The Gaussian and heteroscedastic models.
+    thiessen.TermParams : One ensemble's parameters.
 
     Examples
     --------
     >>> import numpy as np
+    >>> from thiessen import TermParams
     >>> from thiessen.estimators import AddiVortesClassifier
     >>> rng = np.random.default_rng(0)
     >>> X = rng.uniform(size=(60, 2))
     >>> y = (X[:, 0] > 0.5).astype(int)
-    >>> model = AddiVortesClassifier(m=10, burn_in=20, draws=40, random_state=1)
+    >>> model = AddiVortesClassifier(mean_params=TermParams(tessellations=10),
+    ...                              burn_in=20, draws=40, random_state=1)
     >>> model.fit(X, y).predict_proba(X).shape
     (60, 2)
     """
@@ -486,49 +445,44 @@ class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
     def __init__(
         self,
         *,
-        offset: float | None = None,
-        m: int = 200,
-        nu: float = 6.0,
-        q: float = 0.85,
-        k: float = 3.0,
-        sigma_c: float = 0.8,
-        omega: float | None = None,
-        lambda_c: float = 5.0,
+        outcome: Probit | None = None,
+        mean_params: TermParams | None = None,
+        variance_params: TermParams | None = None,
         burn_in: int = 200,
         draws: int = 1000,
         thinning: int = 1,
         prior_only: bool = False,
-        metric: Sequence[MetricEntry] | None = None,
         categorical_features: str | Sequence[Any] | None = None,
         n_chains: int = 1,
         random_state: SeedLike = None,
     ) -> None:
         super().__init__(
-            m=m,
-            nu=nu,
-            q=q,
-            k=k,
-            sigma_c=sigma_c,
-            omega=omega,
-            lambda_c=lambda_c,
+            mean_params=mean_params,
+            variance_params=variance_params,
             burn_in=burn_in,
             draws=draws,
             thinning=thinning,
             prior_only=prior_only,
-            metric=metric,
             categorical_features=categorical_features,
             n_chains=n_chains,
             random_state=random_state,
         )
-        self.offset = offset
+        self.outcome = outcome
 
     def __sklearn_tags__(self) -> Any:
         tags = super().__sklearn_tags__()
         tags.classifier_tags.multi_class = False
         return tags
 
-    def _model_name(self) -> str:
-        return "probit"
+    def _outcome(self) -> Gaussian | Probit:
+        if self.outcome is None:
+            return Probit()
+        if not isinstance(self.outcome, Probit):
+            raise ValueError(
+                "AddiVortesClassifier fits the probit model; "
+                "use AddiVortesRegressor for other families"
+            )
+        return self.outcome
 
     def fit(self, X: Any, y: Any) -> AddiVortesClassifier:
         """Fit the model.

@@ -23,12 +23,12 @@ seeded from `None` can still be repeated.
 
 ```python exec="on" source="above" result="text"
 import numpy as np
-from thiessen import Model
+from thiessen import Model, TermParams
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(60, 2))
 y = x[:, 0] + rng.normal(scale=0.1, size=60)
-sweep = {"m": 10, "burn_in": 20, "draws": 40}
+sweep = {"mean_params": TermParams(tessellations=10), "burn_in": 20, "draws": 40}
 
 first = Model(**sweep).fit(x, y, random_state=None)
 repeat = Model(**sweep).fit(x, y, random_state=first.random_state)

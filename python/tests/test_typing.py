@@ -79,16 +79,38 @@ def test_every_public_package_name_is_annotated():
 
 
 def test_the_package_declares_all():
-    from thiessen import _arrays, _config, _encoding, _seed, estimators, model
+    from thiessen import (
+        _arrays,
+        _config,
+        _encoding,
+        _params,
+        _seed,
+        estimators,
+        families,
+        model,
+        params,
+    )
 
-    for module in (_arrays, _config, _encoding, _seed, estimators, model, thiessen):
+    modules = (
+        _arrays,
+        _config,
+        _encoding,
+        _params,
+        _seed,
+        estimators,
+        families,
+        model,
+        params,
+        thiessen,
+    )
+    for module in modules:
         assert module.__all__, module.__name__
 
 
 def test_every_public_callable_has_a_docstring():
-    from thiessen import estimators, model
+    from thiessen import estimators, families, model, params
 
-    for module in (model, estimators):
+    for module in (model, estimators, families, params):
         for name in module.__all__:
             member = getattr(module, name)
             assert member.__doc__, f"{module.__name__}.{name}"

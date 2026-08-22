@@ -7,25 +7,27 @@ compare against the core's stored snapshot.
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 import pytest
+from thiessen import TermParams
 
 SEED = 7
 
 
-class Sweep(TypedDict):
-    """The short sweep schedule the tests share."""
-
-    m: int
-    burn_in: int
-    draws: int
+def sweep(tessellations: int, burn_in: int, draws: int) -> dict[str, Any]:
+    """Return a sweep schedule as constructor arguments."""
+    return {
+        "mean_params": TermParams(tessellations=tessellations),
+        "burn_in": burn_in,
+        "draws": draws,
+    }
 
 
 #: Short enough to keep the suite quick, long enough to fit.
-SMALL: Sweep = {"m": 8, "burn_in": 10, "draws": 20}
+SMALL = sweep(8, 10, 20)
 
 Fixture = tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
 

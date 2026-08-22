@@ -1,5 +1,19 @@
 # API reference
 
+## Outcome families
+
+::: thiessen.gaussian
+
+::: thiessen.probit
+
+## Parameter groups
+
+::: thiessen.TermParams
+
+::: thiessen.GeometryParams
+
+::: thiessen.StructureParams
+
 ## Model
 
 ::: thiessen.Model

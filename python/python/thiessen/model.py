@@ -9,84 +9,62 @@ from __future__ import annotations
 import json
 import os
 import warnings
-from collections.abc import Mapping, Sequence
-from typing import Any, Union
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 
 from . import _native
 from ._arrays import _as_design, _as_response
-from ._config import FIELDS, _config_json, _flat_config
+from ._config import _config_json
 from ._convergence import _warn_convergence
 from ._inference import _to_inference_data
+from ._params import Params
 from ._seed import SeedLike, _resolve_seed
+from .families import Gaussian, Probit
+from .params import TermParams
 
 __all__ = ["FittedModel", "Model"]
 
-MetricSpec = Sequence[Union[str, Mapping[str, Mapping[str, int]]]]
 
-
-class Model:
+class Model(Params):
     """An AddiVortes configuration.
 
-    Every parameter left as `None` takes the core's default, stated below.
-    The parameters are those of Stone and Gosling (2025), s. 2, with the
-    sweep schedule that `fit` runs.
+    The outcome family and the two ensembles are objects with the names of
+    the stored configuration; parameters left unset take the core's
+    defaults. The parameters are those of Stone and Gosling (2025), s. 2,
+    with the sweep schedule that `fit` runs.
 
     Parameters
     ----------
-    model : {'gaussian', 'probit', 'heteroscedastic'}, optional
-        The observation model. Default 'gaussian'.
-    m : int, optional
-        Ensemble size m of the mean function. Default 200.
-    nu : float, optional
-        sigma^2 prior degrees of freedom nu. Default 6. The heteroscedastic
-        model requires nu > 2.
-    q : float, optional
-        sigma^2 prior calibration quantile q, Pr(sigma < sigma_hat) = q.
-        Default 0.85.
-    k : float, optional
-        Cell-mean prior spread k: sigma_mu = 0.5 / (k sqrt(m)) on the
-        response scaled to [-0.5, 0.5], or 3 / (k sqrt(m)) on the latent
-        scale under the probit model (Chipman, George and McCulloch, 2010,
-        s. 4). Default 3.
-    sigma_c : float, optional
-        Centre-coordinate prior and proposal standard deviation sigma_c in
-        the scaled space. Default 0.8.
-    omega : float, optional
-        Dimension-count prior parameter omega; omega / p is the prior
-        probability of including a covariate. Default min(3, p), resolved at
-        fit. Must satisfy 0 < omega <= p.
-    lambda_c : float, optional
-        Cell-count prior rate lambda_c: b - 1 ~ Poisson(lambda_c). Default
-        5, following AddiVortes >= 0.6.8. Stone and Gosling (2025), s. 2.3,
-        report 25; pass ``lambda_c=25`` for the paper's setting.
-    burn_in : int, optional
-        Burn-in sweeps discarded. Default 200.
-    draws : int, optional
-        Posterior draws kept. Default 1000.
-    thinning : int, optional
-        Thinning interval; every `thinning`-th sweep after burn-in is kept.
-        Default 1.
-    prior_only : bool, optional
+    outcome : Gaussian or Probit, optional
+        The outcome family, from `gaussian` or `probit`. Default
+        ``gaussian()``.
+    mean_params : TermParams, optional
+        The ensemble describing the average. Default ``TermParams()``,
+        whose tessellation count resolves to 200.
+    variance_params : TermParams, optional
+        The ensemble describing the spread. Default none: the spread is
+        constant. A positive tessellation count selects the
+        heteroscedastic model and needs the Gaussian family with nu > 2;
+        the paper's count is 40.
+    burn_in : int, default=200
+        Burn-in sweeps discarded.
+    draws : int, default=1000
+        Posterior draws kept.
+    thinning : int, default=1
+        Thinning interval; every `thinning`-th sweep after burn-in is
+        kept.
+    prior_only : bool, default=False
         Switch the likelihood off, so the chain draws from the prior and
-        `predict` gives prior predictive draws. Default False.
-    offset : float, optional
-        Probit model only: the offset c in P(y = 1 | x) = Phi(c + f(x)).
-        Default Phi^-1(ybar), resolved at fit.
-    m_var : int, optional
-        Heteroscedastic model only: the number m' of variance
-        tessellations. Default 40.
-    metric : sequence, optional
-        The metric of each covariate column, one entry per column in column
-        order: ``'euclidean'``, ``'categorical'``, or
-        ``{'spherical': {'sphere': k}}`` with `k` the sphere label. Default
-        Euclidean on every column. Non-Euclidean columns are not scaled.
+        `predict` gives prior predictive draws.
 
     See Also
     --------
     FittedModel : The result of `fit`.
+    thiessen.gaussian, thiessen.probit : The outcome families.
+    thiessen.TermParams : One ensemble's parameters.
 
     Notes
     -----
@@ -97,58 +75,48 @@ class Model:
     Examples
     --------
     >>> import numpy as np
-    >>> from thiessen import Model
+    >>> from thiessen import Model, TermParams
     >>> x = np.linspace(0.0, 1.0, 40).reshape(-1, 1)
     >>> y = 3.0 * x[:, 0] ** 2 - x[:, 0]
-    >>> fitted = Model(m=10, burn_in=20, draws=30).fit(x, y, random_state=42)
-    >>> fitted.predict(x).shape
+    >>> model = Model(mean_params=TermParams(tessellations=10),
+    ...               burn_in=20, draws=30)
+    >>> model.fit(x, y, random_state=42).predict(x).shape
     (40,)
+
+    The heteroscedastic model attaches a variance ensemble:
+
+    >>> hetero = Model(variance_params=TermParams(tessellations=40))
     """
 
     def __init__(
         self,
         *,
-        model: str | None = None,
-        m: int | None = None,
-        nu: float | None = None,
-        q: float | None = None,
-        k: float | None = None,
-        sigma_c: float | None = None,
-        omega: float | None = None,
-        lambda_c: float | None = None,
-        burn_in: int | None = None,
-        draws: int | None = None,
-        thinning: int | None = None,
-        prior_only: bool | None = None,
-        offset: float | None = None,
-        m_var: int | None = None,
-        metric: MetricSpec | None = None,
+        outcome: Gaussian | Probit | None = None,
+        mean_params: TermParams | None = None,
+        variance_params: TermParams | None = None,
+        burn_in: int = 200,
+        draws: int = 1000,
+        thinning: int = 1,
+        prior_only: bool = False,
     ) -> None:
-        self.model = model
-        self.m = m
-        self.nu = nu
-        self.q = q
-        self.k = k
-        self.sigma_c = sigma_c
-        self.omega = omega
-        self.lambda_c = lambda_c
+        self.outcome = outcome
+        self.mean_params = mean_params
+        self.variance_params = variance_params
         self.burn_in = burn_in
         self.draws = draws
         self.thinning = thinning
         self.prior_only = prior_only
-        self.offset = offset
-        self.m_var = m_var
-        self.metric = metric
 
-    def get_params(self) -> dict[str, Any]:
-        """Return the set configuration fields.
-
-        Returns
-        -------
-        dict
-            Field name to value for every field, `None` for unset.
-        """
-        return {name: getattr(self, name) for name in FIELDS}
+    def _json(self) -> str:
+        return _config_json(
+            self.outcome,
+            self.mean_params,
+            self.variance_params,
+            self.burn_in,
+            self.draws,
+            self.thinning,
+            self.prior_only,
+        )
 
     def validate(self) -> None:
         """Validate the configuration without data.
@@ -157,9 +125,11 @@ class Model:
         ------
         ThiessenError
             Naming the field at fault. Checks that need the data, the
-            omega <= p bound and the length of `metric`, run at fit.
+            omega <= p bound and the length of ``metric``, run at fit.
+        TypeError
+            For a group that is not its parameter object.
         """
-        _native.validate_config(_config_json(self.get_params()))
+        _native.validate_config(self._json())
 
     def fit(
         self,
@@ -174,17 +144,18 @@ class Model:
         ----------
         X : array_like of shape (n_samples, n_features)
             The design. Euclidean columns are min-max scaled over their
-            training range; spherical columns are coordinates in radians and
-            categorical columns are integer level codes, neither scaled.
+            training range; spherical columns are coordinates in radians
+            and categorical columns are integer level codes, neither
+            scaled.
         y : array_like of shape (n_samples,)
-            The response. Labels in {0, 1} under the probit model.
+            The response. Labels in {0, 1} under the probit family.
         random_state : int, numpy.random.Generator, numpy.random.RandomState or None
             The seed. `None` draws fresh entropy. The resolved seed is on
             the returned object.
         n_chains : int, default=1
             The number of chains to run. Each chain has its own seed,
-            derived from the resolved seed in the core, and the draws of the
-            chains are pooled.
+            derived from the resolved seed in the core, and the draws of
+            the chains are pooled.
 
         Returns
         -------
@@ -211,20 +182,10 @@ class Model:
         response = _as_response(y)
         seed = _resolve_seed(random_state)
         chains = _resolve_chains(n_chains)
-        fitted = _native.fit(
-            _config_json(self.get_params()), design, response, seed, chains
-        )
+        fitted = _native.fit(self._json(), design, response, seed, chains)
         _emit_warnings(fitted, stacklevel=3)
         _warn_convergence(fitted, chains, design, stacklevel=3)
         return FittedModel(fitted, seed, chains)
-
-    def __repr__(self) -> str:
-        set_fields = ", ".join(
-            f"{name}={value!r}"
-            for name, value in self.get_params().items()
-            if value is not None
-        )
-        return f"Model({set_fields})"
 
 
 def _emit_warnings(fitted: _native.Fitted, stacklevel: int) -> None:
@@ -280,9 +241,14 @@ class FittedModel:
 
     @property
     def config(self) -> dict[str, Any]:
-        """dict: The resolved configuration, every field set."""
+        """dict: The resolved configuration, the core's four groups.
+
+        Every field is set: the outcome family under ``outcome``, the two
+        ensembles under ``mean_params`` and ``variance_params``, and the
+        sweep schedule under ``general_params``.
+        """
         parsed: dict[str, Any] = json.loads(self._fitted.config)
-        return _flat_config(parsed)
+        return parsed
 
     @property
     def n_draws(self) -> int:
@@ -315,7 +281,7 @@ class FittedModel:
         -------
         numpy.ndarray of shape (n_samples,)
             The posterior mean of f(x), or of P(y = 1 | x) under the probit
-            model.
+            family.
         """
         return self._fitted.predict(_as_design(X))
 
@@ -345,7 +311,7 @@ class FittedModel:
         Returns
         -------
         numpy.ndarray of shape (n_draws, n_samples)
-            f(x), or the latent mean c + f(x) under the probit model.
+            f(x), or the latent mean c + f(x) under the probit family.
         """
         return self._fitted.predict_latent(_as_design(X))
 
@@ -366,7 +332,7 @@ class FittedModel:
         Raises
         ------
         ThiessenError
-            Under the probit model, whose latent variance is one.
+            Under the probit family, whose latent variance is one.
         """
         return self._fitted.predict_variance(_as_design(X))
 
@@ -408,7 +374,7 @@ class FittedModel:
         -------
         numpy.ndarray of shape (n_samples, 2)
             Lower and upper ends. On the probability scale under the probit
-            model.
+            family.
         """
         return self._fitted.credible_interval(_as_design(X), float(level))
 
@@ -433,7 +399,7 @@ class FittedModel:
         Raises
         ------
         ThiessenError
-            Under the probit model, which has no continuous predictive
+            Under the probit family, which has no continuous predictive
             distribution.
         """
         return self._fitted.prediction_interval(_as_design(X), float(level))
@@ -461,9 +427,9 @@ class FittedModel:
         Returns
         -------
         numpy.ndarray of shape (n_draws,)
-            Empty under the probit model, whose latent variance is one, and
-            under the heteroscedastic model, where `predict_variance` gives
-            s^2(x).
+            Empty under the probit family, whose latent variance is one,
+            and under the heteroscedastic model, where `predict_variance`
+            gives s^2(x).
         """
         return self._fitted.sigma()
 

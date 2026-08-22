@@ -24,13 +24,14 @@ conversion.
 
 ```python exec="on" source="above" result="text"
 import numpy as np
-from thiessen import Model
+from thiessen import Model, TermParams
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(200, 3))
 y = 3.0 * (x[:, 0] - 0.4) ** 2 + 0.5 * x[:, 1] + rng.normal(scale=0.1, size=200)
 
-fitted = Model(m=50, burn_in=100, draws=200).fit(x, y, random_state=1)
+model = Model(mean_params=TermParams(tessellations=50), burn_in=100, draws=200)
+fitted = model.fit(x, y, random_state=1)
 
 print("draws:", fitted.n_draws)
 print("in-sample RMSE:", round(fitted.in_sample_rmse, 4))
@@ -48,12 +49,14 @@ new observation.
 
 ```python exec="on" source="above" result="text"
 import numpy as np
-from thiessen import Model
+from thiessen import Model, TermParams
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(120, 2))
 y = x[:, 0] + rng.normal(scale=0.1, size=120)
-fitted = Model(m=25, burn_in=50, draws=100).fit(x, y, random_state=1)
+fitted = Model(mean_params=TermParams(tessellations=25), burn_in=50, draws=100).fit(
+    x, y, random_state=1
+)
 
 credible = fitted.credible_interval(x, level=0.9)
 predictive = fitted.prediction_interval(x, level=0.9)
@@ -68,12 +71,14 @@ print(
 
 ```python exec="on" source="above" result="text"
 import numpy as np
-from thiessen import Model
+from thiessen import Model, TermParams
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(150, 4))
 y = 2.0 * x[:, 0] + rng.normal(scale=0.1, size=150)
-fitted = Model(m=25, burn_in=50, draws=100).fit(x, y, random_state=1)
+fitted = Model(mean_params=TermParams(tessellations=25), burn_in=50, draws=100).fit(
+    x, y, random_state=1
+)
 
 proportions = fitted.variable_inclusion_proportions()
 print("inclusion proportions:", np.round(proportions, 3))
@@ -93,12 +98,13 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-from thiessen import FittedModel, Model
+from thiessen import FittedModel, Model, TermParams
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(60, 2))
 y = x[:, 0] + rng.normal(scale=0.1, size=60)
-fitted = Model(m=10, burn_in=20, draws=40).fit(x, y, random_state=1)
+model = Model(mean_params=TermParams(tessellations=10), burn_in=20, draws=40)
+fitted = model.fit(x, y, random_state=1)
 
 with tempfile.TemporaryDirectory() as directory:
     path = Path(directory) / "fit.json"

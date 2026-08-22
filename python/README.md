@@ -34,15 +34,32 @@ pip install -e python/
 
 ```python
 import numpy as np
-from thiessen import Model
+from thiessen import Model, TermParams
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(200, 3))
 y = 3.0 * (x[:, 0] - 0.4) ** 2 + 0.5 * x[:, 1] + rng.normal(scale=0.1, size=200)
 
-fitted = Model(m=50, burn_in=100, draws=200).fit(x, y, random_state=1)
+model = Model(mean_params=TermParams(tessellations=50), burn_in=100, draws=200)
+fitted = model.fit(x, y, random_state=1)
 mean = fitted.predict(x)
 lower, upper = fitted.credible_interval(x, level=0.9).T
+```
+
+The configuration has four parts, named as the core stores them: an outcome
+family from `gaussian()` or `probit()`, one `TermParams` group per ensemble
+(`mean_params`, and `variance_params` for the heteroscedastic model), and
+the flat run-length settings. Parameters left unset take the core's
+defaults.
+
+```python
+from thiessen import gaussian
+
+hetero = Model(
+    outcome=gaussian(nu=10.0),
+    mean_params=TermParams(tessellations=200, lambda_c=25.0),
+    variance_params=TermParams(tessellations=40),
+)
 ```
 
 `random_state` takes an integer, a `numpy.random.Generator`, a
@@ -60,9 +77,23 @@ the scikit-learn contract, so they compose with `Pipeline`, `GridSearchCV`,
 from sklearn.inspection import PartialDependenceDisplay
 from thiessen.estimators import AddiVortesRegressor
 
-model = AddiVortesRegressor(m=50, burn_in=100, draws=200, random_state=1)
+model = AddiVortesRegressor(
+    mean_params=TermParams(tessellations=50),
+    burn_in=100,
+    draws=200,
+    random_state=1,
+)
 model.fit(x, y)
 PartialDependenceDisplay.from_estimator(model, x, features=[0, 1])
+```
+
+The parameter groups implement `get_params`/`set_params`, so grid search
+routes into them with keys of the form `<group>__<parameter>`:
+
+```python
+from sklearn.model_selection import GridSearchCV
+
+GridSearchCV(model, {"mean_params__tessellations": [50, 200]})
 ```
 
 `AddiVortesClassifier` fits the binary probit model and carries
@@ -72,18 +103,18 @@ agree.
 
 ### Priors
 
-| Parameter | Default | Stone and Gosling (2025) |
-| --- | --- | --- |
-| `m` | 200 | 200 |
-| `nu` | 6 | 6 |
-| `q` | 0.85 | 0.85 |
-| `k` | 3 | 3 |
-| `sigma_c` | 0.8 | 0.8 |
-| `omega` | min(3, p) | min(3, p) |
-| `lambda_c` | 5 | 25 |
+| Parameter | Where | Default | Stone and Gosling (2025) |
+| --- | --- | --- | --- |
+| `tessellations` | `TermParams` | 200 | 200 |
+| `nu` | `gaussian()` | 6 | 6 |
+| `q` | `gaussian()` | 0.85 | 0.85 |
+| `k` | `TermParams` | 3 | 3 |
+| `sigma_c` | `GeometryParams` | 0.8 | 0.8 |
+| `omega` | `StructureParams` | min(3, p) | min(3, p) |
+| `lambda_c` | `TermParams` | 5 | 25 |
 
-The `lambda_c` default follows AddiVortes >= 0.6.8; pass `lambda_c=25` for the
-paper's value.
+The `lambda_c` default follows AddiVortes >= 0.6.8; pass
+`TermParams(lambda_c=25.0)` for the paper's value.
 
 ### Categorical covariates
 
@@ -100,9 +131,9 @@ ColumnTransformer([("g", OneHotEncoder(drop="first"), ["group"])])
 
 Naming the columns instead has the estimator apply the same d - 1
 treatment-contrast encoding, the first level as reference, as upstream
-AddiVortes and `model.matrix`. A column whose `metric` entry is
-`'categorical'` passes as integer level codes and takes the Eskin mismatch
-weight rather than being expanded.
+AddiVortes and `model.matrix`. A column whose entry in the geometry's
+`metric` is `'categorical'` passes as integer level codes and takes the
+Eskin mismatch weight rather than being expanded.
 
 ## arviz
 
@@ -120,8 +151,10 @@ The sampler runs one chain, so every group has a chain dimension of one.
 
 ## Models and the stable surface
 
-`model` takes `gaussian`, `probit` or `heteroscedastic`, the models of Stone
-and Gosling (2025) and of CRAN AddiVortes. Everything else the core crate adds
+The families are `gaussian()` and `probit()`, and attaching
+`variance_params` with a positive tessellation count to the Gaussian family
+selects the heteroscedastic model: the models of Stone and Gosling (2025)
+and of CRAN AddiVortes. Everything else the core crate adds
 sits behind its `experimental` Cargo feature, which this package does not
 enable, so a configuration or a saved model naming such an option is rejected
 with the core's message naming the feature. The table of experimental items and

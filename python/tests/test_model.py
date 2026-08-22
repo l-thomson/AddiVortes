@@ -6,7 +6,15 @@ import pickle
 
 import numpy as np
 import pytest
-from thiessen import CORE_VERSION, FittedModel, Model, ThiessenError
+from thiessen import (
+    CORE_VERSION,
+    FittedModel,
+    GeometryParams,
+    Model,
+    TermParams,
+    ThiessenError,
+    probit,
+)
 
 from .conftest import SMALL
 
@@ -28,13 +36,12 @@ def test_defaults_come_from_the_core(gaussian_fixture):
     fitted = Model(**SMALL).fit(x, y, random_state=1)
 
     config = fitted.config
-    assert config["model"] == "gaussian"
-    assert config["lambda_c"] == 5.0
-    assert config["nu"] == 6.0
-    assert config["q"] == 0.85
-    assert config["k"] == 3.0
+    assert config["outcome"] == {"gaussian": {"nu": 6.0, "q": 0.85}}
+    assert config["mean_params"]["lambda_c"] == 5.0
+    assert config["mean_params"]["k"] == 3.0
+    assert config["mean_params"]["geometry"]["sigma_c"] == 0.8
     # omega resolves at fit to min(3, p).
-    assert config["omega"] == 2.0
+    assert config["mean_params"]["structure"]["omega"] == 2.0
 
 
 def test_posterior_accessors_have_one_value_per_draw(gaussian_fixture):
@@ -75,7 +82,7 @@ def test_log_likelihood_is_draw_major(gaussian_fixture):
 
 def test_probit_predicts_probabilities(probit_fixture):
     x, y = probit_fixture
-    fitted = Model(model="probit", **SMALL).fit(x, y, random_state=1)
+    fitted = Model(outcome=probit(), **SMALL).fit(x, y, random_state=1)
 
     probabilities = fitted.predict(x)
     assert np.all((probabilities >= 0.0) & (probabilities <= 1.0))
@@ -88,7 +95,9 @@ def test_probit_predicts_probabilities(probit_fixture):
 
 def test_heteroscedastic_variance_varies_by_row(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(model="heteroscedastic", m_var=5, **SMALL).fit(x, y, random_state=1)
+    fitted = Model(variance_params=TermParams(tessellations=5), **SMALL).fit(
+        x, y, random_state=1
+    )
 
     variance = fitted.predict_variance(x)
     assert variance.shape == (20, 48)
@@ -109,7 +118,7 @@ def test_prior_only_ignores_the_response(gaussian_fixture):
     fitted = Model(prior_only=True, **SMALL).fit(x, y, random_state=1)
 
     assert fitted.in_sample_rmse > 0.0
-    assert fitted.config["prior_only"] is True
+    assert fitted.config["general_params"]["prior_only"] is True
 
 
 def test_pickle_round_trip_preserves_predictions(gaussian_fixture):
@@ -141,9 +150,13 @@ def test_metric_accepts_a_spherical_column():
     x = np.column_stack([latitude, longitude])
     y = np.sin(latitude) + 0.1 * longitude
 
+    spherical = [{"spherical": {"sphere": 0}}, {"spherical": {"sphere": 0}}]
     fitted = Model(
-        metric=[{"spherical": {"sphere": 0}}, {"spherical": {"sphere": 0}}],
-        **SMALL,
+        mean_params=TermParams(
+            tessellations=8, geometry=GeometryParams(metric=spherical)
+        ),
+        burn_in=10,
+        draws=20,
     ).fit(x, y, random_state=1)
 
     assert fitted.predict(x).shape == (n,)
@@ -156,20 +169,44 @@ def test_metric_accepts_a_categorical_column():
     x = np.column_stack([continuous, codes])
     y = continuous + codes
 
-    fitted = Model(metric=["euclidean", "categorical"], **SMALL).fit(
-        x, y, random_state=1
-    )
+    geometry = GeometryParams(metric=["euclidean", "categorical"])
+    fitted = Model(
+        mean_params=TermParams(tessellations=8, geometry=geometry),
+        burn_in=10,
+        draws=20,
+    ).fit(x, y, random_state=1)
 
     assert fitted.predict(x).shape == (n,)
 
 
 def test_repr_shows_only_the_set_fields():
-    assert repr(Model(m=10)) == "Model(m=10)"
+    model = Model(mean_params=TermParams(tessellations=10))
+    assert repr(model) == "Model(mean_params=TermParams(tessellations=10))"
 
 
 def test_validate_rejects_a_bad_hyperparameter():
-    with pytest.raises(ThiessenError, match="m"):
-        Model(m=0).validate()
+    with pytest.raises(ThiessenError, match="mean_params.tessellations"):
+        Model(mean_params=TermParams(tessellations=0)).validate()
+
+
+def test_validate_reports_the_probit_identification_rule():
+    invalid = Model(outcome=probit(), variance_params=TermParams(tessellations=5))
+    with pytest.raises(ThiessenError, match="fixed at 1 for identification"):
+        invalid.validate()
+
+
+def test_the_ensembles_share_the_declared_geometry(gaussian_fixture):
+    x, y = gaussian_fixture
+    fitted = Model(
+        mean_params=TermParams(tessellations=8, geometry=GeometryParams(sigma_c=0.5)),
+        variance_params=TermParams(tessellations=5),
+        burn_in=10,
+        draws=20,
+    ).fit(x, y, random_state=1)
+
+    config = fitted.config
+    assert config["variance_params"]["geometry"] == config["mean_params"]["geometry"]
+    assert config["mean_params"]["geometry"]["sigma_c"] == 0.5
 
 
 def test_core_version_is_reported():

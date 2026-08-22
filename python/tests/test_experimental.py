@@ -1,9 +1,10 @@
 """The exposure policy for items behind the core's `experimental` feature.
 
 This release builds the core without the feature, so the package exposes the
-published models only. The package keeps no list of model names: every name is
-validated by the core, which is what makes the policy hold without a change
-here when an item is added or graduates.
+published models only. A gated outcome has no constructor in this package,
+and a configuration naming a gated field or variant fails to deserialise in
+the core, which is what makes the policy hold without a change here when an
+item is added or graduates.
 """
 
 from __future__ import annotations
@@ -11,12 +12,11 @@ from __future__ import annotations
 import json
 
 import pytest
-from thiessen import Model, ThiessenError, _native
-from thiessen.estimators import AddiVortesClassifier, AddiVortesRegressor
+from thiessen import Model, TermParams, ThiessenError, _native, probit
+from thiessen.estimators import AddiVortesClassifier
+from thiessen.families import Probit
 
 from .conftest import SMALL
-
-PUBLISHED = ("gaussian", "probit", "heteroscedastic")
 
 #: Names reserved for items behind the feature; none is accepted here.
 GATED = (
@@ -32,34 +32,43 @@ GATED = (
     "composite",
 )
 
+#: Configuration fields that exist behind the feature only.
+GATED_FIELDS = (
+    ("mean_params", {"geometry": {"precision": [1.0]}}),
+    ("mean_params", {"structure": {"inclusion": "uniform"}}),
+    ("mean_params", {"cell": {"basis": "linear"}}),
+)
+
 
 def test_the_extension_is_built_without_the_feature():
     assert _native.EXPERIMENTAL is False
 
 
 def test_the_published_models_are_accepted():
-    for name in PUBLISHED:
-        Model(model=name).validate()
+    Model().validate()
+    Model(outcome=probit()).validate()
+    Model(variance_params=TermParams(tessellations=40)).validate()
 
 
 @pytest.mark.parametrize("name", GATED)
-def test_a_gated_name_is_rejected(name):
+def test_a_gated_outcome_fails_to_deserialise(name):
     with pytest.raises(ThiessenError):
-        Model(model=name).validate()
+        _native.validate_config(json.dumps({"outcome": {name: {}}}))
 
 
-@pytest.mark.parametrize("name", GATED)
-def test_the_estimators_reject_a_gated_name(name, gaussian_fixture):
-    x, y = gaussian_fixture
-    with pytest.raises(ValueError):
-        AddiVortesRegressor(model=name, **SMALL).fit(x, y)
+def test_no_constructor_exists_for_a_gated_outcome():
+    from thiessen import families, params
+
+    for module in (families, params):
+        exposed = {name.lower() for name in dir(module)}
+        assert not exposed & set(GATED)
+    assert set(families.__all__) == {"Gaussian", "Probit", "gaussian", "probit"}
 
 
-def test_the_estimators_hold_no_model_list():
-    """The estimator passes the name through; the core rejects it."""
-    assert AddiVortesRegressor(model="soft")._model_name() == "soft"
-    with pytest.raises(ThiessenError, match="unknown variant `soft`"):
-        Model(model="soft").validate()
+@pytest.mark.parametrize(("group", "fields"), GATED_FIELDS)
+def test_a_gated_field_fails_to_deserialise(group, fields):
+    with pytest.raises(ThiessenError):
+        _native.validate_config(json.dumps({group: fields}))
 
 
 def test_a_saved_model_naming_a_gated_option_fails_to_load(gaussian_fixture):
@@ -90,4 +99,4 @@ def test_the_package_exposes_no_gated_names():
 
 
 def test_the_classifier_is_always_probit():
-    assert AddiVortesClassifier()._model_name() == "probit"
+    assert isinstance(AddiVortesClassifier()._outcome(), Probit)
