@@ -10,7 +10,7 @@ use common::{fixture, SEED};
 use thiessen::{fit, Config, GowerKind, Metric};
 
 fn minkowski(p: f64) -> Vec<Metric> {
-    vec![Metric::Minkowski { p }; 2]
+    vec![Metric::Minkowski { p, group: 0 }; 2]
 }
 
 #[test]
@@ -29,7 +29,9 @@ fn order_two_reproduces_the_euclidean_chain() {
 fn manhattan_is_minkowski_of_order_one() {
     let (config, x, y) = fixture();
     let named = fit(
-        &config.clone().with_metric(vec![Metric::Manhattan; 2]),
+        &config
+            .clone()
+            .with_metric(vec![Metric::Manhattan { group: 0 }; 2]),
         &x,
         &y,
         SEED,
@@ -53,7 +55,10 @@ fn order_one_changes_the_chain() {
 
 #[test]
 fn the_configuration_round_trips() {
-    let config = Config::new().with_metric(vec![Metric::Minkowski { p: 1.5 }, Metric::Manhattan]);
+    let config = Config::new().with_metric(vec![
+        Metric::Minkowski { p: 1.5, group: 0 },
+        Metric::Manhattan { group: 0 },
+    ]);
     let json = serde_json::to_string(&config).unwrap();
     assert!(json.contains(r#"{"minkowski":{"p":1.5}}"#), "{json}");
     assert!(json.contains(r#""manhattan""#), "{json}");
@@ -74,7 +79,13 @@ fn a_fit_round_trips_through_its_saved_state() {
 fn cosine_changes_the_chain_and_round_trips() {
     let (config, x, y) = fixture();
     let euclidean = fit(&config.clone(), &x, &y, SEED).unwrap();
-    let fitted = fit(&config.with_metric(vec![Metric::Cosine; 2]), &x, &y, SEED).unwrap();
+    let fitted = fit(
+        &config.with_metric(vec![Metric::Cosine { group: 0 }; 2]),
+        &x,
+        &y,
+        SEED,
+    )
+    .unwrap();
     assert_ne!(euclidean.sigma(), fitted.sigma());
     let json = serde_json::to_string(&fitted).unwrap();
     let back: thiessen::Fitted = serde_json::from_str(&json).unwrap();
@@ -83,7 +94,7 @@ fn cosine_changes_the_chain_and_round_trips() {
 
 #[test]
 fn the_cosine_configuration_serialises_by_name() {
-    let config = Config::new().with_metric(vec![Metric::Cosine, Metric::Euclidean]);
+    let config = Config::new().with_metric(vec![Metric::Cosine { group: 0 }, Metric::Euclidean]);
     let json = serde_json::to_string(&config).unwrap();
     assert!(json.contains(r#""cosine""#), "{json}");
     let back: Config = serde_json::from_str(&json).unwrap();
@@ -94,9 +105,11 @@ fn gower_metric() -> Vec<Metric> {
     vec![
         Metric::Gower {
             kind: GowerKind::Numeric,
+            group: 0,
         },
         Metric::Gower {
             kind: GowerKind::Categorical,
+            group: 0,
         },
     ]
 }
@@ -197,4 +210,55 @@ fn the_precision_field_is_absent_when_unset() {
     assert!(json.contains(r#""precision":[2.0,0.6,0.6,1.0]"#), "{json}");
     let back: Config = serde_json::from_str(&json).unwrap();
     assert_eq!(back, config);
+}
+
+#[test]
+fn single_column_order_one_groups_reproduce_the_euclidean_chain() {
+    let (config, x, y) = fixture();
+    let euclidean = fit(&config.clone(), &x, &y, SEED).unwrap();
+    let composite = fit(
+        &config.with_metric(vec![
+            Metric::Minkowski { p: 1.0, group: 0 },
+            Metric::Minkowski { p: 1.0, group: 1 },
+        ]),
+        &x,
+        &y,
+        SEED,
+    )
+    .unwrap();
+    assert_eq!(euclidean.sigma(), composite.sigma());
+}
+
+#[test]
+fn group_labels_serialise_compactly_and_round_trip() {
+    let config = Config::new().with_metric(vec![
+        Metric::Cosine { group: 0 },
+        Metric::Cosine { group: 1 },
+    ]);
+    let json = serde_json::to_string(&config).unwrap();
+    assert!(json.contains(r#"{"cosine":{}}"#), "{json}");
+    assert!(json.contains(r#"{"cosine":{"group":1}}"#), "{json}");
+    let back: Config = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+}
+
+#[test]
+fn a_composite_fit_round_trips() {
+    let (config, x, y) = gower_fixture();
+    let fitted = fit(
+        &config.with_metric(vec![
+            Metric::Manhattan { group: 0 },
+            Metric::Gower {
+                kind: GowerKind::Categorical,
+                group: 0,
+            },
+        ]),
+        &x,
+        &y,
+        SEED,
+    )
+    .unwrap();
+    let json = serde_json::to_string(&fitted).unwrap();
+    let back: thiessen::Fitted = serde_json::from_str(&json).unwrap();
+    assert_eq!(fitted.predict(&x).unwrap(), back.predict(&x).unwrap());
 }

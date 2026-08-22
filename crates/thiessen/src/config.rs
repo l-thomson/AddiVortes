@@ -638,7 +638,7 @@ fn validate_term(slot: &str, params: &TermParams) -> Result<()> {
     positive(&format!("{slot}.geometry.sigma_c"), params.geometry.sigma_c)?;
     #[cfg(feature = "experimental")]
     for kind in &params.geometry.metric {
-        if let Metric::Minkowski { p } = *kind {
+        if let Metric::Minkowski { p, .. } = *kind {
             if !(p.is_finite() && p >= 1.0) {
                 return Err(invalid(
                     &format!("{slot}.geometry.metric"),
@@ -670,12 +670,12 @@ mod tests {
     fn a_minkowski_order_below_one_is_rejected() {
         for p in [0.5, f64::NAN, f64::INFINITY] {
             rejects(
-                Config::new().with_metric(vec![Metric::Minkowski { p }]),
+                Config::new().with_metric(vec![Metric::Minkowski { p, group: 0 }]),
                 "mean_params.geometry.metric",
             );
         }
         assert!(Config::new()
-            .with_metric(vec![Metric::Minkowski { p: 1.0 }])
+            .with_metric(vec![Metric::Minkowski { p: 1.0, group: 0 }])
             .validate()
             .is_ok());
     }
