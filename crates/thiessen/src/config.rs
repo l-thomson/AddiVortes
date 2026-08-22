@@ -274,7 +274,44 @@ pub struct StructureParams {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct CellParams {}
+pub struct CellParams {
+    /// The within-cell response surface. Default constant, the
+    /// published basis. Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    #[serde(skip_serializing_if = "Basis::is_constant")]
+    pub basis: Basis,
+}
+
+/// The within-cell response surface of one term group,
+/// [`CellParams::basis`].
+#[cfg(feature = "experimental")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum Basis {
+    /// One value per cell, the published model. The default.
+    #[default]
+    Constant,
+    /// The cell value tilts across the region: mu + beta' (x_A - c) over
+    /// the active covariates, centred at the cell's centre, so mu keeps
+    /// its role as the level there. Slopes take the cell-value prior
+    /// N(0, sigma_mu^2) coordinate-wise; the cell update draws
+    /// (mu, beta) jointly from the conjugate normal and the structural
+    /// moves integrate them out jointly. Needs every column min-max
+    /// scaled (checked at fit): the offsets are only comparable on the
+    /// scaled space. Mean slot only; the variance ensemble's
+    /// inverse-gamma cells keep the constant basis. Experimental
+    /// (`docs/experimental.md`).
+    Linear,
+}
+
+#[cfg(feature = "experimental")]
+impl Basis {
+    /// Whether this is the default, for compact serialisation.
+    fn is_constant(&self) -> bool {
+        matches!(self, Basis::Constant)
+    }
+}
 
 /// The sweep schedule and everything that belongs to no ensemble.
 #[non_exhaustive]
@@ -450,6 +487,15 @@ impl Config {
         self
     }
 
+    /// The within-cell basis of the mean ensemble; the variance
+    /// ensemble's cells keep the constant basis. Experimental.
+    #[cfg(feature = "experimental")]
+    #[must_use]
+    pub fn with_basis(mut self, basis: Basis) -> Self {
+        self.mean_params.cell.basis = basis;
+        self
+    }
+
     /// Dimension-count prior parameter omega, both slots.
     #[must_use]
     pub fn with_omega(mut self, omega: f64) -> Self {
@@ -614,6 +660,13 @@ impl Config {
                     "variance_params.structure",
                     "must equal mean_params.structure; per-ensemble structure awaits \
                      its identification argument",
+                ));
+            }
+            #[cfg(feature = "experimental")]
+            if self.variance_params.cell.basis != Basis::Constant {
+                return Err(invalid(
+                    "variance_params.cell.basis",
+                    "the variance ensemble's inverse-gamma cells take the constant basis",
                 ));
             }
         }

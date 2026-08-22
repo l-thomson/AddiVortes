@@ -26,6 +26,7 @@ evidence. Removing the gate is a minor version bump.
 | Per-column composite | distance | `group` label on the minkowski, manhattan, cosine and gower entries | 0.3.0 | conformance per member metric, small SBC | experimental | [#65](https://github.com/l-thomson/thiessen/pull/65) |
 | Weighted inclusion | inclusion prior | `structure.inclusion` entry `{"weighted": {"weights": [...]}}` | 0.3.0 | conformance, small SBC | experimental | [#66](https://github.com/l-thomson/thiessen/pull/66) |
 | DART inclusion | inclusion prior (model-grade validation) | `structure.inclusion` entry `{"dart": {"a": ..., "b": ..., "rho": ...}}` | 0.3.0 | SBC and Geweke, both sizes; broken-sampler fixture | experimental | [#67](https://github.com/l-thomson/thiessen/pull/67) |
+| Linear cell basis | cell basis (model-grade validation) | `mean_params.cell.basis` entry `"linear"` | 0.3.0 | known answer; SBC and Geweke, both sizes; broken-sampler fixture | experimental | [#68](https://github.com/l-thomson/thiessen/pull/68) |
 
 Columns: the configuration field or `Model` variant; the first core version
 carrying the item behind the feature; calibration status (SBC and Geweke

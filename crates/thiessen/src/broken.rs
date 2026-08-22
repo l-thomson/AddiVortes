@@ -22,6 +22,9 @@ pub(crate) enum Breakage {
     /// update's acceptance ratio, so every proposal is accepted.
     #[cfg(feature = "experimental")]
     DroppedSubsetNormaliser,
+    /// The determinant term dropped from the linear-basis integrated
+    /// likelihood, mispricing every structural move.
+    DroppedTiltDeterminant,
 }
 
 /// The shift the defect adds to ln alpha for move `m`; `normaliser` is
@@ -58,6 +61,8 @@ pub(crate) fn log_alpha_shift(
         // Acts in the weight update, not in the structural moves.
         #[cfg(feature = "experimental")]
         Breakage::DroppedSubsetNormaliser => 0.0,
+        // Acts inside the linear-basis marginal, not here.
+        Breakage::DroppedTiltDeterminant => 0.0,
     }
 }
 
@@ -378,6 +383,7 @@ mod tests {
             centres: vec![0.0; b],
             dims: vec![0],
             mus: vec![0.0; b],
+            betas: Vec::new(),
         };
         let shift = |m: Move, from: usize, to: usize| {
             super::log_alpha_shift(
@@ -594,6 +600,156 @@ mod tests {
         #[test]
         fn dropped_subset_normaliser_is_rejected() {
             let statistics = sbc_statistics(Breakage::DroppedSubsetNormaliser);
+            let max = statistics.iter().cloned().fold(0.0, f64::max);
+            assert!(max > CRITICAL, "{statistics:?}");
+        }
+    }
+
+    #[cfg(feature = "experimental")]
+    mod linear {
+        use super::*;
+        use crate::config::Basis;
+
+        /// Rows spanning each column's exact scaled range, so the
+        /// harness's raw coordinates equal the engine's scaled ones; the
+        /// tilts would otherwise disagree by the range ratio.
+        fn exact_rows() -> Vec<[f64; 3]> {
+            (0..N)
+                .map(|i| {
+                    [
+                        i as f64 / (N - 1) as f64 - 0.5,
+                        ((i * 13) % N) as f64 / (N - 1) as f64 - 0.5,
+                        ((i * 29) % N) as f64 / (N - 1) as f64 - 0.5,
+                    ]
+                })
+                .collect()
+        }
+
+        /// One prior tessellation with slopes, truncated to full
+        /// occupancy.
+        fn prior_tessellation(
+            rows: &[[f64; 3]],
+            rng: &mut SimRng,
+        ) -> (Vec<usize>, Vec<f64>, Vec<f64>, Vec<f64>) {
+            let theta = OMEGA / P as f64;
+            let sigma_mu = 0.5 / (3.0 * (M as f64).sqrt());
+            loop {
+                let b = 1 + rng.poisson(LAMBDA_C);
+                let mut d = 1;
+                for _ in 0..P - 1 {
+                    if rng.uniform() < theta {
+                        d += 1;
+                    }
+                }
+                let mut all: Vec<usize> = (0..P).collect();
+                for i in 0..d {
+                    let j = i + (rng.uniform() * (P - i) as f64) as usize;
+                    all.swap(i, j.min(P - 1));
+                }
+                let mut dims = all[..d].to_vec();
+                dims.sort_unstable();
+                let centres: Vec<f64> = (0..b * d).map(|_| SIGMA_C * rng.normal()).collect();
+                let mut occupied = vec![false; b];
+                for row in rows {
+                    occupied[nearest(row, &dims, &centres)] = true;
+                }
+                if occupied.iter().all(|&o| o) {
+                    let mus: Vec<f64> = (0..b).map(|_| sigma_mu * rng.normal()).collect();
+                    let tilts: Vec<f64> = (0..b * d).map(|_| sigma_mu * rng.normal()).collect();
+                    return (dims, centres, mus, tilts);
+                }
+            }
+        }
+
+        fn value_at(
+            row: &[f64; 3],
+            (dims, centres, mus, tilts): &(Vec<usize>, Vec<f64>, Vec<f64>, Vec<f64>),
+        ) -> f64 {
+            let k = nearest(row, dims, centres);
+            let d = dims.len();
+            let mut value = mus[k];
+            for (j, &dim) in dims.iter().enumerate() {
+                value += tilts[k * d + j] * (row[dim] - centres[k * d + j]);
+            }
+            value
+        }
+
+        /// SBC rank statistics for (cells, f at the first row) with the
+        /// breakage in force.
+        fn sbc_statistics(breakage: Breakage) -> [f64; 2] {
+            let rows = exact_rows();
+            let x = Data::from_rows(&rows).unwrap();
+            let config = config(Model::Gaussian).with_basis(Basis::Linear);
+            let mut ranks = [[0.0_f64; 20]; 2];
+            for sim in 0..SIMS {
+                let mut rng = SimRng(12_600 + sim as u64);
+                let ensemble: Vec<_> = (0..M)
+                    .map(|_| prior_tessellation(&rows, &mut rng))
+                    .collect();
+                let sigma_sq = prior_variance(&mut rng);
+                let truth = [
+                    ensemble.iter().map(|(_, _, m, _)| m.len()).sum::<usize>() as f64,
+                    ensemble.iter().map(|t| value_at(&rows[0], t)).sum::<f64>(),
+                ];
+                let y: Vec<f64> = rows
+                    .iter()
+                    .map(|row| {
+                        let f: f64 = ensemble.iter().map(|t| value_at(row, t)).sum();
+                        f + sigma_sq.sqrt() * rng.normal()
+                    })
+                    .collect();
+
+                let mut sampler =
+                    Sampler::pinned_prior(&config, &x, &y, LAMBDA, sim as u64).unwrap();
+                sampler.breakage = breakage;
+                for _ in 0..BURN {
+                    sampler.step();
+                }
+                let mut draws = [[0.0_f64; KEPT]; 2];
+                for kept in 0..KEPT {
+                    for _ in 0..THIN {
+                        sampler.step();
+                    }
+                    let fit = sampler.fitted_values();
+                    let state = [
+                        sampler
+                            .tessellations()
+                            .iter()
+                            .map(|t| t.n_cells())
+                            .sum::<usize>() as f64,
+                        fit[0],
+                    ];
+                    for (series, value) in draws.iter_mut().zip(state) {
+                        series[kept] = value;
+                    }
+                }
+                for q in 0..2 {
+                    let below = draws[q].iter().filter(|v| **v < truth[q]).count();
+                    let equal = draws[q].iter().filter(|v| **v == truth[q]).count();
+                    let rank = below + (rng.uniform() * (equal + 1) as f64) as usize;
+                    ranks[q][rank.min(below + equal)] += 1.0;
+                }
+            }
+            let expected = SIMS as f64 / 20.0;
+            ranks.map(|counts| {
+                counts
+                    .iter()
+                    .map(|c| (c - expected) * (c - expected) / expected)
+                    .sum()
+            })
+        }
+
+        #[test]
+        fn unbroken_linear_passes_the_small_sbc() {
+            let statistics = sbc_statistics(Breakage::None);
+            for (q, statistic) in statistics.iter().enumerate() {
+                assert!(*statistic < CRITICAL, "quantity {q}: {statistic}");
+            }
+        }
+
+        #[test]
+        fn dropped_tilt_determinant_is_rejected() {
+            let statistics = sbc_statistics(Breakage::DroppedTiltDeterminant);
             let max = statistics.iter().cloned().fold(0.0, f64::max);
             assert!(max > CRITICAL, "{statistics:?}");
         }

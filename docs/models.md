@@ -221,6 +221,29 @@ whose declared structure is one group. Validation: SBC and Geweke at
 both sizes, and a broken-sampler fixture dropping the normalisers from
 the weight update.
 
+### Linear cell basis (`cell.basis` entry `linear`, experimental)
+
+Not a model: a value of the mean term group's within-cell response
+surface. It is stated here because it is model-grade in validation: the
+cell conjugate update changes, so it changes the posterior.
+
+    g(x; T, M) = mu_k + beta_k' (x_A - c_k)   for x in cell k,
+    (mu_k, beta_k) ~ N(0, sigma_mu^2 I_(d+1)),
+
+with x_A the active coordinates and c_k the cell's centre, so mu keeps
+its role as the level at the centre. The cell update draws (mu, beta)
+jointly from the (d + 1)-dimensional conjugate normal, and the
+structural moves integrate the whole coefficient vector out: per cell
+-ln det(I + sigma_mu^2 A_k) / 2 + b_k' (Sigma_0^-1 + A_k)^-1 b_k / 2,
+the (d + 1)-dimensional form of the constant-basis expression, with
+A_k, b_k the weighted normal equations of the within-cell design
+u = (1, x_A - c_k). Precedent for linear leaves in a BART-family
+ensemble: Prado, Moral and Parnell (2021). Needs min-max scaled columns
+(checked at fit); mean slot only, the variance ensemble's inverse-gamma
+cells keep the constant basis. Validation: known-answer tests of the
+marginal and the joint draw, SBC and Geweke at both sizes, and a
+broken-sampler fixture dropping the determinant term.
+
 ## References
 
 - Albert, J. H. and Chib, S. (1993). Bayesian analysis of binary and
@@ -238,6 +261,9 @@ the weight update.
 - Pratola, M. T., Chipman, H. A., George, E. I. and McCulloch, R. E.
   (2020). Heteroscedastic BART via multiplicative regression trees.
   Journal of Computational and Graphical Statistics 29(2), 405-417.
+- Prado, E. B., Moral, R. A. and Parnell, A. C. (2021). Bayesian
+  additive regression trees with model trees. Statistics and Computing
+  31, 20.
 - Robert, C. P. (1995). Simulation of truncated normal variables.
   Statistics and Computing 5, 121-125.
 - Sparapani, R., Spanbauer, C. and McCulloch, R. (2021). Nonparametric
