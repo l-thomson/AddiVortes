@@ -81,6 +81,13 @@ says "Sampled values changed" with the reason.
 
 ### Changed
 
+- Breaking: the `Model` enum is gone. The outcome layer is the whole
+  selection surface: `Fitted::model_name()` returns "gaussian",
+  "probit" or "heteroscedastic", `Fitted::outcome()` and
+  `Fitted::has_variance_ensemble()` carry the identity, and
+  `Error::NotApplicable` names the model as a string. A saved flat
+  configuration fails to load with an error naming the replacement
+  groups. Sampled values are unchanged for a fixed seed.
 - Breaking: the configuration is four groups. `outcome` names the
   observation model and carries its own parameters and the sigma^2
   prior (`Outcome::Gaussian(GaussianParams { nu, q })`,

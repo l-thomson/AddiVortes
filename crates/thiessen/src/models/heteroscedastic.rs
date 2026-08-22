@@ -1,4 +1,5 @@
-//! The heteroscedastic model, [`Model::Heteroscedastic`] (H-AddiVortes;
+//! The heteroscedastic model, the Gaussian outcome with
+//! `variance_params.num_tessellations` above 0 (H-AddiVortes;
 //! the structure is that of HBART, Pratola, Chipman, George and McCulloch
 //! 2020):
 //!
@@ -52,20 +53,3 @@
 //! `sdraws`); `prediction_interval` and `log_likelihood` use
 //! N(f_d(x), s_d^2(x)); `sigma` is empty, there being no global sigma.
 //!
-//! [`Model::Heteroscedastic`]: crate::Model::Heteroscedastic
-
-use crate::config::Config;
-use crate::data::Data;
-use crate::error::Result;
-use crate::fitted::Fitted;
-
-/// Fit the heteroscedastic model with the shared sweep schedule.
-pub(crate) fn fit(
-    config: &Config,
-    x: &Data,
-    y: &[f64],
-    seed: u64,
-    progress: &mut dyn FnMut(usize, usize),
-) -> Result<Fitted> {
-    super::run(config, x, y, seed, progress)
-}

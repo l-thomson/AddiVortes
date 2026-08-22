@@ -3,7 +3,7 @@
 
 mod common;
 use common::TestRng;
-use thiessen::{fit, Config, Data, Error, Model};
+use thiessen::{fit, Config, Data, Error, Outcome};
 
 fn normal_cdf(z: f64) -> f64 {
     0.5 * libm::erfc(-z * std::f64::consts::FRAC_1_SQRT_2)
@@ -11,7 +11,7 @@ fn normal_cdf(z: f64) -> f64 {
 
 fn config() -> Config {
     Config::new()
-        .with_model(Model::Probit)
+        .with_outcome(Outcome::probit())
         .with_m(5)
         .with_burn_in(10)
         .with_draws(10)
@@ -33,7 +33,7 @@ fn labels_are_validated_at_the_boundary() {
         Error::InvalidHyperparameter { ref name, .. } if name == "offset"
     ));
     let fitted = fit(&config(), &x, &[0.0, 1.0, 1.0, 0.0], 1).unwrap();
-    assert_eq!(fitted.model(), Model::Probit);
+    assert_eq!(fitted.model_name(), "probit");
     // The default offset is Phi^-1(ybar) = 0 at ybar = 1/2.
     assert!(fitted.config().offset().unwrap().abs() < 1e-9);
     let explicit = fit(&config().with_offset(0.3), &x, &[0.0, 1.0, 1.0, 0.0], 1).unwrap();
@@ -71,7 +71,7 @@ fn recovers_a_probit_friedman_function() {
     let x = Data::from_rows(&rows).unwrap();
 
     let config = Config::new()
-        .with_model(Model::Probit)
+        .with_outcome(Outcome::probit())
         .with_m(50)
         .with_burn_in(300)
         .with_draws(300);

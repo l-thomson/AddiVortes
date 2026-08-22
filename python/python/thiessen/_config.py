@@ -148,7 +148,7 @@ def _flat_config(grouped: Mapping[str, Any]) -> dict[str, Any]:
     m_var = variance.get("num_tessellations") or 0
     return {
         "model": "heteroscedastic" if kind == "gaussian" and m_var > 0 else kind,
-        "m": mean.get("num_tessellations"),
+        "m": mean.get("num_tessellations", 200) or 200,
         "nu": params.get("nu", 6.0) if kind == "gaussian" else 6.0,
         "q": params.get("q", 0.85) if kind == "gaussian" else 0.85,
         "k": mean.get("k"),

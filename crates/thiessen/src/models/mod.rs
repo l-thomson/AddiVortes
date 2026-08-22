@@ -9,7 +9,6 @@ use crate::config::Config;
 use crate::data::Data;
 use crate::error::Result;
 use crate::fitted::Fitted;
-use crate::model::Model;
 use crate::sampler::Sampler;
 
 pub mod gaussian;
@@ -48,11 +47,7 @@ pub fn fit_with_progress(
     seed: u64,
     mut progress: impl FnMut(usize, usize),
 ) -> Result<Fitted> {
-    match config.model() {
-        Model::Gaussian => gaussian::fit(config, x, y, seed, &mut progress),
-        Model::Probit => probit::fit(config, x, y, seed, &mut progress),
-        Model::Heteroscedastic => heteroscedastic::fit(config, x, y, seed, &mut progress),
-    }
+    run(config, x, y, seed, &mut progress)
 }
 
 /// The sweep schedule shared by every model.

@@ -59,7 +59,6 @@ mod tests {
     use super::Breakage;
     use crate::config::Config;
     use crate::data::Data;
-    use crate::model::Model;
     use crate::sampler::Sampler;
 
     /// splitmix64 with Box-Muller, sharing nothing with the chain RNG.
@@ -128,16 +127,22 @@ mod tests {
             .collect()
     }
 
+    /// The models the fixtures run under.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    enum Model {
+        Gaussian,
+        Heteroscedastic,
+    }
+
     fn config(model: Model) -> Config {
         let config = Config::new()
-            .with_model(model)
             .with_m(M)
             .with_lambda_c(LAMBDA_C)
             .with_omega(OMEGA)
             .with_sigma_c(SIGMA_C);
         match model {
             Model::Heteroscedastic => config.with_m_var(1),
-            Model::Gaussian | Model::Probit => config,
+            Model::Gaussian => config,
         }
     }
 
@@ -306,7 +311,10 @@ mod tests {
         for model in [Model::Gaussian, Model::Heteroscedastic] {
             let statistics = sbc_statistics(Breakage::None, model);
             for (q, statistic) in statistics.iter().enumerate() {
-                assert!(*statistic < CRITICAL, "{model}, quantity {q}: {statistic}");
+                assert!(
+                    *statistic < CRITICAL,
+                    "{model:?}, quantity {q}: {statistic}"
+                );
             }
         }
     }

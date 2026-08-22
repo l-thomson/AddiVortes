@@ -1,4 +1,5 @@
-//! The Gaussian model of Stone and Gosling (2025), [`Model::Gaussian`]:
+//! The Gaussian model of Stone and Gosling (2025),
+//! [`Outcome::Gaussian`](crate::Outcome::Gaussian):
 //!
 //! ```text
 //! y_i = sum_{j=1}^m g(x_i; T_j, M_j) + e_i,   e_i ~ N(0, sigma^2),
@@ -31,27 +32,10 @@
 //! sigma_d^2 per draw, constant across rows; `prediction_interval` and
 //! `log_likelihood` use N(f_d(x), sigma_d^2); `sigma` is sigma_d on the
 //! caller's scale.
-//!
-//! [`Model::Gaussian`]: crate::Model::Gaussian
 
-use crate::config::Config;
-use crate::data::Data;
-use crate::error::Result;
-use crate::fitted::Fitted;
 use crate::maths;
 use crate::outcome::{OutcomeModel, RequiredData, Sigma2Mode};
 use crate::rng::Rng;
-
-/// Fit the Gaussian model with the shared sweep schedule.
-pub(crate) fn fit(
-    config: &Config,
-    x: &Data,
-    y: &[f64],
-    seed: u64,
-    progress: &mut dyn FnMut(usize, usize),
-) -> Result<Fitted> {
-    super::run(config, x, y, seed, progress)
-}
 
 /// The Gaussian outcome behind the [`OutcomeModel`] contract: the response
 /// is observed, so the working response is y unchanged, the weights are

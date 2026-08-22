@@ -73,7 +73,7 @@ pub fn probit_fixture() -> (Config, Data, Vec<f64>) {
     sorted.sort_by(f64::total_cmp);
     let median = sorted[sorted.len() / 2];
     let labels = y.iter().map(|&v| f64::from(v >= median)).collect();
-    (config.with_model(thiessen::Model::Probit), x, labels)
+    (config.with_outcome(thiessen::Outcome::probit()), x, labels)
 }
 
 /// The fixed-seed fixture of the heteroscedastic model: the Gaussian
@@ -90,13 +90,7 @@ pub fn heteroscedastic_fixture() -> (Config, Data, Vec<f64>) {
             v - noise + noise * (0.2 + 2.0 * x.row(i)[0])
         })
         .collect();
-    (
-        config
-            .with_model(thiessen::Model::Heteroscedastic)
-            .with_m_var(5),
-        x,
-        y,
-    )
+    (config.with_m_var(5), x, y)
 }
 
 /// The fixed-seed fixture on one sphere: the Gaussian fixture's rows as

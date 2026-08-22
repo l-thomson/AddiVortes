@@ -101,7 +101,8 @@ fn core_fit(
     let chains = chains.max(1) as usize;
     let reporter = report.as_function();
     let updates = updates.max(1) as usize;
-    let sweeps = config.burn_in + config.draws * config.thinning;
+    let schedule = &config.general_params;
+    let sweeps = schedule.burn_in + schedule.draws * schedule.thinning;
     let total = chains * sweeps;
     let mut emitted = 0_usize;
     let mut done = 0_usize;
@@ -132,7 +133,7 @@ fn core_fit(
     Ok(list!(
         state = serde_json::to_string(&fitted).map_err(json_error)?,
         config = serde_json::to_string(fitted.config()).map_err(json_error)?,
-        model = fitted.model().to_string(),
+        model = fitted.model_name().to_string(),
         n_chains = chains as i32,
         n_draws = fitted.n_draws() as i32,
         in_sample_rmse = fitted.in_sample_rmse(),

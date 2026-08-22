@@ -57,7 +57,7 @@
 //! (`thiessen = { version = "...", features = ["experimental"] }`), shown
 //! on docs.rs with a feature banner, tested to the same standard, and
 //! outside the semver promise, whether gated here or badged in a binding.
-//! A configuration naming an experimental field or [`Model`] variant fails
+//! A configuration naming an experimental field or outcome variant fails
 //! to deserialise in a build without the feature; for a variant the error
 //! names the feature. The table of experimental items and their status is
 //! `docs/experimental.md` in the repository.
@@ -98,7 +98,6 @@ mod error;
 mod fitted;
 mod geometry;
 mod maths;
-mod model;
 pub mod models;
 mod moves;
 #[cfg_attr(not(test), allow(dead_code))]
@@ -119,7 +118,6 @@ pub use data::{Data, Warning};
 pub use error::{Error, Result};
 pub use fitted::{Fitted, Interval, Posterior};
 pub use geometry::Metric;
-pub use model::Model;
 pub use models::{fit, fit_with_progress};
 pub use rng::chain_seed;
 pub use sampler::Sampler;
