@@ -70,6 +70,34 @@ pub enum Metric {
     /// unchanged. Experimental (`docs/experimental.md`).
     #[cfg(feature = "experimental")]
     Cosine,
+    /// One column of the Gower distance (Gower 1971): the mean, over the
+    /// active Gower columns, of the per-column distance, squared into
+    /// the key. A numeric column contributes its absolute difference on
+    /// the scale of the column's training range (the [-0.5, 0.5]
+    /// scaling, so 1 is the full range); a categorical column
+    /// contributes a plain mismatch of integer level codes, weight 1,
+    /// with the levels the distinct training values, uniform centre
+    /// coordinates, and `Error::InvalidCategoryCode` for a non-integer
+    /// value. Missing-value weighting is not implemented. Numeric centre
+    /// coordinates are N(0, sigma_c^2), as Euclidean; the structural
+    /// moves are unchanged. Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    Gower {
+        /// The per-column kind.
+        kind: GowerKind,
+    },
+}
+
+/// The per-column kind of [`Metric::Gower`].
+#[cfg(feature = "experimental")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum GowerKind {
+    /// Range-normalised absolute difference.
+    Numeric,
+    /// Mismatch of integer level codes.
+    Categorical,
 }
 
 /// The column structure of a fit: the metric of each column, the columns
@@ -92,6 +120,9 @@ pub(crate) struct Geometry {
     /// The Cosine columns, one group.
     #[cfg(feature = "experimental")]
     cosine: Vec<usize>,
+    /// The Gower columns, one group; the kind is in `kinds`.
+    #[cfg(feature = "experimental")]
+    gower: Vec<usize>,
 }
 
 impl Geometry {
@@ -107,6 +138,8 @@ impl Geometry {
             minkowski: Vec::new(),
             #[cfg(feature = "experimental")]
             cosine: Vec::new(),
+            #[cfg(feature = "experimental")]
+            gower: Vec::new(),
         }
     }
 
@@ -170,6 +203,13 @@ impl Geometry {
             .filter(|(_, kind)| **kind == Metric::Cosine)
             .map(|(col, _)| col)
             .collect();
+        #[cfg(feature = "experimental")]
+        let gower: Vec<usize> = metric
+            .iter()
+            .enumerate()
+            .filter(|(_, kind)| matches!(kind, Metric::Gower { .. }))
+            .map(|(col, _)| col)
+            .collect();
         Ok(Self {
             kinds: metric.to_vec(),
             spheres,
@@ -180,6 +220,8 @@ impl Geometry {
             minkowski,
             #[cfg(feature = "experimental")]
             cosine,
+            #[cfg(feature = "experimental")]
+            gower,
         })
     }
 
@@ -195,7 +237,7 @@ impl Geometry {
         let mut geometry = Self::structure(metric, p)?;
         geometry.check_codes(x)?;
         for col in 0..p {
-            if geometry.kinds[col] == Metric::Categorical {
+            if geometry.categorical(col) {
                 let mut levels: Vec<f64> = (0..x.n_rows()).map(|r| x.row(r)[col]).collect();
                 levels.sort_by(f64::total_cmp);
                 levels.dedup();
@@ -226,7 +268,7 @@ impl Geometry {
         }
         for (col, levels) in categories.iter().enumerate() {
             match geometry.kinds[col] {
-                Metric::Categorical => {
+                _ if geometry.categorical(col) => {
                     if levels.is_empty()
                         || levels.iter().any(|v| !v.is_finite() || v.fract() != 0.0)
                         || levels.windows(2).any(|w| w[0] >= w[1])
@@ -258,12 +300,28 @@ impl Geometry {
         &self.categories
     }
 
+    /// Whether column `col` takes integer level codes learnt at fit.
+    fn categorical(&self, col: usize) -> bool {
+        match self.kinds[col] {
+            Metric::Categorical => true,
+            #[cfg(feature = "experimental")]
+            Metric::Gower {
+                kind: GowerKind::Categorical,
+            } => true,
+            _ => false,
+        }
+    }
+
     /// Whether column `col` is min-max scaled by the [`Scaler`](crate::Scaler).
     pub(crate) fn scaled(&self, col: usize) -> bool {
         match self.kinds[col] {
             Metric::Euclidean => true,
             #[cfg(feature = "experimental")]
             Metric::Minkowski { .. } | Metric::Manhattan | Metric::Cosine => true,
+            #[cfg(feature = "experimental")]
+            Metric::Gower {
+                kind: GowerKind::Numeric,
+            } => true,
             _ => false,
         }
     }
@@ -275,7 +333,7 @@ impl Geometry {
     /// `InvalidCategoryCode` at the first offence, row-major.
     pub(crate) fn check_codes(&self, x: &Data) -> Result<()> {
         let categorical: Vec<usize> = (0..x.n_cols())
-            .filter(|&col| self.kinds[col] == Metric::Categorical)
+            .filter(|&col| self.categorical(col))
             .collect();
         if categorical.is_empty() {
             return Ok(());
@@ -297,7 +355,8 @@ impl Geometry {
         let mut key = 0.0;
         let plain = self.spheres.is_empty() && self.weights.iter().all(|&w| w == 0.0);
         #[cfg(feature = "experimental")]
-        let plain = plain && self.minkowski.is_empty() && self.cosine.is_empty();
+        let plain =
+            plain && self.minkowski.is_empty() && self.cosine.is_empty() && self.gower.is_empty();
         if plain {
             for (&dim, &c) in dims.iter().zip(centre) {
                 let diff = row[dim] - c;
@@ -318,7 +377,10 @@ impl Geometry {
                 }
                 Metric::Spherical { .. } => {}
                 #[cfg(feature = "experimental")]
-                Metric::Minkowski { .. } | Metric::Manhattan | Metric::Cosine => {}
+                Metric::Minkowski { .. }
+                | Metric::Manhattan
+                | Metric::Cosine
+                | Metric::Gower { .. } => {}
             }
         }
         #[cfg(feature = "experimental")]
@@ -367,6 +429,25 @@ impl Geometry {
                 key += d * d;
             }
         }
+        #[cfg(feature = "experimental")]
+        if !self.gower.is_empty() {
+            let mut sum = 0.0;
+            let mut active = 0_usize;
+            for (&dim, &c) in dims.iter().zip(centre) {
+                let Metric::Gower { kind } = self.kinds[dim] else {
+                    continue;
+                };
+                active += 1;
+                sum += match kind {
+                    GowerKind::Numeric => (row[dim] - c).abs(),
+                    GowerKind::Categorical => f64::from(row[dim] != c),
+                };
+            }
+            if active > 0 {
+                let d = sum / active as f64;
+                key += d * d;
+            }
+        }
         for (s, cols) in self.spheres.iter().enumerate() {
             if dims.iter().all(|&dim| self.sphere_of[dim] != Some(s)) {
                 continue;
@@ -410,6 +491,16 @@ impl Geometry {
                         sd: sigma_c,
                     })
                 }
+                #[cfg(feature = "experimental")]
+                Metric::Gower { kind } => Ok(match kind {
+                    GowerKind::Numeric => CoordinateLaw::Normal {
+                        mean: 0.0,
+                        sd: sigma_c,
+                    },
+                    GowerKind::Categorical => CoordinateLaw::Uniform {
+                        levels: self.categories[col].clone(),
+                    },
+                }),
                 Metric::Categorical => Ok(CoordinateLaw::Uniform {
                     levels: self.categories[col].clone(),
                 }),
@@ -809,6 +900,74 @@ mod tests {
                 assert_eq!(law, CoordinateLaw::Normal { mean: 0.0, sd: 0.8 });
             }
         }
+
+        fn gower_pair() -> Geometry {
+            let metric = [
+                Metric::Gower {
+                    kind: GowerKind::Numeric,
+                },
+                Metric::Gower {
+                    kind: GowerKind::Categorical,
+                },
+            ];
+            let levels = [vec![], vec![0.0, 1.0, 2.0]];
+            Geometry::with_categories(&metric, 2, &levels).unwrap()
+        }
+
+        #[test]
+        fn gower_hand_values() {
+            let g = gower_pair();
+            // Mean of |0.3| and a mismatch: ((0.3 + 1) / 2)^2.
+            close(g.key(&[0.1, 2.0], &[0, 1], &[-0.2, 1.0]), 0.65_f64.powi(2));
+            // Matching codes: (0.3 / 2)^2.
+            close(g.key(&[0.1, 2.0], &[0, 1], &[-0.2, 2.0]), 0.15_f64.powi(2));
+            // Only the numeric column active: no averaging with the code.
+            close(g.key(&[0.1, 2.0], &[0], &[-0.2]), 0.09);
+            // Only the categorical column active.
+            close(g.key(&[0.1, 2.0], &[1], &[0.0]), 1.0);
+        }
+
+        #[test]
+        fn gower_adds_to_the_euclidean_part() {
+            let metric = [
+                Metric::Euclidean,
+                Metric::Gower {
+                    kind: GowerKind::Numeric,
+                },
+            ];
+            let g = Geometry::with_categories(&metric, 2, &[vec![], vec![]]).unwrap();
+            close(g.key(&[0.5, 0.1], &[0, 1], &[0.1, -0.2]), 0.16 + 0.09);
+        }
+
+        #[test]
+        fn gower_codes_are_checked_and_learnt_at_fit() {
+            let metric = [
+                Metric::Gower {
+                    kind: GowerKind::Numeric,
+                },
+                Metric::Gower {
+                    kind: GowerKind::Categorical,
+                },
+            ];
+            let x = Data::from_rows(&[[0.0, 1.0], [1.0, 2.0]]).unwrap();
+            let g = Geometry::fit(&metric, &x).unwrap();
+            assert_eq!(g.categories()[1], vec![1.0, 2.0]);
+            assert_eq!(
+                g.laws(&x, 0.8).unwrap()[1],
+                CoordinateLaw::Uniform {
+                    levels: vec![1.0, 2.0]
+                }
+            );
+            let bad = Data::from_rows(&[[0.0, 1.5], [1.0, 2.0]]).unwrap();
+            assert!(Geometry::fit(&metric, &bad).is_err());
+        }
+
+        #[test]
+        fn gower_scaling_follows_the_kind() {
+            let g = gower_pair();
+            assert!(g.scaled(0));
+            assert!(!g.scaled(1));
+        }
     }
 
     mod props {
@@ -889,6 +1048,32 @@ mod tests {
                 prop_assert!(d(a, a) < 1e-7);
                 prop_assert!((d(a, b) - d(b, a)).abs() < 1e-12);
                 prop_assert!(d(a, b) <= 2.0);
+            }
+        }
+
+        // The mean of per-column metrics is a metric: all four axioms.
+        #[cfg(feature = "experimental")]
+        proptest! {
+            #[test]
+            fn gower_axioms(
+                a in (-0.5..0.5_f64, 0..4_i8),
+                b in (-0.5..0.5_f64, 0..4_i8),
+                c in (-0.5..0.5_f64, 0..4_i8),
+            ) {
+                let metric = [
+                    Metric::Gower { kind: GowerKind::Numeric },
+                    Metric::Gower { kind: GowerKind::Categorical },
+                ];
+                let levels = [vec![], vec![0.0, 1.0, 2.0, 3.0]];
+                let g = Geometry::with_categories(&metric, 2, &levels).unwrap();
+                let d = |u: (f64, i8), v: (f64, i8)| {
+                    g.key(&[u.0, f64::from(u.1)], &[0, 1], &[v.0, f64::from(v.1)])
+                        .sqrt()
+                };
+                prop_assert!(d(a, b) >= 0.0);
+                prop_assert!(d(a, a) == 0.0);
+                prop_assert!((d(a, b) - d(b, a)).abs() < 1e-12);
+                prop_assert!(d(a, c) <= d(a, b) + d(b, c) + 1e-12);
             }
         }
     }

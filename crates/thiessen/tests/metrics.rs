@@ -7,7 +7,7 @@
 mod common;
 
 use common::{fixture, SEED};
-use thiessen::{fit, Config, Metric};
+use thiessen::{fit, Config, GowerKind, Metric};
 
 fn minkowski(p: f64) -> Vec<Metric> {
     vec![Metric::Minkowski { p }; 2]
@@ -86,6 +86,58 @@ fn the_cosine_configuration_serialises_by_name() {
     let config = Config::new().with_metric(vec![Metric::Cosine, Metric::Euclidean]);
     let json = serde_json::to_string(&config).unwrap();
     assert!(json.contains(r#""cosine""#), "{json}");
+    let back: Config = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+}
+
+fn gower_metric() -> Vec<Metric> {
+    vec![
+        Metric::Gower {
+            kind: GowerKind::Numeric,
+        },
+        Metric::Gower {
+            kind: GowerKind::Categorical,
+        },
+    ]
+}
+
+/// The Gaussian fixture with its second column rounded to integer codes.
+fn gower_fixture() -> (Config, thiessen::Data, Vec<f64>) {
+    let (config, x, y) = fixture();
+    let rows: Vec<Vec<f64>> = (0..x.n_rows())
+        .map(|i| vec![x.row(i)[0], (x.row(i)[1] * 3.0).round()])
+        .collect();
+    let refs: Vec<&[f64]> = rows.iter().map(Vec::as_slice).collect();
+    (config, thiessen::Data::from_rows(&refs).unwrap(), y)
+}
+
+#[test]
+fn gower_changes_the_chain_and_round_trips() {
+    let (config, x, y) = gower_fixture();
+    let euclidean = fit(&config.clone(), &x, &y, SEED).unwrap();
+    let fitted = fit(&config.with_metric(gower_metric()), &x, &y, SEED).unwrap();
+    assert_ne!(euclidean.sigma(), fitted.sigma());
+    let json = serde_json::to_string(&fitted).unwrap();
+    let back: thiessen::Fitted = serde_json::from_str(&json).unwrap();
+    assert_eq!(fitted.predict(&x).unwrap(), back.predict(&x).unwrap());
+}
+
+#[test]
+fn gower_rejects_a_non_integer_code_at_fit() {
+    let (config, x, y) = fixture();
+    let err = fit(&config.with_metric(gower_metric()), &x, &y, SEED).unwrap_err();
+    assert!(matches!(err, thiessen::Error::InvalidCategoryCode { .. }));
+}
+
+#[test]
+fn the_gower_configuration_serialises_by_kind() {
+    let config = Config::new().with_metric(gower_metric());
+    let json = serde_json::to_string(&config).unwrap();
+    assert!(json.contains(r#"{"gower":{"kind":"numeric"}}"#), "{json}");
+    assert!(
+        json.contains(r#"{"gower":{"kind":"categorical"}}"#),
+        "{json}"
+    );
     let back: Config = serde_json::from_str(&json).unwrap();
     assert_eq!(back, config);
 }

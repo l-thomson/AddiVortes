@@ -15,6 +15,8 @@
 mod common;
 use common::TestRng;
 use std::f64::consts::PI;
+#[cfg(feature = "experimental")]
+use thiessen::GowerKind;
 use thiessen::{Config, Data, Metric, Sampler};
 
 /// Quantities of the Gaussian model, in column order: sigma^2, total cells
@@ -122,6 +124,8 @@ enum Space {
     },
     #[cfg(feature = "experimental")]
     Cosine,
+    #[cfg(feature = "experimental")]
+    Gower,
 }
 
 /// One model under test: the pinned-prior configuration and the test
@@ -284,6 +288,26 @@ fn cosine_model() -> Model {
             .with_metric(vec![Metric::Cosine, Metric::Cosine]),
         space: Space::Cosine,
         ..gaussian
+    }
+}
+
+/// The Gaussian model under the Gower distance: the categorical model's
+/// rows (a numeric column and four level codes), per-column distances
+/// averaged over the active columns.
+#[cfg(feature = "experimental")]
+fn gower_model() -> Model {
+    let categorical = categorical_model();
+    Model {
+        config: categorical.config.with_metric(vec![
+            Metric::Gower {
+                kind: GowerKind::Numeric,
+            },
+            Metric::Gower {
+                kind: GowerKind::Categorical,
+            },
+        ]),
+        space: Space::Gower,
+        ..categorical
     }
 }
 
@@ -502,6 +526,19 @@ impl Model {
                 } else {
                     (1.0 - dot / (a.sqrt() * b.sqrt())).clamp(0.0, 2.0)
                 };
+                return d * d;
+            }
+            #[cfg(feature = "experimental")]
+            Space::Gower => {
+                let sum: f64 = dims
+                    .iter()
+                    .zip(centre)
+                    .map(|(&dim, c)| match dim {
+                        0 => (row[0] - c).abs(),
+                        _ => f64::from(row[1] != *c),
+                    })
+                    .sum();
+                let d = sum / dims.len() as f64;
                 return d * d;
             }
             Space::Sphere => {}
@@ -743,6 +780,14 @@ fn sbc_small_ranks_are_uniform_minkowski() {
 fn sbc_small_ranks_are_uniform_cosine() {
     let model = cosine_model();
     let ranks = sbc_ranks(&model, 160, 19, 15, 150, 407);
+    assert_uniform(&model, &ranks, 19);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+fn sbc_small_ranks_are_uniform_gower() {
+    let model = gower_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 408);
     assert_uniform(&model, &ranks, 19);
 }
 

@@ -117,6 +117,8 @@ pub use config::{
 pub use data::{Data, Warning};
 pub use error::{Error, Result};
 pub use fitted::{Fitted, Interval, Posterior};
+#[cfg(feature = "experimental")]
+pub use geometry::GowerKind;
 pub use geometry::Metric;
 pub use models::{fit, fit_with_progress};
 pub use rng::chain_seed;

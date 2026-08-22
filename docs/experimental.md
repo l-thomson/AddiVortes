@@ -21,6 +21,7 @@ evidence. Removing the gate is a minor version bump.
 |---|---|---|---|---|---|---|
 | Minkowski distance (Manhattan as p = 1) | distance | `geometry.metric` entries `{"minkowski": {"p": ...}}`, `"manhattan"` | 0.3.0 | conformance, small SBC at p = 1 | experimental | [#61](https://github.com/l-thomson/thiessen/pull/61) |
 | Cosine distance | distance | `geometry.metric` entry `"cosine"` | 0.3.0 | conformance (no triangle inequality), small SBC | experimental | [#62](https://github.com/l-thomson/thiessen/pull/62) |
+| Gower distance | distance | `geometry.metric` entries `{"gower": {"kind": "numeric" or "categorical"}}` | 0.3.0 | conformance, small SBC | experimental | [#63](https://github.com/l-thomson/thiessen/pull/63) |
 
 Columns: the configuration field or `Model` variant; the first core version
 carrying the item behind the feature; calibration status (SBC and Geweke
