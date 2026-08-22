@@ -4,8 +4,7 @@
 
 use crate::error::{invalid, Result};
 use crate::geometry::Metric;
-use crate::model::Model;
-use crate::outcome::Sigma2Mode;
+use crate::outcome::{RequiredData, Sigma2Mode};
 
 /// The observation model and its own parameters, including the sigma^2
 /// settings: what generated y, as opposed to the ensembles that describe
@@ -53,6 +52,14 @@ impl Outcome {
         match self {
             Outcome::Gaussian(_) => Sigma2Mode::Sampled,
             Outcome::Probit(_) => Sigma2Mode::Fixed(1.0),
+        }
+    }
+
+    /// The response contract the outcome imposes at fit.
+    pub(crate) fn required_data(&self) -> RequiredData {
+        match self {
+            Outcome::Gaussian(_) => RequiredData::Continuous,
+            Outcome::Probit(_) => RequiredData::Binary,
         }
     }
 }
@@ -230,7 +237,7 @@ impl Default for GeneralParams {
 /// identical geometry while per-ensemble geometry awaits its
 /// identification argument.
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(try_from = "ConfigParts")]
 #[non_exhaustive]
 pub struct Config {
     /// The observation model, carrying its own parameters and its sigma^2
@@ -375,27 +382,14 @@ impl Config {
         self
     }
 
-    /// The observation model as the flat discriminator the internals
-    /// still key on; deleted with the [`Model`] enum.
-    #[must_use]
-    pub fn with_model(self, model: Model) -> Self {
-        match model {
-            Model::Gaussian => self.with_outcome(Outcome::gaussian()).with_m_var(0),
-            Model::Probit => self.with_outcome(Outcome::probit()).with_m_var(0),
-            Model::Heteroscedastic => {
-                let m_var = self.variance_params.variance_tessellations().max(40);
-                self.with_outcome(Outcome::gaussian()).with_m_var(m_var)
-            }
-        }
-    }
-
-    /// The flat discriminator, derived from the outcome and the variance
-    /// count; kept for the internals until the [`Model`] enum is deleted.
-    pub(crate) fn model(&self) -> Model {
+    /// The fitted model's name: the outcome's, or "heteroscedastic" for
+    /// the Gaussian outcome with a variance ensemble attached (the paper
+    /// names of the shipped models).
+    pub fn model_name(&self) -> &'static str {
         match (&self.outcome, self.variance_tessellations()) {
-            (Outcome::Probit(_), _) => Model::Probit,
-            (Outcome::Gaussian(_), 0) => Model::Gaussian,
-            (Outcome::Gaussian(_), _) => Model::Heteroscedastic,
+            (Outcome::Probit(_), _) => "probit",
+            (Outcome::Gaussian(_), 0) => "gaussian",
+            (Outcome::Gaussian(_), _) => "heteroscedastic",
         }
     }
 
@@ -529,6 +523,83 @@ impl Config {
     }
 }
 
+/// The deserialisation shape of [`Config`]: the four groups plus catchers
+/// for the flat pre-reshape field names, so a saved flat configuration
+/// fails with an error naming the replacement rather than an unknown-field
+/// message.
+#[derive(Default, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct ConfigParts {
+    outcome: Outcome,
+    mean_params: TermParams,
+    variance_params: TermParams,
+    general_params: GeneralParams,
+    #[serde(rename = "model")]
+    legacy_model: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "m")]
+    legacy_m: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "nu")]
+    legacy_nu: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "q")]
+    legacy_q: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "k")]
+    legacy_k: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "sigma_c")]
+    legacy_sigma_c: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "omega")]
+    legacy_omega: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "lambda_c")]
+    legacy_lambda_c: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "burn_in")]
+    legacy_burn_in: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "draws")]
+    legacy_draws: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "thinning")]
+    legacy_thinning: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "prior_only")]
+    legacy_prior_only: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "offset")]
+    legacy_offset: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "m_var")]
+    legacy_m_var: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "metric")]
+    legacy_metric: Option<serde::de::IgnoredAny>,
+}
+
+impl TryFrom<ConfigParts> for Config {
+    type Error = crate::error::Error;
+
+    fn try_from(parts: ConfigParts) -> Result<Self> {
+        let legacy = parts.legacy_model.is_some()
+            || parts.legacy_m.is_some()
+            || parts.legacy_nu.is_some()
+            || parts.legacy_q.is_some()
+            || parts.legacy_k.is_some()
+            || parts.legacy_sigma_c.is_some()
+            || parts.legacy_omega.is_some()
+            || parts.legacy_lambda_c.is_some()
+            || parts.legacy_burn_in.is_some()
+            || parts.legacy_draws.is_some()
+            || parts.legacy_thinning.is_some()
+            || parts.legacy_prior_only.is_some()
+            || parts.legacy_offset.is_some()
+            || parts.legacy_m_var.is_some()
+            || parts.legacy_metric.is_some();
+        if legacy {
+            return Err(invalid(
+                "model",
+                "the flat configuration is replaced by `outcome`, `mean_params`,                  `variance_params` and `general_params`; `model` is the `outcome`                  variant, with a variance ensemble as `variance_params.num_tessellations`",
+            ));
+        }
+        Ok(Self {
+            outcome: parts.outcome,
+            mean_params: parts.mean_params,
+            variance_params: parts.variance_params,
+            general_params: parts.general_params,
+        })
+    }
+}
+
 fn positive(name: &str, value: f64) -> Result<()> {
     if value.is_finite() && value > 0.0 {
         Ok(())
@@ -568,7 +639,7 @@ mod tests {
         assert!(config.validate().is_ok());
         assert_eq!(config.mean_tessellations(), 200);
         assert_eq!(config.variance_tessellations(), 0);
-        assert_eq!(config.model(), Model::Gaussian);
+        assert_eq!(config.model_name(), "gaussian");
         assert_eq!(Config::paper().mean_params.lambda_c, 25.0);
         assert_eq!(Config::paper().variance_params.lambda_c, 25.0);
     }
@@ -606,7 +677,7 @@ mod tests {
     fn the_variance_ensemble_derives_its_validity_from_the_mode() {
         let hetero = Config::new().with_m_var(4);
         assert!(hetero.validate().is_ok());
-        assert_eq!(hetero.model(), Model::Heteroscedastic);
+        assert_eq!(hetero.model_name(), "heteroscedastic");
         rejects(hetero.clone().with_nu(2.0), "nu");
         rejects(
             Config::new().with_outcome(Outcome::probit()).with_m_var(4),
@@ -641,23 +712,15 @@ mod tests {
     }
 
     #[test]
-    fn with_model_maps_onto_the_groups() {
-        let gaussian = Config::new().with_model(Model::Gaussian);
-        assert_eq!(gaussian.model(), Model::Gaussian);
-        let probit = Config::new().with_model(Model::Probit);
-        assert_eq!(probit.outcome, Outcome::probit());
-        assert_eq!(probit.model(), Model::Probit);
-        let hetero = Config::new().with_model(Model::Heteroscedastic);
-        assert_eq!(hetero.variance_tessellations(), 40);
-        assert_eq!(hetero.model(), Model::Heteroscedastic);
-        let sized = Config::new()
-            .with_m_var(6)
-            .with_model(Model::Heteroscedastic);
-        assert_eq!(sized.variance_tessellations(), 40);
-        let resized = Config::new()
-            .with_model(Model::Heteroscedastic)
-            .with_m_var(6);
-        assert_eq!(resized.variance_tessellations(), 6);
+    fn a_flat_configuration_names_the_replacement() {
+        let err = serde_json::from_str::<Config>(r#"{"model": "gaussian", "m": 5}"#).unwrap_err();
+        assert!(err.to_string().contains("`outcome`"), "{err}");
+        let err = serde_json::from_str::<Config>(r#"{"m_var": 3}"#).unwrap_err();
+        assert!(err.to_string().contains("variance_params"), "{err}");
+        assert!(serde_json::from_str::<Config>(r#"{"unheard_of": 1}"#)
+            .unwrap_err()
+            .to_string()
+            .contains("unheard_of"));
     }
 
     #[test]

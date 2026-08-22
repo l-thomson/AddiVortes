@@ -12,7 +12,7 @@
 //! cargo test --release --test variants -- --ignored --nocapture
 //! ```
 
-use thiessen::{fit, Config, Data, Model};
+use thiessen::{fit, Config, Data, Outcome};
 
 const DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/variants");
 
@@ -98,7 +98,7 @@ fn probit_friedman_against_the_binary_script() {
     let (x, y) = parse_data(&format!("{DIR}/probit_friedman_data.csv"));
     let script = parse_summary(&format!("{DIR}/probit_friedman_script_summary.csv"));
     let config = Config::new()
-        .with_model(Model::Probit)
+        .with_outcome(Outcome::probit())
         .with_offset(0.0)
         .with_m(50)
         .with_burn_in(200)
@@ -132,7 +132,6 @@ fn heteroscedastic_friedman_against_the_script() {
         "{DIR}/heteroscedastic_friedman_script_summary.csv"
     ));
     let config = Config::new()
-        .with_model(Model::Heteroscedastic)
         .with_m(50)
         .with_m_var(20)
         .with_burn_in(200)

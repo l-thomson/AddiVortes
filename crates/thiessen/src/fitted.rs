@@ -1,13 +1,13 @@
 //! The fitted model: the kept posterior draws, the scaling, and the
-//! prediction surface, with the semantics of each method per
-//! [`Model`].
+//! prediction surface, with the semantics of each method per outcome
+//! model.
 
 use crate::config::Config;
+use crate::config::Outcome;
 use crate::data::{self, Data, Warning};
 use crate::error::{Error, Result};
 use crate::geometry::Geometry;
 use crate::maths;
-use crate::model::Model;
 use crate::scaler::Scaler;
 use crate::tessellation::Tessellation;
 
@@ -199,26 +199,28 @@ impl TryFrom<FittedParts> for Fitted {
             ));
         }
         let n_draws = parts.posterior.n_draws();
-        let model = parts.config.model();
-        if (parts.posterior.sigma_sq().len() == n_draws) != model.has_global_variance() {
+        let has_ensemble = parts.config.variance_tessellations() > 0;
+        let has_global_sigma_sq =
+            parts.config.outcome.sigma2_mode().samples_global_sigma_sq() && !has_ensemble;
+        if (parts.posterior.sigma_sq().len() == n_draws) != has_global_sigma_sq {
             return Err(bad(
-                "sigma^2 draws are present exactly under the Gaussian model",
+                "sigma^2 draws are present exactly where the scale is sampled globally",
             ));
         }
-        if (parts.posterior.variance_tessellations().len() == n_draws)
-            != model.has_variance_ensemble()
-        {
+        if (parts.posterior.variance_tessellations().len() == n_draws) != has_ensemble {
             return Err(bad(
-                "variance tessellations are present exactly under the heteroscedastic model",
+                "variance tessellations are present exactly under a variance ensemble",
             ));
         }
-        if model.has_variance_ensemble()
+        if has_ensemble
             && parts.posterior.variance_tessellations()[0].len()
                 != parts.config.variance_tessellations()
         {
-            return Err(bad("draws do not hold m_var variance tessellations"));
+            return Err(bad(
+                "draws do not hold the variance-ensemble tessellation count",
+            ));
         }
-        if model == Model::Probit {
+        if matches!(parts.config.outcome, Outcome::Probit(_)) {
             match parts.config.offset() {
                 Some(c) if c.is_finite() => {}
                 _ => return Err(bad("a probit fit carries a finite offset")),
@@ -269,9 +271,20 @@ impl Fitted {
         }
     }
 
-    /// The model the draws were fitted under.
-    pub fn model(&self) -> Model {
-        self.config.model()
+    /// The fitted model's name: "gaussian", "probit", or "heteroscedastic"
+    /// for the Gaussian outcome with its variance ensemble attached.
+    pub fn model_name(&self) -> &'static str {
+        self.config.model_name()
+    }
+
+    /// The observation model the draws were fitted under.
+    pub fn outcome(&self) -> &Outcome {
+        &self.config.outcome
+    }
+
+    /// Whether the spread is the variance ensemble's product s^2(x).
+    pub fn has_variance_ensemble(&self) -> bool {
+        self.config.variance_tessellations() > 0
     }
 
     /// The kept draws of `fits`, in chain order, as one fitted model.
@@ -339,7 +352,7 @@ impl Fitted {
     fn not_applicable(&self, method: &str) -> Error {
         Error::NotApplicable {
             method: method.into(),
-            model: self.config.model(),
+            model: self.config.model_name().into(),
         }
     }
 
@@ -361,7 +374,7 @@ impl Fitted {
     /// `FeatureCountMismatch`, `NonFiniteFeature`, `InvalidCategoryCode`.
     pub fn predict_draws(&self, x: &Data) -> Result<Vec<Vec<f64>>> {
         let mut latent = self.predict_latent(x)?;
-        if self.config.model() == Model::Probit {
+        if matches!(self.config.outcome, Outcome::Probit(_)) {
             for draw in &mut latent {
                 for v in draw {
                     *v = maths::normal_cdf(*v);
@@ -425,14 +438,14 @@ impl Fitted {
         data::validate_predict(x, self.scaler.n_cols())?;
         let n = x.n_rows();
         let range_sq = self.scaler.y_range() * self.scaler.y_range();
-        match self.config.model() {
-            Model::Gaussian => Ok(self
+        match (&self.config.outcome, self.has_variance_ensemble()) {
+            (Outcome::Gaussian(_), false) => Ok(self
                 .posterior
                 .sigma_sq()
                 .iter()
                 .map(|s| vec![s * range_sq; n])
                 .collect()),
-            Model::Heteroscedastic => {
+            (Outcome::Gaussian(_), true) => {
                 let geometry = self.geometry()?;
                 geometry.check_codes(x)?;
                 let x_scaled = self.scaler.scale_x(x);
@@ -453,7 +466,7 @@ impl Fitted {
                     })
                     .collect())
             }
-            Model::Probit => Err(self.not_applicable("predict_variance")),
+            (Outcome::Probit(_), _) => Err(self.not_applicable("predict_variance")),
         }
     }
 
@@ -519,7 +532,7 @@ impl Fitted {
     /// (0, 1); the predict errors.
     pub fn prediction_interval(&self, x: &Data, level: f64) -> Result<Vec<Interval>> {
         check_probability(level)?;
-        if self.config.model() == Model::Probit {
+        if matches!(self.config.outcome, Outcome::Probit(_)) {
             return Err(self.not_applicable("prediction_interval"));
         }
         let per_draw = self.predict_draws(x)?;
@@ -565,7 +578,7 @@ impl Fitted {
         if let Some(row) = y.iter().position(|v| !v.is_finite()) {
             return Err(Error::NonFiniteResponse { row });
         }
-        if self.config.model() == Model::Probit {
+        if matches!(self.config.outcome, Outcome::Probit(_)) {
             if let Some(row) = y.iter().position(|&v| v != 0.0 && v != 1.0) {
                 return Err(Error::InvalidLabel { row });
             }
@@ -619,10 +632,7 @@ impl Fitted {
 
     /// The probit offset c; 0 under the other models.
     fn offset(&self) -> f64 {
-        match self.config.model() {
-            Model::Probit => self.config.offset().unwrap_or(0.0),
-            Model::Gaussian | Model::Heteroscedastic => 0.0,
-        }
+        self.config.offset().unwrap_or(0.0)
     }
 
     /// Mean number of cells per mean tessellation, one value per kept draw.
@@ -779,20 +789,20 @@ mod tests {
     fn fitted_probit() -> (Fitted, Data, Vec<f64>) {
         let (x, y) = data();
         let labels: Vec<f64> = y.iter().map(|&v| if v > 0.5 { 1.0 } else { 0.0 }).collect();
-        let config = small().with_model(Model::Probit);
+        let config = small().with_outcome(Outcome::probit());
         (fit(&config, &x, &labels, 42).unwrap(), x, labels)
     }
 
     fn fitted_heteroscedastic() -> (Fitted, Data, Vec<f64>) {
         let (x, y) = data();
-        let config = small().with_model(Model::Heteroscedastic).with_m_var(5);
+        let config = small().with_m_var(5);
         (fit(&config, &x, &y, 42).unwrap(), x, y)
     }
 
     #[test]
     fn prediction_surface_shapes_and_order() {
         let (model, x, y) = fitted();
-        assert_eq!(model.model(), Model::Gaussian);
+        assert_eq!(model.model_name(), "gaussian");
         let mean = model.predict(&x).unwrap();
         let draws = model.predict_draws(&x).unwrap();
         assert_eq!(mean.len(), 30);
@@ -827,7 +837,7 @@ mod tests {
     #[test]
     fn probit_surface() {
         let (model, x, labels) = fitted_probit();
-        assert_eq!(model.model(), Model::Probit);
+        assert_eq!(model.model_name(), "probit");
         let probs = model.predict(&x).unwrap();
         assert!(probs.iter().all(|p| (0.0..=1.0).contains(p)));
         // The mean probability over the draws is Phi of the latent, draw by
@@ -842,7 +852,7 @@ mod tests {
         assert!(model.sigma().is_empty());
         assert!(matches!(
             model.predict_variance(&x),
-            Err(Error::NotApplicable { ref method, model: Model::Probit }) if method == "predict_variance"
+            Err(Error::NotApplicable { ref method, ref model }) if method == "predict_variance" && model == "probit"
         ));
         assert!(matches!(
             model.prediction_interval(&x, 0.9),
@@ -864,7 +874,7 @@ mod tests {
     #[test]
     fn heteroscedastic_surface() {
         let (model, x, y) = fitted_heteroscedastic();
-        assert_eq!(model.model(), Model::Heteroscedastic);
+        assert_eq!(model.model_name(), "heteroscedastic");
         assert!(model.sigma().is_empty());
         let variance = model.predict_variance(&x).unwrap();
         assert_eq!((variance.len(), variance[0].len()), (30, 30));

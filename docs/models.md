@@ -17,7 +17,7 @@ the backfitting Gibbs sampler of Algorithm 1 with the six structural
 Metropolis-Hastings moves of Appendix B, carrying the corrections CRAN
 AddiVortes made in 0.6.8.
 
-## Gaussian (`Model::Gaussian`)
+## Gaussian (`Outcome::Gaussian`)
 
     y_i = f(x_i) + e_i,   e_i ~ N(0, sigma^2)
 
@@ -49,7 +49,7 @@ is sigma_d^2 per draw, constant across rows; `prediction_interval` and
 `log_likelihood` use N(f_d(x), sigma_d^2); `sigma` is sigma_d on the
 caller's scale.
 
-## Probit (`Model::Probit`)
+## Probit (`Outcome::Probit`)
 
     y_i in {0, 1},   P(y_i = 1 | x_i) = Phi(c + f(x_i))
 
@@ -98,7 +98,7 @@ is the Bernoulli log-likelihood; `prediction_interval` and
 `in_sample_rmse` is the root Brier score. Input: labels in {0, 1} with
 both present; anything else is `Error::InvalidLabel`.
 
-## Heteroscedastic (`Model::Heteroscedastic`)
+## Heteroscedastic (`Outcome::Gaussian` with `variance_params.num_tessellations` above 0)
 
 H-AddiVortes; the structure is that of HBART (Pratola, Chipman, George
 and McCulloch 2020):
@@ -126,11 +126,8 @@ prior mean of the Gaussian model's sigma^2; without the matching the
 product of m' cell values has a mean and spread that grow with m' (HBART
 s. 3.2). nu > 2 is required. The variance ensemble shares lambda_c, omega
 and sigma_c with the mean ensemble; every variance cell starts at
-sigma_hat^(2 / m'), so s^2 starts at sigma_hat^2. Configuration: the
-Gaussian outcome with `variance_params.num_tessellations` above 0
-(`Config::new().with_m_var(40)`; the paper's m' is 40, and
-`with_model(Model::Heteroscedastic)` supplies it while the flat
-discriminator lasts).
+sigma_hat^(2 / m'), so s^2 starts at sigma_hat^2. Configuration:
+`Config::new().with_m_var(40)`; the paper's m' is 40.
 
 Fitted model: `predict` is the posterior mean of f(x); `predict_variance`
 is s_d^2(x) per draw on the caller's scale (the square of `rbart`'s

@@ -79,7 +79,8 @@ group_config <- function(control) {
   model <- control$model
   if (is.null(model)) model <- "gaussian"
   heteroscedastic <- identical(model, "heteroscedastic")
-  kind <- if (identical(model, "probit")) "probit" else "gaussian"
+  # An unknown name passes through for the core to reject as an outcome.
+  kind <- if (model %in% c("gaussian", "heteroscedastic")) "gaussian" else model
   outcome <- named_empty
   if (identical(kind, "gaussian")) {
     if (!is.null(control$nu)) outcome$nu <- control$nu
@@ -128,9 +129,11 @@ flatten_config <- function(grouped) {
   m_var <- variance$num_tessellations
   if (is.null(m_var)) m_var <- 0L
   gaussian <- identical(kind, "gaussian")
+  m <- mean_params$num_tessellations
+  if (is.null(m)) m <- 200L
   list(
     model = if (gaussian && m_var > 0L) "heteroscedastic" else kind,
-    m = mean_params$num_tessellations,
+    m = m,
     nu = if (gaussian && !is.null(params$nu)) params$nu else 6,
     q = if (gaussian && !is.null(params$q)) params$q else 0.85,
     k = mean_params$k,

@@ -194,7 +194,7 @@ impl Fitted {
     /// The observation model.
     #[getter]
     fn model(&self) -> String {
-        self.inner.model().to_string()
+        self.inner.model_name().to_string()
     }
 
     /// Root mean squared error of the posterior mean on the training rows.

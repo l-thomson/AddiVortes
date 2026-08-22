@@ -1,7 +1,7 @@
 //! Simulation-based calibration (Talts et al. 2018; Modrák et al. 2025,
 //! Bayesian Analysis) and the Geweke (2004) joint-distribution test, run
 //! under the pinned prior so the prior does not depend on the data. The
-//! harness is parametrised by a [`Model`]: its configuration, its prior
+//! harness is parametrised by a model under test: its configuration, its
 //! simulator, its response generator and its list of test quantities.
 //!
 //! Each test has two sizes. The small configuration runs in `cargo test`
@@ -256,7 +256,7 @@ fn probit_model() -> Model {
         kind: Kind::Probit,
         config: gaussian
             .config
-            .with_model(thiessen::Model::Probit)
+            .with_outcome(thiessen::Outcome::probit())
             .with_offset(-0.2),
         lambda: 1.0,
         quantities: &PROBIT_QUANTITIES,
@@ -272,10 +272,7 @@ fn heteroscedastic_model() -> Model {
     let gaussian = gaussian_model();
     Model {
         kind: Kind::Heteroscedastic,
-        config: gaussian
-            .config
-            .with_model(thiessen::Model::Heteroscedastic)
-            .with_m_var(2),
+        config: gaussian.config.with_m_var(2),
         quantities: &HETEROSCEDASTIC_QUANTITIES,
         n_sbc: 9,
         gates: HETEROSCEDASTIC_GATES,

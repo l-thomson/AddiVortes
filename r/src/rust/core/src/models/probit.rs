@@ -1,4 +1,5 @@
-//! The probit model for a binary response, [`Model::Probit`]:
+//! The probit model for a binary response,
+//! [`Outcome::Probit`](crate::Outcome::Probit):
 //!
 //! ```text
 //! y_i in {0, 1},   P(y_i = 1 | x_i) = Phi(c + f(x_i)),   f(x) = sum_{j=1}^m g(x; T_j, M_j),
@@ -57,12 +58,7 @@
 //! is [`Error::InvalidLabel`](crate::Error::InvalidLabel), a constant
 //! response [`Error::DegenerateResponse`](crate::Error::DegenerateResponse).
 //!
-//! [`Model::Probit`]: crate::Model::Probit
 
-use crate::config::Config;
-use crate::data::Data;
-use crate::error::Result;
-use crate::fitted::Fitted;
 use crate::maths;
 use crate::outcome::{OutcomeModel, RequiredData, Sigma2Mode};
 use crate::rng::{self, Rng};
@@ -147,17 +143,6 @@ impl OutcomeModel for ProbitOutcome {
     }
 }
 
-/// Fit the probit model with the shared sweep schedule.
-pub(crate) fn fit(
-    config: &Config,
-    x: &Data,
-    y: &[f64],
-    seed: u64,
-    progress: &mut dyn FnMut(usize, usize),
-) -> Result<Fitted> {
-    super::run(config, x, y, seed, progress)
-}
-
 #[cfg(test)]
 mod outcome_tests {
     use super::*;
@@ -190,7 +175,6 @@ mod outcome_tests {
 mod tests {
     use crate::config::Config;
     use crate::data::Data;
-    use crate::model::Model;
     use crate::sampler::Sampler;
     use crate::tessellation::Tessellation;
 
@@ -243,7 +227,7 @@ mod tests {
             .collect();
         let x = Data::new(xs, n, 1).unwrap();
         let config = Config::new()
-            .with_model(Model::Probit)
+            .with_outcome(crate::config::Outcome::probit())
             .with_offset(0.0)
             .with_m(1);
         for (centres, seed) in [(vec![-0.35, 0.0, 0.3], 31_u64), (vec![0.0], 32)] {

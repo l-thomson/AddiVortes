@@ -94,8 +94,8 @@ pub enum Error {
     NotApplicable {
         /// The method called.
         method: String,
-        /// The fitted model.
-        model: crate::Model,
+        /// The fitted model's name.
+        model: String,
     },
     /// An option is compiled only with a Cargo feature this build lacks.
     #[error("{item} requires the `{feature}` feature")]
@@ -218,7 +218,7 @@ mod tests {
             (
                 Error::NotApplicable {
                     method: "prediction_interval".into(),
-                    model: crate::Model::Probit,
+                    model: "probit".into(),
                 },
                 "`prediction_interval` is not defined under the probit model",
             ),

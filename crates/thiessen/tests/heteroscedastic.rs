@@ -4,11 +4,10 @@
 
 mod common;
 use common::TestRng;
-use thiessen::{fit, Config, Data, Error, Model, Sampler};
+use thiessen::{fit, Config, Data, Error, Sampler};
 
 fn config() -> Config {
     Config::new()
-        .with_model(Model::Heteroscedastic)
         .with_m(5)
         .with_m_var(3)
         .with_burn_in(10)
@@ -32,7 +31,7 @@ fn hyperparameters_are_validated_at_the_boundary() {
     let (x, y) = toy();
     // A zero variance count is a constant spread, not an error.
     let plain = fit(&config().with_m_var(0), &x, &y, 1).unwrap();
-    assert_eq!(plain.model(), Model::Gaussian);
+    assert_eq!(plain.model_name(), "gaussian");
     assert!(matches!(
         fit(&config().with_nu(2.0), &x, &y, 1).unwrap_err(),
         Error::InvalidHyperparameter { ref name, .. } if name == "nu"
@@ -55,7 +54,7 @@ fn hyperparameters_are_validated_at_the_boundary() {
 fn prediction_surface_under_the_model() {
     let (x, y) = toy();
     let fitted = fit(&config(), &x, &y, 3).unwrap();
-    assert_eq!(fitted.model(), Model::Heteroscedastic);
+    assert_eq!(fitted.model_name(), "heteroscedastic");
     assert!(fitted.sigma().is_empty());
     assert!(fitted.posterior().sigma_sq().is_empty());
     assert_eq!(fitted.posterior().variance_tessellations().len(), 12);
@@ -95,7 +94,6 @@ fn prior_mean_of_the_variance_product_is_matched() {
     let expected = nu * lambda / (nu - 2.0);
     for (m_var, seed) in [(1, 31_u64), (5, 32), (40, 33)] {
         let config = Config::new()
-            .with_model(Model::Heteroscedastic)
             .with_m(2)
             .with_m_var(m_var)
             .with_nu(nu)
@@ -165,7 +163,6 @@ fn recovers_a_heteroscedastic_friedman_function() {
     let x = Data::from_rows(&rows).unwrap();
 
     let config = Config::new()
-        .with_model(Model::Heteroscedastic)
         .with_m(50)
         .with_m_var(20)
         .with_burn_in(300)
