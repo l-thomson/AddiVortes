@@ -35,6 +35,6 @@ Suggests:
     tidybayes
 Roxygen: list(markdown = TRUE, load = "source")
 Config/testthat/edition: 3
-Config/thiessen/core-version: 0.2.0
+Config/thiessen/core-version: 0.3.0
 SystemRequirements: Cargo (Rust's package manager), rustc >= 1.74
 Config/roxygen2/version: 8.1.0
