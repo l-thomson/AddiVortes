@@ -373,6 +373,20 @@ fn validate_config(config_json: &str) -> PyResult<()> {
     config(config_json)?.validate().map_err(core_error)
 }
 
+/// The core's default configuration as JSON.
+#[pyfunction]
+fn default_config() -> PyResult<String> {
+    serde_json::to_string(&thiessen::Config::new())
+        .map_err(|e| ThiessenError::new_err(e.to_string()))
+}
+
+/// The default parameters of each outcome family, as JSON.
+#[pyfunction]
+fn outcome_defaults() -> PyResult<String> {
+    let families = [thiessen::Outcome::gaussian(), thiessen::Outcome::probit()];
+    serde_json::to_string(&families).map_err(|e| ThiessenError::new_err(e.to_string()))
+}
+
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("CORE_VERSION", thiessen::VERSION)?;
@@ -383,5 +397,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit, m)?)?;
     m.add_function(wrap_pyfunction!(fitted_from_json, m)?)?;
     m.add_function(wrap_pyfunction!(validate_config, m)?)?;
+    m.add_function(wrap_pyfunction!(default_config, m)?)?;
+    m.add_function(wrap_pyfunction!(outcome_defaults, m)?)?;
     Ok(())
 }
