@@ -18,6 +18,10 @@ pub(crate) enum Breakage {
     /// dropped from the add-centre and remove-centre ratios; no effect on
     /// a Gaussian ensemble, whose normaliser is zero.
     DroppedCellNormaliser,
+    /// The subset-prior normalisers e_d dropped from the DART weight
+    /// update's acceptance ratio, so every proposal is accepted.
+    #[cfg(feature = "experimental")]
+    DroppedSubsetNormaliser,
 }
 
 /// The shift the defect adds to ln alpha for move `m`; `normaliser` is
@@ -51,6 +55,9 @@ pub(crate) fn log_alpha_shift(
             Move::RemoveCentre => normaliser,
             _ => 0.0,
         },
+        // Acts in the weight update, not in the structural moves.
+        #[cfg(feature = "experimental")]
+        Breakage::DroppedSubsetNormaliser => 0.0,
     }
 }
 
@@ -80,6 +87,28 @@ mod tests {
         fn normal(&mut self) -> f64 {
             let (u1, u2) = (1.0 - self.uniform(), self.uniform());
             (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+        }
+
+        /// Gamma(shape, 1) for any positive shape: Marsaglia and Tsang
+        /// (2000), boosted below 1.
+        #[cfg(feature = "experimental")]
+        fn gamma(&mut self, shape: f64) -> f64 {
+            if shape < 1.0 {
+                return self.gamma(shape + 1.0) * self.uniform().powf(1.0 / shape);
+            }
+            let d = shape - 1.0 / 3.0;
+            let c = 1.0 / (9.0 * d).sqrt();
+            loop {
+                let z = self.normal();
+                let v = (1.0 + c * z).powi(3);
+                if v <= 0.0 {
+                    continue;
+                }
+                let u = self.uniform();
+                if u.ln() < 0.5 * z * z + d - d * v + d * v.ln() {
+                    return d * v;
+                }
+            }
         }
 
         fn poisson(&mut self, lambda: f64) -> usize {
@@ -364,5 +393,209 @@ mod tests {
         assert_eq!(shift(Move::RemoveCentre, 3, 2), 0.7);
         assert_eq!(shift(Move::Change, 2, 2), 0.0);
         assert_eq!(shift(Move::AddDimension, 2, 2), 0.0);
+    }
+
+    #[cfg(feature = "experimental")]
+    mod dart {
+        use super::*;
+        use crate::config::Inclusion;
+
+        const A: f64 = 2.0;
+        const B: f64 = 2.0;
+        const RHO: f64 = 3.0;
+        /// At omega 0.6 most states have one dimension, where e_1 = 1
+        /// and the dropped normaliser has no effect; the fixture raises
+        /// the dimension prior so the defect acts.
+        const DART_OMEGA: f64 = 2.0;
+        const DART_M: usize = 1;
+        /// The s chain moves by an independence proposal, so the ranks
+        /// need heavier thinning than the structural quantities.
+        const DART_THIN: usize = 45;
+
+        /// theta from the discrete grid, then s ~ Dirichlet(theta / 3).
+        fn prior_state(rng: &mut SimRng) -> ([f64; 3], f64) {
+            let k = 1000;
+            let mut thetas = Vec::with_capacity(k);
+            let mut weights = Vec::with_capacity(k);
+            for i in 1..=k {
+                let lambda = i as f64 / (k + 1) as f64;
+                thetas.push(lambda * RHO / (1.0 - lambda));
+                weights.push(lambda.powf(A - 1.0) * (1.0 - lambda).powf(B - 1.0));
+            }
+            let total: f64 = weights.iter().sum();
+            let target = rng.uniform() * total;
+            let mut cumulative = 0.0;
+            let mut theta = thetas[k - 1];
+            for (i, &w) in weights.iter().enumerate() {
+                cumulative += w;
+                if target < cumulative {
+                    theta = thetas[i];
+                    break;
+                }
+            }
+            let g = [
+                rng.gamma(theta / 3.0).max(f64::MIN_POSITIVE),
+                rng.gamma(theta / 3.0).max(f64::MIN_POSITIVE),
+                rng.gamma(theta / 3.0).max(f64::MIN_POSITIVE),
+            ];
+            let total = g[0] + g[1] + g[2];
+            ([g[0] / total, g[1] / total, g[2] / total], theta)
+        }
+
+        /// A dimension subset with P(S | d) proportional to the product
+        /// of member weights, enumerated over p = 3.
+        fn weighted_dims(s: &[f64; 3], rng: &mut SimRng) -> Vec<usize> {
+            let theta = DART_OMEGA / P as f64;
+            let mut d = 1;
+            for _ in 0..P - 1 {
+                if rng.uniform() < theta {
+                    d += 1;
+                }
+            }
+            match d {
+                1 => {
+                    let total = s[0] + s[1] + s[2];
+                    let target = rng.uniform() * total;
+                    let mut cumulative = 0.0;
+                    for (col, &w) in s.iter().enumerate() {
+                        cumulative += w;
+                        if target < cumulative {
+                            return vec![col];
+                        }
+                    }
+                    vec![2]
+                }
+                2 => {
+                    let pairs = [(0, 1), (0, 2), (1, 2)];
+                    let weights = pairs.map(|(i, j)| s[i] * s[j]);
+                    let total: f64 = weights.iter().sum();
+                    let target = rng.uniform() * total;
+                    let mut cumulative = 0.0;
+                    for ((i, j), w) in pairs.iter().zip(weights) {
+                        cumulative += w;
+                        if target < cumulative {
+                            return vec![*i, *j];
+                        }
+                    }
+                    vec![1, 2]
+                }
+                _ => vec![0, 1, 2],
+            }
+        }
+
+        /// One prior tessellation under the weights, truncated to full
+        /// occupancy.
+        fn prior_tessellation(
+            rows: &[[f64; 3]],
+            s: &[f64; 3],
+            rng: &mut SimRng,
+        ) -> (Vec<usize>, Vec<f64>, Vec<f64>) {
+            let sigma_mu = 0.5 / (3.0 * (DART_M as f64).sqrt());
+            loop {
+                let b = 1 + rng.poisson(LAMBDA_C);
+                let dims = weighted_dims(s, rng);
+                let d = dims.len();
+                let centres: Vec<f64> = (0..b * d).map(|_| SIGMA_C * rng.normal()).collect();
+                let mut occupied = vec![false; b];
+                for row in rows {
+                    occupied[nearest(row, &dims, &centres)] = true;
+                }
+                if occupied.iter().all(|&o| o) {
+                    let mus = (0..b).map(|_| sigma_mu * rng.normal()).collect();
+                    return (dims, centres, mus);
+                }
+            }
+        }
+
+        /// SBC rank statistics for (s_0, total dims) with the breakage in
+        /// force.
+        fn sbc_statistics(breakage: Breakage) -> [f64; 2] {
+            let rows = rows();
+            let x = Data::from_rows(&rows).unwrap();
+            let config = config(Model::Gaussian)
+                .with_m(DART_M)
+                .with_omega(DART_OMEGA)
+                .with_inclusion(Inclusion::Dart {
+                    a: A,
+                    b: B,
+                    rho: Some(RHO),
+                });
+            let mut ranks = [[0.0_f64; 20]; 2];
+            for sim in 0..SIMS {
+                let mut rng = SimRng(8400 + sim as u64);
+                let (s, _) = prior_state(&mut rng);
+                let ensemble: Vec<_> = (0..DART_M)
+                    .map(|_| prior_tessellation(&rows, &s, &mut rng))
+                    .collect();
+                let sigma_sq = prior_variance(&mut rng);
+                let truth = [
+                    s[0],
+                    ensemble.iter().map(|(d, _, _)| d.len()).sum::<usize>() as f64,
+                ];
+                let y: Vec<f64> = rows
+                    .iter()
+                    .map(|row| {
+                        let f: f64 = ensemble
+                            .iter()
+                            .map(|(dims, centres, mus)| mus[nearest(row, dims, centres)])
+                            .sum();
+                        f + sigma_sq.sqrt() * rng.normal()
+                    })
+                    .collect();
+
+                let mut sampler =
+                    Sampler::pinned_prior(&config, &x, &y, LAMBDA, sim as u64).unwrap();
+                sampler.breakage = breakage;
+                for _ in 0..BURN {
+                    sampler.step();
+                }
+                let mut draws = [[0.0_f64; KEPT]; 2];
+                for kept in 0..KEPT {
+                    for _ in 0..DART_THIN {
+                        sampler.step();
+                    }
+                    let (weights, _) = sampler.inclusion_state().unwrap();
+                    let state = [
+                        weights[0],
+                        sampler
+                            .tessellations()
+                            .iter()
+                            .map(|t| t.n_dims())
+                            .sum::<usize>() as f64,
+                    ];
+                    for (series, value) in draws.iter_mut().zip(state) {
+                        series[kept] = value;
+                    }
+                }
+                for q in 0..2 {
+                    let below = draws[q].iter().filter(|v| **v < truth[q]).count();
+                    let equal = draws[q].iter().filter(|v| **v == truth[q]).count();
+                    let rank = below + (rng.uniform() * (equal + 1) as f64) as usize;
+                    ranks[q][rank.min(below + equal)] += 1.0;
+                }
+            }
+            let expected = SIMS as f64 / 20.0;
+            ranks.map(|counts| {
+                counts
+                    .iter()
+                    .map(|c| (c - expected) * (c - expected) / expected)
+                    .sum()
+            })
+        }
+
+        #[test]
+        fn unbroken_dart_passes_the_small_sbc() {
+            let statistics = sbc_statistics(Breakage::None);
+            for (q, statistic) in statistics.iter().enumerate() {
+                assert!(*statistic < CRITICAL, "quantity {q}: {statistic}");
+            }
+        }
+
+        #[test]
+        fn dropped_subset_normaliser_is_rejected() {
+            let statistics = sbc_statistics(Breakage::DroppedSubsetNormaliser);
+            let max = statistics.iter().cloned().fold(0.0, f64::max);
+            assert!(max > CRITICAL, "{statistics:?}");
+        }
     }
 }

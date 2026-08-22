@@ -197,6 +197,30 @@ Models behind the `experimental` Cargo feature are stated here under
 their own headings as they land; their status is kept only in the table
 in [experimental.md](experimental.md).
 
+### DART inclusion (`structure.inclusion` entry `dart`, experimental)
+
+Not a model: in the API it is a value of the term group's inclusion
+prior, following the BART package, which ships it as `sparse = TRUE`
+with `a`, `b` and `rho` rather than as a separate function. It is
+stated here because it is model-grade in validation: the inclusion
+weights are sampled, which changes the posterior.
+
+    s ~ Dirichlet(theta / p, ..., theta / p),
+    P(S | d, s) = prod_{j in S} s_j / e_d(s),
+    lambda = theta / (theta + rho),  lambda uniform on a 1000-point grid
+    of (0, 1) with prior weights Beta(a, b).
+
+e_d is the elementary symmetric polynomial, the subset-prior
+normaliser. Defaults a = 0.5, b = 1, rho = p (Linero 2018; the BART
+package's `sparse = TRUE` defaults). The grid is the prior, not an
+approximation of one: theta's conditional is sampled exactly on it. s
+is updated by a Metropolis step whose Dirichlet(theta / p + counts)
+proposal leaves exactly the normalisers e_d in the acceptance ratio.
+The weights are shared between the mean and the variance ensembles,
+whose declared structure is one group. Validation: SBC and Geweke at
+both sizes, and a broken-sampler fixture dropping the normalisers from
+the weight update.
+
 ## References
 
 - Albert, J. H. and Chib, S. (1993). Bayesian analysis of binary and
@@ -208,6 +232,9 @@ in [experimental.md](experimental.md).
 - Chipman, H. A., George, E. I. and McCulloch, R. E. (2010). BART:
   Bayesian additive regression trees. Annals of Applied Statistics 4(1),
   266-298.
+- Linero, A. R. (2018). Bayesian regression trees for high-dimensional
+  prediction and variable selection. Journal of the American Statistical
+  Association 113(522), 626-636.
 - Pratola, M. T., Chipman, H. A., George, E. I. and McCulloch, R. E.
   (2020). Heteroscedastic BART via multiplicative regression trees.
   Journal of Computational and Graphical Statistics 29(2), 405-417.

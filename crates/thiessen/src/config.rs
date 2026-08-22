@@ -208,6 +208,40 @@ pub enum Inclusion {
         /// One weight per column, in column order.
         weights: Vec<f64>,
     },
+    /// The DART sparsity prior (Linero 2018), as the BART package ships
+    /// it (`sparse = TRUE` with `a`, `b`, `rho`): the weights are a
+    /// sampled vector s ~ Dirichlet(theta / p), the subset prior given
+    /// the dimension count is proportional to the product of member
+    /// weights, and the concentration theta is sampled on the BART grid,
+    /// lambda = theta / (theta + rho) uniform over 1000 points of (0, 1)
+    /// with prior weights Beta(a, b); the grid is the prior, not an
+    /// approximation of one. s is updated by a Metropolis step whose
+    /// Dirichlet(theta / p + counts) proposal leaves exactly the
+    /// subset-prior normalisers in the ratio. In the API this is a
+    /// component of the term group; in validation it is model-grade,
+    /// because the sampled weights change the posterior. Experimental
+    /// (`docs/experimental.md`).
+    Dart {
+        /// Beta shape a of the concentration prior. Default 0.5.
+        #[serde(default = "default_dart_a")]
+        a: f64,
+        /// Beta shape b of the concentration prior. Default 1.
+        #[serde(default = "default_dart_b")]
+        b: f64,
+        /// The concentration scale rho; `None` resolves to p at fit.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rho: Option<f64>,
+    },
+}
+
+#[cfg(feature = "experimental")]
+fn default_dart_a() -> f64 {
+    0.5
+}
+
+#[cfg(feature = "experimental")]
+fn default_dart_b() -> f64 {
+    1.0
 }
 
 #[cfg(feature = "experimental")]
@@ -686,13 +720,23 @@ fn validate_term(slot: &str, params: &TermParams) -> Result<()> {
     positive(&format!("{slot}.lambda_c"), params.lambda_c)?;
     positive(&format!("{slot}.geometry.sigma_c"), params.geometry.sigma_c)?;
     #[cfg(feature = "experimental")]
-    if let Inclusion::Weighted { weights } = &params.structure.inclusion {
-        let name = format!("{slot}.structure.inclusion");
-        if weights.iter().any(|w| !(w.is_finite() && *w >= 0.0)) {
-            return Err(invalid(&name, "weights must be finite and non-negative"));
+    match &params.structure.inclusion {
+        Inclusion::Uniform => {}
+        Inclusion::Weighted { weights } => {
+            let name = format!("{slot}.structure.inclusion");
+            if weights.iter().any(|w| !(w.is_finite() && *w >= 0.0)) {
+                return Err(invalid(&name, "weights must be finite and non-negative"));
+            }
+            if !weights.iter().any(|w| *w > 0.0) {
+                return Err(invalid(&name, "at least one weight must be positive"));
+            }
         }
-        if !weights.iter().any(|w| *w > 0.0) {
-            return Err(invalid(&name, "at least one weight must be positive"));
+        Inclusion::Dart { a, b, rho } => {
+            positive(&format!("{slot}.structure.inclusion.a"), *a)?;
+            positive(&format!("{slot}.structure.inclusion.b"), *b)?;
+            if let Some(rho) = rho {
+                positive(&format!("{slot}.structure.inclusion.rho"), *rho)?;
+            }
         }
     }
     #[cfg(feature = "experimental")]

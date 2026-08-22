@@ -81,6 +81,13 @@ impl<F: CellFamily> Ensemble<F> {
     }
 
     /// One sweep: every tessellation in turn through [`backfit`](Self::backfit).
+    /// Replace the inclusion weights of the structural prior; the DART
+    /// update writes the sampled vector here each sweep.
+    #[cfg(feature = "experimental")]
+    pub(crate) fn set_inclusion_weights(&mut self, weights: crate::moves::InclusionWeights) {
+        self.prior.weights = Some(weights);
+    }
+
     pub(crate) fn sweep(
         &mut self,
         x: &Data,
