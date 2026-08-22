@@ -18,9 +18,9 @@ test_that("the resolved configuration is on the fit", {
   fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
 
   expect_s3_class(fit$control, "thiessen_control")
-  expect_identical(fit$control$m, 8L)
+  expect_identical(fit$control$mean_params$tessellations, 8L)
   # omega is unset in the control and resolves to min(3, p) at fit.
-  expect_identical(fit$control$omega, 2)
+  expect_identical(fit$control$mean_params$structure$omega, 2)
 })
 
 test_that("a vector design is one column", {
@@ -126,7 +126,7 @@ test_that("a response the model does not admit is refused by the core", {
   fixture <- small_fixture()
 
   expect_error(
-    thiessen(fixture$x, fixture$y, small_control(model = "probit"), seed = 1),
+    thiessen(fixture$x, fixture$y, small_control(outcome = probit()), seed = 1),
     class = "thiessen_error"
   )
 })
@@ -145,7 +145,7 @@ test_that("the probit model fits a binary response", {
   fixture <- small_fixture()
   labels <- as.double(fixture$y >= stats::median(fixture$y))
 
-  fit <- thiessen(fixture$x, labels, small_control(model = "probit"), seed = 1)
+  fit <- thiessen(fixture$x, labels, small_control(outcome = probit()), seed = 1)
 
   expect_identical(fit$model, "probit")
   expect_true(all(fitted(fit) >= 0 & fitted(fit) <= 1))
@@ -156,7 +156,7 @@ test_that("the heteroscedastic model fits", {
 
   fit <- thiessen(
     fixture$x, fixture$y,
-    small_control(model = "heteroscedastic", m_var = 4),
+    small_control(variance_params = term_params(tessellations = 4)),
     seed = 1
   )
 

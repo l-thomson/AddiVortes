@@ -14,7 +14,7 @@
 #' @return A hardhat blueprint.
 #' @noRd
 blueprint_for <- function(control) {
-  codes <- length(control$metric) > 0L
+  codes <- length(control$mean_params$geometry$metric) > 0L
   # Treatment contrasts are d - 1 columns only against an intercept; without
   # one `model.matrix` returns a column per level. The intercept column is
   # dropped from the design, so only the contrasts remain.

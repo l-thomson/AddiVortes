@@ -6,7 +6,7 @@ gaussian_fit <- function() {
 probit_fit <- function() {
   fixture <- small_fixture()
   labels <- as.double(fixture$y >= stats::median(fixture$y))
-  thiessen(fixture$x, labels, small_control(model = "probit"), seed = 1)
+  thiessen(fixture$x, labels, small_control(outcome = probit()), seed = 1)
 }
 
 test_that("the draws carry the mean function, sigma and the counts", {
@@ -36,7 +36,7 @@ test_that("the heteroscedastic model exposes no sigma variable", {
   fixture <- small_fixture()
   fit <- thiessen(
     fixture$x, fixture$y,
-    small_control(model = "heteroscedastic", m_var = 4), seed = 1
+    small_control(variance_params = term_params(tessellations = 4)), seed = 1
   )
 
   expect_false("sigma" %in% posterior::variables(posterior::as_draws_df(fit)))

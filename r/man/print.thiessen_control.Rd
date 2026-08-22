@@ -18,5 +18,5 @@
 Print a control object
 }
 \examples{
-print(thiessen_control(m = 50))
+print(thiessen_control(tessellations = 50))
 }

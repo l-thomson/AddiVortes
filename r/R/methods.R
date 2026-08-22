@@ -24,8 +24,11 @@
 #' n <- 60
 #' x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
 #' y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
-#' fit <- thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
-#'                 seed = 1)
+#' control <- thiessen_control(
+#'   tessellations = 10,
+#'   general_params = general_params(burn_in = 20, draws = 40)
+#' )
+#' fit <- thiessen(x, y, control, seed = 1)
 #' head(predict(fit))
 #' head(predict(fit, interval = "credible"))
 #' @importFrom stats predict
@@ -71,8 +74,11 @@ predict.thiessen <- function(object, newdata = NULL,
 #' n <- 60
 #' x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
 #' y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
-#' sigma(thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
-#'                seed = 1))
+#' control <- thiessen_control(
+#'   tessellations = 10,
+#'   general_params = general_params(burn_in = 20, draws = 40)
+#' )
+#' sigma(thiessen(x, y, control, seed = 1))
 #' @importFrom stats sigma
 #' @export
 sigma.thiessen <- function(object, ...) {
@@ -103,8 +109,11 @@ sigma.thiessen <- function(object, ...) {
 #' n <- 60
 #' x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
 #' y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
-#' fit <- thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
-#'                 seed = 1)
+#' control <- thiessen_control(
+#'   tessellations = 10,
+#'   general_params = general_params(burn_in = 20, draws = 40)
+#' )
+#' fit <- thiessen(x, y, control, seed = 1)
 #' nobs(fit)
 #' head(residuals(fit))
 #' @importFrom stats fitted
@@ -136,8 +145,11 @@ nobs.thiessen <- function(object, ...) {
 #' n <- 60
 #' x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
 #' y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
-#' print(thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
-#'                seed = 1))
+#' control <- thiessen_control(
+#'   tessellations = 10,
+#'   general_params = general_params(burn_in = 20, draws = 40)
+#' )
+#' print(thiessen(x, y, control, seed = 1))
 #' @export
 print.thiessen <- function(x, ...) {
   cat("AddiVortes fit\n")
@@ -148,7 +160,8 @@ print.thiessen <- function(x, ...) {
   ))
   cat(sprintf(
     "%d tessellations, %d draws kept after %d burn-in, thinning %d\n",
-    x$control$m, x$n_draws, x$control$burn_in, x$control$thinning
+    x$control$mean_params$tessellations, x$n_draws,
+    x$control$general_params$burn_in, x$control$general_params$thinning
   ))
   cat(sprintf("In-sample RMSE %.4g, seed %.0f\n", x$in_sample_rmse, x$seed))
   cat(convergence_line(x), "\n", sep = "")
@@ -174,8 +187,11 @@ print.thiessen <- function(x, ...) {
 #' n <- 60
 #' x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
 #' y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
-#' summary(thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
-#'                  seed = 1))
+#' control <- thiessen_control(
+#'   tessellations = 10,
+#'   general_params = general_params(burn_in = 20, draws = 40)
+#' )
+#' summary(thiessen(x, y, control, seed = 1))
 #' @importFrom stats quantile
 #' @export
 summary.thiessen <- function(object, ...) {
@@ -213,7 +229,8 @@ print.summary.thiessen <- function(x, ...) {
   ))
   cat(sprintf(
     "%d tessellations, %d draws kept after %d burn-in, thinning %d\n",
-    x$control$m, x$n_draws, x$control$burn_in, x$control$thinning
+    x$control$mean_params$tessellations, x$n_draws,
+    x$control$general_params$burn_in, x$control$general_params$thinning
   ))
   cat("\nResiduals:\n")
   print(x$residuals)

@@ -82,13 +82,15 @@
 #' n <- 60
 #' x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
 #' y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
-#' fit <- thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
-#'                 seed = 1)
+#' control <- thiessen_control(
+#'   tessellations = 10,
+#'   general_params = general_params(burn_in = 20, draws = 40)
+#' )
+#' fit <- thiessen(x, y, control, seed = 1)
 #' fit
 #'
 #' frame <- data.frame(y = y, a = x[, 1], b = factor(x[, 2] > 0))
-#' thiessen(y ~ a + b, frame, thiessen_control(m = 10, burn_in = 20,
-#'                                             draws = 40), seed = 1)
+#' thiessen(y ~ a + b, frame, control, seed = 1)
 #' @export
 thiessen <- function(x, ...) {
   UseMethod("thiessen")
@@ -114,7 +116,8 @@ thiessen.data.frame <- function(x, y, control = thiessen_control(),
     hardhat::mold(~ ., data = x, blueprint = blueprint_for(control))
   )
   design <- encode_predictors(
-    molded$predictors, molded$blueprint$indicators, control$metric
+    molded$predictors, molded$blueprint$indicators,
+    control$mean_params$geometry$metric
   )
   response <- as_response(y)
   new_fit(design, response$y, control, seed, chains,
@@ -131,7 +134,8 @@ thiessen.formula <- function(formula, data, control = thiessen_control(),
     hardhat::mold(formula, data, blueprint = blueprint_for(control))
   )
   design <- encode_predictors(
-    molded$predictors, molded$blueprint$indicators, control$metric
+    molded$predictors, molded$blueprint$indicators,
+    control$mean_params$geometry$metric
   )
   response <- encode_response(molded$outcomes)
   new_fit(design, response$y, control, seed, chains,
@@ -207,9 +211,8 @@ new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
   fit_object <- structure(
     list(
       state = fit$state,
-      control = structure(
-        flatten_config(jsonlite::fromJSON(fit$config, simplifyVector = FALSE)),
-        class = "thiessen_control"
+      control = control_from_config(
+        jsonlite::fromJSON(fit$config, simplifyVector = FALSE)
       ),
       model = fit$model,
       n_chains = fit$n_chains,

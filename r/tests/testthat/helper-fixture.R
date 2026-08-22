@@ -26,5 +26,9 @@ small_fixture <- function(n = 40) {
 
 # The sweep schedule the tests share.
 small_control <- function(...) {
-  thiessen_control(m = 8, burn_in = 10, draws = 20, ...)
+  thiessen_control(
+    tessellations = 8,
+    general_params = general_params(burn_in = 10, draws = 20),
+    ...
+  )
 }

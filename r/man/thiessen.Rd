@@ -101,13 +101,15 @@ feature, at the first call that needs the state.
 n <- 60
 x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))
 y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
-fit <- thiessen(x, y, thiessen_control(m = 10, burn_in = 20, draws = 40),
-                seed = 1)
+control <- thiessen_control(
+  tessellations = 10,
+  general_params = general_params(burn_in = 20, draws = 40)
+)
+fit <- thiessen(x, y, control, seed = 1)
 fit
 
 frame <- data.frame(y = y, a = x[, 1], b = factor(x[, 2] > 0))
-thiessen(y ~ a + b, frame, thiessen_control(m = 10, burn_in = 20,
-                                            draws = 40), seed = 1)
+thiessen(y ~ a + b, frame, control, seed = 1)
 }
 \references{
 Chipman, H. A., George, E. I. and McCulloch, R. E. (2010). BART: Bayesian

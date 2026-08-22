@@ -52,6 +52,9 @@ resolve_seed <- function(seed, call = rlang::caller_env()) {
 
 #' Encode a control object as the core's configuration JSON
 #'
+#' Fields left `NULL` are omitted, so the core's defaults apply; the core
+#' rejects unknown fields and validates every value.
+#'
 #' @param control An object of class `"thiessen_control"`.
 #' @param call The calling environment to report.
 #' @return A character string.
@@ -63,91 +66,94 @@ config_json <- function(control, call = rlang::caller_env()) {
       call = call
     )
   }
-  jsonlite::toJSON(
-    group_config(unclass(control)),
-    auto_unbox = TRUE, digits = NA, null = "null"
-  )
-}
-
-#' Arrange the flat control fields into the core's parameter groups
-#'
-#' @param control A named list of the flat control fields.
-#' @return A named list in the core's grouped shape.
-#' @noRd
-group_config <- function(control) {
-  named_empty <- structure(list(), names = character(0))
-  model <- control$model
-  if (is.null(model)) model <- "gaussian"
-  heteroscedastic <- identical(model, "heteroscedastic")
-  # An unknown name passes through for the core to reject as an outcome.
-  kind <- if (model %in% c("gaussian", "heteroscedastic")) "gaussian" else model
-  outcome <- named_empty
-  if (identical(kind, "gaussian")) {
-    if (!is.null(control$nu)) outcome$nu <- control$nu
-    if (!is.null(control$q)) outcome$q <- control$q
-  } else if (!is.null(control$offset)) {
-    outcome$offset <- control$offset
+  mean_params <- term_group(control$mean_params)
+  variance_params <- term_group(control$variance_params)
+  # The ensembles share one covariate space; the core requires the slots
+  # to declare it identically while per-ensemble geometry awaits its
+  # identification argument.
+  if (length(variance_params) > 0L) {
+    for (shared in c("geometry", "structure")) {
+      if (is.null(variance_params[[shared]]) &&
+            !is.null(mean_params[[shared]])) {
+        variance_params[[shared]] <- mean_params[[shared]]
+      }
+    }
   }
-  term <- named_empty
-  if (!is.null(control$k)) term$k <- control$k
-  if (!is.null(control$lambda_c)) term$lambda_c <- control$lambda_c
-  geometry <- named_empty
-  if (!is.null(control$sigma_c)) geometry$sigma_c <- control$sigma_c
-  if (!is.null(control$metric)) geometry$metric <- control$metric
-  if (length(geometry) > 0L) term$geometry <- geometry
-  if (!is.null(control$omega)) term$structure <- list(omega = control$omega)
-  mean_params <- term
-  if (!is.null(control$m)) mean_params$tessellations <- control$m
-  variance_params <- term[intersect(names(term), c("geometry", "structure"))]
-  if (heteroscedastic) {
-    m_var <- control$m_var
-    if (is.null(m_var)) m_var <- 40L
-    variance_params$tessellations <- m_var
-  }
-  grouped <- list(outcome = stats::setNames(list(outcome), kind))
+  grouped <- list(outcome = outcome_group(control$outcome))
   if (length(mean_params) > 0L) grouped$mean_params <- mean_params
-  if (length(variance_params) > 0L) grouped$variance_params <- variance_params
-  general <- named_empty
-  for (name in c("burn_in", "draws", "thinning", "prior_only")) {
-    if (!is.null(control[[name]])) general[[name]] <- control[[name]]
+  if (length(variance_params) > 0L) {
+    grouped$variance_params <- variance_params
   }
-  if (length(general) > 0L) grouped$general_params <- general
-  grouped
+  grouped$general_params <- compact(unclass(control$general_params))
+  jsonlite::toJSON(grouped, auto_unbox = TRUE, digits = NA, null = "null")
 }
 
-#' The flat control fields of a grouped configuration
+#' The configuration group of one ensemble
 #'
-#' @param grouped The core's grouped configuration as a named list.
-#' @return A named list of the flat control fields.
+#' @param params An object of class `"term_params"`, or `NULL`.
+#' @return A named list, `NULL` fields omitted; empty for `NULL`.
 #' @noRd
-flatten_config <- function(grouped) {
+term_group <- function(params) {
+  if (is.null(params)) {
+    return(structure(list(), names = character(0)))
+  }
+  group <- compact(unclass(params))
+  if (!is.null(group$geometry)) {
+    group$geometry <- compact(unclass(group$geometry))
+  }
+  if (!is.null(group$structure)) {
+    group$structure <- compact(unclass(group$structure))
+    if (length(group$structure) == 0L) group$structure <- NULL
+  }
+  group
+}
+
+#' The control object of a resolved configuration
+#'
+#' Rebuilds the nested groups from the grouped configuration the core
+#' reports after a fit, in which every field is set.
+#'
+#' @param grouped The core's configuration as a named list.
+#' @return An object of class `"thiessen_control"`.
+#' @noRd
+control_from_config <- function(grouped) {
   kind <- names(grouped$outcome)[[1L]]
-  params <- grouped$outcome[[1L]]
-  mean_params <- grouped$mean_params
-  variance <- grouped$variance_params
-  general <- grouped$general_params
-  m_var <- variance$tessellations
-  if (is.null(m_var)) m_var <- 0L
-  gaussian <- identical(kind, "gaussian")
-  m <- mean_params$tessellations
-  if (is.null(m)) m <- 200L
-  list(
-    model = if (gaussian && m_var > 0L) "heteroscedastic" else kind,
-    m = m,
-    nu = if (gaussian && !is.null(params$nu)) params$nu else 6,
-    q = if (gaussian && !is.null(params$q)) params$q else 0.85,
-    k = mean_params$k,
-    sigma_c = mean_params$geometry$sigma_c,
-    omega = mean_params$structure$omega,
-    lambda_c = mean_params$lambda_c,
-    burn_in = general$burn_in,
-    draws = general$draws,
-    thinning = general$thinning,
-    prior_only = general$prior_only,
-    offset = if (identical(kind, "probit")) params$offset else NULL,
-    m_var = if (m_var > 0L) m_var else 40L,
-    metric = mean_params$geometry$metric
+  outcome <- new_outcome(kind, grouped$outcome[[1L]])
+  structure(
+    list(
+      outcome = outcome,
+      mean_params = term_from_config(grouped$mean_params),
+      variance_params = term_from_config(grouped$variance_params),
+      general_params = structure(grouped$general_params,
+                                 class = "general_params")
+    ),
+    class = "thiessen_control"
   )
+}
+
+#' One resolved ensemble group as a `term_params` object
+#'
+#' @param group The ensemble's configuration as a named list.
+#' @return An object of class `"term_params"`, or `NULL` for an absent or
+#'   empty variance slot.
+#' @noRd
+term_from_config <- function(group) {
+  if (is.null(group)) {
+    return(NULL)
+  }
+  count <- group$tessellations
+  if (!is.null(count) && count == 0L) {
+    return(NULL)
+  }
+  if (!is.null(group$geometry)) {
+    if (length(group$geometry$metric) == 0L) group$geometry$metric <- NULL
+    class(group$geometry) <- "geometry_params"
+  }
+  if (!is.null(group$structure)) {
+    class(group$structure) <- "structure_params"
+  }
+  class(group) <- "term_params"
+  group
 }
 
 #' Coerce a design to the numeric matrix the core takes
@@ -208,7 +214,9 @@ resolve_chains <- function(chains, call = rlang::caller_env()) {
 #' @return A list of the function the core calls and the number of calls.
 #' @noRd
 progress_reporter <- function(control, chains = 1L) {
-  sweeps <- chains * (control$burn_in + control$draws * control$thinning)
+  schedule <- control$general_params
+  sweeps <- chains *
+    (schedule$burn_in + schedule$draws * schedule$thinning)
   updates <- min(sweeps, 100L)
   report <- progressr::progressor(steps = updates)
   list(report = function() report(), updates = as.integer(updates))
