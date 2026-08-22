@@ -182,27 +182,16 @@ fn min_max(values: impl Iterator<Item = f64>) -> (f64, f64) {
     (lo, hi)
 }
 
-/// sigma_mu^2 = (0.5 / (k sqrt m))^2, scaled space (Stone and Gosling 2025,
-/// s. 2.3.2; Chipman, George and McCulloch 2010, s. 2.2.3 with the
-/// response on [-0.5, 0.5]).
-pub(crate) fn sigma_mu_sq(k: f64, m: usize) -> f64 {
-    let s = 0.5 / (k * (m as f64).sqrt());
+/// sigma_mu^2 = (half_width / (k sqrt m))^2: the cell-mean prior variance
+/// for the half-width the outcome model owns. 0.5 on the response scaled
+/// to [-0.5, 0.5] (Stone and Gosling 2025, s. 2.3.2; Chipman, George and
+/// McCulloch 2010, s. 2.2.3); 3 on the probit latent scale, so the prior
+/// on f puts high probability on [-3, 3] (ibid., s. 4; BART `pbart`).
+pub(crate) fn sigma_mu_sq(half_width: f64, k: f64, m: usize) -> f64 {
+    let s = half_width / (k * (m as f64).sqrt());
     s * s
 }
 
-/// sigma_mu^2 = (3 / (k sqrt m))^2 on the latent scale of the probit model
-/// (Chipman, George and McCulloch 2010, s. 4: the latent mean is confined
-/// to [-3, 3] with prior probability set by k; BART `pbart`).
-pub(crate) fn probit_sigma_mu_sq(k: f64, m: usize) -> f64 {
-    let s = 3.0 / (k * (m as f64).sqrt());
-    s * s
-}
-
-/// The (nu', lambda') of one of m' variance tessellations such that the
-/// product of m' independent Inv-Gamma(nu' / 2, nu' lambda' / 2) cell
-/// values has the mean nu lambda / (nu - 2) of the Gaussian model's
-/// sigma^2 ~ nu lambda / chi^2_nu: lambda' = lambda^(1 / m') and
-/// nu' = 2 / (1 - (1 - 2 / nu)^(1 / m')). Requires nu > 2.
 pub(crate) fn variance_cell_prior(nu: f64, lambda: f64, m_var: usize) -> (f64, f64) {
     let root = 1.0 / m_var as f64;
     let nu_prime = 2.0 / (1.0 - libm::pow(1.0 - 2.0 / nu, root));
@@ -348,16 +337,12 @@ mod tests {
     #[test]
     fn sigma_mu_sq_closed_form() {
         close(
-            sigma_mu_sq(3.0, 200),
+            sigma_mu_sq(0.5, 3.0, 200),
             (0.5 / (3.0 * 200f64.sqrt())).powi(2),
             1e-18,
         );
-    }
-
-    #[test]
-    fn probit_sigma_mu_sq_closed_form() {
         close(
-            probit_sigma_mu_sq(2.0, 50),
+            sigma_mu_sq(3.0, 2.0, 50),
             (3.0 / (2.0 * 50f64.sqrt())).powi(2),
             1e-18,
         );
