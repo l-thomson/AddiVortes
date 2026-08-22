@@ -22,7 +22,9 @@ use crate::fitted::{Fitted, Posterior};
 use crate::geometry::Geometry;
 use crate::maths;
 use crate::model::Model;
+use crate::models::gaussian::GaussianOutcome;
 use crate::moves::Prior;
+use crate::outcome::{OutcomeModel, RequiredData, Sigma2Mode};
 use crate::rng::{self, Rng};
 use crate::scaler::{self, Scaler};
 use crate::tessellation::Tessellation;
@@ -30,8 +32,12 @@ use crate::tessellation::Tessellation;
 /// The noise model in force.
 #[derive(Debug, Clone)]
 enum Noise {
-    /// One global variance, scaled space.
-    Gaussian { sigma_sq: f64 },
+    /// One global variance, scaled space, behind the Gaussian outcome
+    /// model.
+    Gaussian {
+        sigma_sq: f64,
+        outcome: GaussianOutcome,
+    },
     /// Unit latent variance; the labels in {0, 1} and the offset c of
     /// P(y = 1 | x) = Phi(c + f(x)).
     Unit { labels: Vec<f64>, offset: f64 },
@@ -137,7 +143,7 @@ impl Sampler {
         data::validate_fit(x, y, omega)?;
         let geometry = Geometry::fit(&config.metric, x)?;
         let laws = geometry.laws(x, config.sigma_c)?;
-        if config.model == Model::Probit {
+        if config.model.required_data() == RequiredData::Binary {
             if let Some(row) = y.iter().position(|&v| v != 0.0 && v != 1.0) {
                 return Err(Error::InvalidLabel { row });
             }
@@ -148,14 +154,23 @@ impl Sampler {
         let n = x.n_rows();
 
         // Response scaling, lambda and the initial sigma^2 at the model
-        // boundary: the probit model keeps the response unscaled.
+        // boundary: the probit model keeps the response unscaled and its
+        // initial scale is the mode's fixed value.
+        let fixed_scale = match config.model.sigma2_mode() {
+            Sigma2Mode::Fixed(value) => value,
+            Sigma2Mode::Sampled | Sigma2Mode::Absent => 1.0,
+        };
         let (scaler, x_scaled, y_scaled, lambda, sigma_sq) = match (config.model, pinned_lambda) {
-            (Model::Probit, Some(lambda)) => {
-                (Scaler::identity(p), x.clone(), y.to_vec(), lambda, 1.0)
-            }
+            (Model::Probit, Some(lambda)) => (
+                Scaler::identity(p),
+                x.clone(),
+                y.to_vec(),
+                lambda,
+                fixed_scale,
+            ),
             (Model::Probit, None) => {
                 let (scaler, x_scaled) = Scaler::fit_x(x, &geometry);
-                (scaler, x_scaled, y.to_vec(), 1.0, 1.0)
+                (scaler, x_scaled, y.to_vec(), 1.0, fixed_scale)
             }
             (_, Some(lambda)) => (Scaler::identity(p), x.clone(), y.to_vec(), lambda, lambda),
             (_, None) => {
@@ -196,7 +211,11 @@ impl Sampler {
             &mut rng,
         );
         let noise = match config.model {
-            Model::Gaussian => Noise::Gaussian { sigma_sq },
+            Model::Gaussian => {
+                let mut outcome = GaussianOutcome;
+                outcome.init(&y_scaled);
+                Noise::Gaussian { sigma_sq, outcome }
+            }
             Model::Probit => {
                 let offset = config
                     .offset
@@ -279,10 +298,14 @@ impl Sampler {
     fn update_noise(&mut self, structural: bool) {
         let prior_only = self.config.prior_only;
         match &mut self.noise {
-            // sigma^2 | y, F ~ Inv-Gamma((nu + n) / 2, (nu lambda + sum r_i^2) / 2)
-            // with r = y - F; under prior-only sampling the prior
-            // Inv-Gamma(nu / 2, nu lambda / 2).
-            Noise::Gaussian { sigma_sq } => {
+            // The Gaussian outcome model: sigma^2 | y, F ~
+            // Inv-Gamma((nu + n) / 2, (nu lambda + sum r_i^2) / 2) with
+            // r = y - F, drawn by the kernel because the mode is Sampled;
+            // under prior-only sampling the prior Inv-Gamma(nu / 2,
+            // nu lambda / 2). The working response is y unchanged and the
+            // weights are unit.
+            Noise::Gaussian { sigma_sq, outcome } => {
+                outcome.draw_extra(&mut self.rng);
                 let nu = self.config.nu;
                 let (shape, scale) = if prior_only {
                     (0.5 * nu, 2.0 / (nu * self.lambda))
@@ -297,9 +320,17 @@ impl Sampler {
                     (0.5 * (nu + n as f64), 2.0 / (nu * self.lambda + rss))
                 };
                 *sigma_sq = 1.0 / rng::gamma(shape, scale, &mut self.rng);
+                outcome.working_response(&[], &mut self.y, &mut self.rng);
                 if !prior_only {
-                    let precision = 1.0 / *sigma_sq;
-                    self.precision.iter_mut().for_each(|w| *w = precision);
+                    let scale_precision = 1.0 / *sigma_sq;
+                    match outcome.weights() {
+                        None => self.precision.iter_mut().for_each(|w| *w = scale_precision),
+                        Some(weights) => {
+                            for (w, &weight) in self.precision.iter_mut().zip(weights) {
+                                *w = weight * scale_precision;
+                            }
+                        }
+                    }
                 }
             }
             // z_i ~ N(c + f(x_i), 1) truncated to z_i > 0 when y_i = 1 and
@@ -356,7 +387,7 @@ impl Sampler {
     /// Record the current state as a posterior draw.
     pub fn keep(&mut self) {
         let sigma_sq = match &self.noise {
-            Noise::Gaussian { sigma_sq } => Some(*sigma_sq),
+            Noise::Gaussian { sigma_sq, .. } => Some(*sigma_sq),
             Noise::Unit { .. } | Noise::Ensemble(_) => None,
         };
         let variance = match &self.noise {
@@ -420,7 +451,7 @@ impl Sampler {
         let n = self.y.len();
         let range_sq = self.scaler.y_range() * self.scaler.y_range();
         match &self.noise {
-            Noise::Gaussian { sigma_sq } => vec![sigma_sq * range_sq; n],
+            Noise::Gaussian { sigma_sq, .. } => vec![sigma_sq * range_sq; n],
             Noise::Unit { .. } => vec![1.0; n],
             Noise::Ensemble(v) => v.total().iter().map(|s| s * range_sq).collect(),
         }
@@ -432,7 +463,7 @@ impl Sampler {
     /// respectively.
     pub fn sigma_sq(&self) -> f64 {
         match &self.noise {
-            Noise::Gaussian { sigma_sq } => *sigma_sq,
+            Noise::Gaussian { sigma_sq, .. } => *sigma_sq,
             Noise::Unit { .. } | Noise::Ensemble(_) => 1.0,
         }
     }
