@@ -47,6 +47,7 @@ impl<F: CellFamily> Ensemble<F> {
                     centres: vec![centre],
                     dims: vec![dim],
                     mus: vec![cell_value],
+                    betas: Vec::new(),
                 }
             })
             .collect();
@@ -109,13 +110,17 @@ impl<F: CellFamily> Ensemble<F> {
         }
     }
 
-    fn partials(&self, j: usize, input: &[f64], weights: &[f64]) -> Vec<Partial> {
+    fn partials(&self, j: usize, x: &Data, input: &[f64], weights: &[f64]) -> Vec<Partial> {
         let current = &self.tessellations[j];
         let cells = &self.assignments[j].cells;
         (0..input.len())
             .map(|i| {
-                self.family
-                    .partial(input[i], weights[i], self.total[i], current.mus[cells[i]])
+                self.family.partial(
+                    input[i],
+                    weights[i],
+                    self.total[i],
+                    current.value_in_cell(cells[i], x.row(i)),
+                )
             })
             .collect()
     }
@@ -132,7 +137,7 @@ impl<F: CellFamily> Ensemble<F> {
         rng: &mut Rng,
         #[cfg(test)] breakage: crate::broken::Breakage,
     ) {
-        let partials = self.partials(j, input, weights);
+        let partials = self.partials(j, x, input, weights);
         let current = &self.tessellations[j];
         let cells = &self.assignments[j].cells;
 
@@ -145,6 +150,8 @@ impl<F: CellFamily> Ensemble<F> {
             &self.prior.geometry,
         );
         let proposed_stats = self.family.accumulate(
+            x,
+            &proposal.tessellation,
             &proposed_assignment.cells,
             &partials,
             proposal.tessellation.n_cells(),
@@ -153,11 +160,19 @@ impl<F: CellFamily> Ensemble<F> {
         // draw, so no uniform is consumed.
         let mut stats = None;
         if proposed_stats.all_occupied() {
-            let current_stats = self.family.accumulate(cells, &partials, current.n_cells());
+            let current_stats =
+                self.family
+                    .accumulate(x, current, cells, &partials, current.n_cells());
             #[allow(unused_mut)]
-            let mut log_alpha = self.family.log_marginal(&proposed_stats)
-                - self.family.log_marginal(&current_stats)
-                + proposal.log_structure_ratio
+            let mut log_alpha = self.family.log_marginal(
+                &proposed_stats,
+                #[cfg(test)]
+                breakage,
+            ) - self.family.log_marginal(
+                &current_stats,
+                #[cfg(test)]
+                breakage,
+            ) + proposal.log_structure_ratio
                 + moves::log_selection_ratio(m, current, &proposal.tessellation, &self.prior);
             #[cfg(test)]
             {
@@ -180,7 +195,7 @@ impl<F: CellFamily> Ensemble<F> {
                 stats = Some(current_stats);
             }
         }
-        self.redraw(j, &partials, stats, input, rng);
+        self.redraw(j, x, &partials, stats, input, rng);
     }
 
     /// The cell values of tessellation `j` given its current structure,
@@ -188,6 +203,7 @@ impl<F: CellFamily> Ensemble<F> {
     fn redraw(
         &mut self,
         j: usize,
+        x: &Data,
         partials: &[Partial],
         stats: Option<F::Stats>,
         input: &[f64],
@@ -197,13 +213,17 @@ impl<F: CellFamily> Ensemble<F> {
         let cells = &self.assignments[j].cells;
         let stats = stats.unwrap_or_else(|| {
             self.family
-                .accumulate(cells, partials, tessellation.n_cells())
+                .accumulate(x, tessellation, cells, partials, tessellation.n_cells())
         });
-        tessellation.mus = self.family.draw(&stats, rng);
+        let (values, slopes) = self.family.draw(&stats, rng);
+        tessellation.mus = values;
+        tessellation.betas = slopes;
         for i in 0..input.len() {
-            self.total[i] = self
-                .family
-                .total(input[i], &partials[i], tessellation.mus[cells[i]]);
+            self.total[i] = self.family.total(
+                input[i],
+                &partials[i],
+                tessellation.value_in_cell(cells[i], x.row(i)),
+            );
         }
     }
 }
@@ -213,10 +233,16 @@ impl<F: CellFamily> Ensemble<F> {
     /// One sweep with the structural moves disabled: every tessellation's
     /// cell values given its current structure. On fixed tessellations the
     /// chain is the conjugate Gibbs sampler of the known-answer tests.
-    pub(crate) fn conjugate_sweep(&mut self, input: &[f64], weights: &[f64], rng: &mut Rng) {
+    pub(crate) fn conjugate_sweep(
+        &mut self,
+        x: &Data,
+        input: &[f64],
+        weights: &[f64],
+        rng: &mut Rng,
+    ) {
         for j in 0..self.tessellations.len() {
-            let partials = self.partials(j, input, weights);
-            self.redraw(j, &partials, None, input, rng);
+            let partials = self.partials(j, x, input, weights);
+            self.redraw(j, x, &partials, None, input, rng);
         }
     }
 

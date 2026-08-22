@@ -15,8 +15,12 @@ pub struct Tessellation {
     /// The d active covariates, zero-based column indices, in centre
     /// coordinate order.
     pub(crate) dims: Vec<usize>,
-    /// Cell means mu_1..mu_b (scaled space).
+    /// Cell means mu_1..mu_b (scaled space); under the linear cell basis
+    /// the intercepts, the value at the cell's centre.
     pub(crate) mus: Vec<f64>,
+    /// Row-major b by d slopes of the linear cell basis (scaled space);
+    /// empty under the constant basis.
+    pub(crate) betas: Vec<f64>,
 }
 
 impl Tessellation {
@@ -67,17 +71,35 @@ impl Tessellation {
     }
 
     /// The value of the tessellation at `row`: the mean of the cell `row`
-    /// falls in.
+    /// falls in, tilted by the cell's slopes under the linear basis.
     pub(crate) fn value_at(&self, row: &[f64], geometry: &Geometry) -> f64 {
-        self.mus[self.nearest(row, geometry).0]
+        self.value_in_cell(self.nearest(row, geometry).0, row)
+    }
+
+    /// The value cell `cell` contributes at `row`: the cell mean, plus,
+    /// under the linear basis, the slopes against the row's offset from
+    /// the cell's centre on the active covariates.
+    pub(crate) fn value_in_cell(&self, cell: usize, row: &[f64]) -> f64 {
+        let mut value = self.mus[cell];
+        if !self.betas.is_empty() {
+            let d = self.dims.len();
+            let centre = self.centre(cell);
+            for (j, &dim) in self.dims.iter().enumerate() {
+                value += self.betas[cell * d + j] * (row[dim] - centre[j]);
+            }
+        }
+        value
     }
 }
 
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct TessellationParts {
     centres: Vec<f64>,
     dims: Vec<usize>,
     mus: Vec<f64>,
+    #[serde(default)]
+    betas: Vec<f64>,
 }
 
 impl TryFrom<TessellationParts> for Tessellation {
@@ -98,10 +120,16 @@ impl TryFrom<TessellationParts> for Tessellation {
                 "centre buffer length does not match cells by dimensions",
             ));
         }
+        if !parts.betas.is_empty() && parts.betas.len() != b * d {
+            return Err(bad(
+                "slope buffer length does not match cells by dimensions",
+            ));
+        }
         if parts
             .centres
             .iter()
             .chain(&parts.mus)
+            .chain(&parts.betas)
             .any(|v| !v.is_finite())
         {
             return Err(bad("tessellation values must be finite"));
@@ -115,6 +143,7 @@ impl TryFrom<TessellationParts> for Tessellation {
             centres: parts.centres,
             dims: parts.dims,
             mus: parts.mus,
+            betas: parts.betas,
         })
     }
 }
@@ -243,7 +272,12 @@ mod tests {
         }
         let centres = (0..b * d).map(|_| 0.5 * standard_normal(rng)).collect();
         let mus = (0..b).map(|_| standard_normal(rng)).collect();
-        Tessellation { centres, dims, mus }
+        Tessellation {
+            centres,
+            dims,
+            mus,
+            betas: Vec::new(),
+        }
     }
 
     fn random_data(n: usize, p: usize, rng: &mut crate::rng::Rng) -> Data {
@@ -257,6 +291,7 @@ mod tests {
             centres: vec![0.0, 0.0, 1.0],
             dims: vec![0],
             mus: vec![1.0, 2.0, 3.0],
+            betas: Vec::new(),
         };
         assert_eq!(t.nearest(&[0.0], &g), (0, 0.0));
         assert_eq!(t.nearest(&[0.75], &g), (2, 0.0625));
@@ -325,6 +360,7 @@ mod tests {
             centres: vec![0.1, 0.2],
             dims: vec![2],
             mus: vec![1.0, -1.0],
+            betas: Vec::new(),
         };
         let json = serde_json::to_string(&t).unwrap();
         assert_eq!(serde_json::from_str::<Tessellation>(&json).unwrap(), t);

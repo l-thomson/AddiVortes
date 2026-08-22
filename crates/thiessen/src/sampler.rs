@@ -289,6 +289,19 @@ impl Sampler {
         let geometry = Geometry::fit(&config.mean_params.geometry.metric, x)?;
         #[cfg(feature = "experimental")]
         let geometry = geometry.with_precision(config.mean_params.geometry.precision.as_deref())?;
+        #[cfg(feature = "experimental")]
+        let linear = matches!(config.mean_params.cell.basis, crate::config::Basis::Linear);
+        #[cfg(not(feature = "experimental"))]
+        let linear = false;
+        #[cfg(feature = "experimental")]
+        if linear {
+            if let Some(col) = (0..p).find(|&col| !geometry.scaled(col)) {
+                return Err(crate::error::invalid(
+                    "mean_params.cell.basis",
+                    format!("the linear basis needs min-max scaled columns; column {col} is not"),
+                ));
+            }
+        }
         let laws = geometry.laws(x, config.mean_params.geometry.sigma_c)?;
         if config.outcome.required_data() == RequiredData::Binary {
             if let Some(row) = y.iter().position(|&v| v != 0.0 && v != 1.0) {
@@ -384,7 +397,10 @@ impl Sampler {
             OutcomeConfig::Gaussian(_) => (mean_y / m as f64, mean_y),
         };
         let mean = Ensemble::new(
-            GaussianCells { sigma_mu_sq },
+            GaussianCells {
+                sigma_mu_sq,
+                linear,
+            },
             prior.clone(),
             &x_scaled,
             m,
@@ -579,7 +595,7 @@ impl Sampler {
                 );
             } else {
                 #[cfg(test)]
-                variance.conjugate_sweep(&residuals, &self.precision, &mut self.rng);
+                variance.conjugate_sweep(&self.x, &residuals, &self.precision, &mut self.rng);
                 #[cfg(not(test))]
                 unreachable!("the conjugate sweep exists only under test");
             }
@@ -827,7 +843,7 @@ impl Sampler {
     pub(crate) fn conjugate_sweep(&mut self) {
         self.update_noise(false);
         self.mean
-            .conjugate_sweep(&self.y, &self.precision, &mut self.rng);
+            .conjugate_sweep(&self.x, &self.y, &self.precision, &mut self.rng);
     }
 
     /// Replace mean tessellation `j` by `t`, whose cell means must be zero,
@@ -1224,6 +1240,7 @@ mod tests {
                 centres,
                 dims: vec![0],
                 mus: vec![0.0; b],
+                betas: Vec::new(),
             };
             sampler.fix_mean_tessellation(0, fixed);
 

@@ -15,9 +15,9 @@
 mod common;
 use common::TestRng;
 use std::f64::consts::PI;
-use thiessen::{Config, Data, Metric, Sampler};
 #[cfg(feature = "experimental")]
-use thiessen::{GowerKind, Inclusion};
+use thiessen::{Basis, GowerKind, Inclusion};
+use thiessen::{Config, Data, Metric, Sampler};
 
 /// Quantities of the Gaussian model, in column order: sigma^2, total cells
 /// and total active dimensions over the ensemble, f at three fixed
@@ -157,14 +157,16 @@ struct Model {
     weights: Option<[f64; 2]>,
     /// The DART hyperparameters (a, b, rho); None is a fixed prior.
     dart: Option<(f64, f64, f64)>,
+    /// The linear cell basis on the mean ensemble.
+    linear: bool,
     quantities: &'static [&'static str],
     n_sbc: usize,
     gates: Gates,
 }
 
 /// One tessellation of a prior draw: active columns, row-major centres,
-/// cell values.
-type DrawnTessellation = (Vec<usize>, Vec<f64>, Vec<f64>);
+/// cell values, row-major cell slopes (empty under the constant basis).
+type DrawnTessellation = (Vec<usize>, Vec<f64>, Vec<f64>, Vec<f64>);
 
 /// One prior draw of the ensembles, engine-free: the test's own sampler.
 struct PriorDraw {
@@ -210,6 +212,7 @@ fn gaussian_model() -> Model {
         laws: [euclidean.clone(), euclidean],
         weights: None,
         dart: None,
+        linear: false,
         quantities: &GAUSSIAN_QUANTITIES,
         n_sbc: 6,
         gates: GAUSSIAN_GATES,
@@ -401,6 +404,30 @@ fn dart_model() -> Model {
     }
 }
 
+/// The Gaussian model under the linear cell basis: rows spanning each
+/// column's exact scaled range, so the harness's raw coordinates equal
+/// the engine's scaled ones, cell slopes N(0, sigma_mu^2).
+#[cfg(feature = "experimental")]
+fn linear_model() -> Model {
+    let gaussian = gaussian_model();
+    let n = gaussian.rows.len();
+    let rows: Vec<[f64; 2]> = (0..n)
+        .map(|i| {
+            [
+                i as f64 / (n - 1) as f64 - 0.5,
+                ((i * 17) % n) as f64 / (n - 1) as f64 - 0.5,
+            ]
+        })
+        .collect();
+    Model {
+        config: gaussian.config.with_basis(Basis::Linear),
+        x: Data::from_rows(&rows).unwrap(),
+        rows,
+        linear: true,
+        ..gaussian
+    }
+}
+
 /// The probit model at the calibration size: the Gaussian model's rows
 /// and structural prior, offset c = -0.2 fixed, k = 3, no sigma^2.
 fn probit_model() -> Model {
@@ -466,6 +493,7 @@ impl Model {
     fn prior_tessellation(
         &self,
         weights: Option<[f64; 2]>,
+        slopes: bool,
         rng: &mut TestRng,
         value: &dyn Fn(&mut TestRng) -> f64,
     ) -> DrawnTessellation {
@@ -516,7 +544,13 @@ impl Model {
             }
             if occupied.iter().all(|&o| o) {
                 let values: Vec<f64> = (0..b).map(|_| value(rng)).collect();
-                return (dims, centres, values);
+                let tilts: Vec<f64> = if slopes {
+                    let sigma_mu = self.sigma_mu();
+                    (0..b * d).map(|_| sigma_mu * rng.normal()).collect()
+                } else {
+                    Vec::new()
+                };
+                return (dims, centres, values, tilts);
             }
         }
     }
@@ -563,7 +597,9 @@ impl Model {
         });
         let weights = dart.map(|(s, _)| s).or(self.weights);
         let tessellations = (0..self.config.mean_tessellations())
-            .map(|_| self.prior_tessellation(weights, rng, &|rng| sigma_mu * rng.normal()))
+            .map(|_| {
+                self.prior_tessellation(weights, self.linear, rng, &|rng| sigma_mu * rng.normal())
+            })
             .collect();
         let sigma_sq = match self.kind {
             Kind::Gaussian => {
@@ -577,7 +613,7 @@ impl Model {
                 let (nu, lambda) = self.variance_cell_prior();
                 (0..self.config.variance_tessellations())
                     .map(|_| {
-                        self.prior_tessellation(weights, rng, &|rng| {
+                        self.prior_tessellation(weights, false, rng, &|rng| {
                             0.5 * nu * lambda / rng.gamma(0.5 * nu)
                         })
                     })
@@ -593,11 +629,23 @@ impl Model {
         }
     }
 
-    /// The mean ensemble value at training row `i`.
+    /// The mean ensemble value at training row `i`, tilted by the cell's
+    /// slopes under the linear basis.
     fn f_at(&self, draw: &PriorDraw, i: usize) -> f64 {
+        let row = &self.rows[i];
         draw.tessellations
             .iter()
-            .map(|(dims, centres, mus)| mus[self.nearest(&self.rows[i], dims, centres)])
+            .map(|(dims, centres, mus, tilts)| {
+                let k = self.nearest(row, dims, centres);
+                let d = dims.len();
+                let mut value = mus[k];
+                if !tilts.is_empty() {
+                    for (j, &dim) in dims.iter().enumerate() {
+                        value += tilts[k * d + j] * (row[dim] - centres[k * d + j]);
+                    }
+                }
+                value
+            })
             .sum()
     }
 
@@ -607,7 +655,9 @@ impl Model {
             Kind::Heteroscedastic => draw
                 .variance
                 .iter()
-                .map(|(dims, centres, values)| values[self.nearest(&self.rows[i], dims, centres)])
+                .map(|(dims, centres, values, _)| {
+                    values[self.nearest(&self.rows[i], dims, centres)]
+                })
                 .product(),
             Kind::Gaussian | Kind::Probit => draw.sigma_sq,
         }
@@ -756,8 +806,8 @@ impl Model {
 
     /// The quantities of a marginal-conditional draw.
     fn mc_quantities(&self, draw: &PriorDraw, y: &[f64]) -> Vec<f64> {
-        let cells: usize = draw.tessellations.iter().map(|(_, _, m)| m.len()).sum();
-        let dims: usize = draw.tessellations.iter().map(|(d, _, _)| d.len()).sum();
+        let cells: usize = draw.tessellations.iter().map(|(_, _, m, _)| m.len()).sum();
+        let dims: usize = draw.tessellations.iter().map(|(d, _, _, _)| d.len()).sum();
         let mut out = Vec::with_capacity(self.quantities.len());
         if self.kind == Kind::Gaussian {
             out.push(draw.sigma_sq);
@@ -766,7 +816,7 @@ impl Model {
         out.push(dims as f64);
         out.extend(F_ROWS.iter().map(|&r| self.offset() + self.f_at(draw, r)));
         if self.kind == Kind::Heteroscedastic {
-            let vcells: usize = draw.variance.iter().map(|(_, _, v)| v.len()).sum();
+            let vcells: usize = draw.variance.iter().map(|(_, _, v, _)| v.len()).sum();
             out.push(vcells as f64);
             out.extend(F_ROWS.iter().map(|&r| self.variance_at(draw, r)));
         }
@@ -1003,6 +1053,14 @@ fn sbc_small_ranks_are_uniform_dart() {
     assert_uniform(&model, &ranks, 19);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+fn sbc_small_ranks_are_uniform_linear() {
+    let model = linear_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 413);
+    assert_uniform(&model, &ranks, 19);
+}
+
 /// Files first, so a failed gate still leaves the R evaluation its input.
 fn sbc_full(model: &Model, file: &str, seed: u64) {
     let ranks = sbc_ranks(model, 1000, 99, 20, 300, seed);
@@ -1052,6 +1110,13 @@ fn sbc_full_ranks_are_uniform_categorical() {
 
 /// The s chain moves by an independence proposal and needs heavier
 /// thinning than the structural quantities, here and in the small run.
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "full size, nightly"]
+fn sbc_full_ranks_are_uniform_linear() {
+    sbc_full(&linear_model(), "sbc_ranks_linear.csv", 413);
+}
+
 #[cfg(feature = "experimental")]
 #[test]
 #[ignore = "full size, nightly"]
@@ -1256,6 +1321,14 @@ fn geweke_small_simulators_agree_dart() {
     assert_simulators_agree(&model, &mc, &sc);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+fn geweke_small_simulators_agree_linear() {
+    let model = linear_model();
+    let (mc, sc) = geweke_samples(&model, 2000, 800, 45, 200, 913);
+    assert_simulators_agree(&model, &mc, &sc);
+}
+
 /// Files first, so a failed gate still leaves the R evaluation its input.
 fn geweke_full(model: &Model, file: &str, seed: u64) {
     let (mc, sc) = geweke_samples(model, 20_000, 5000, 45, 500, seed);
@@ -1311,6 +1384,13 @@ fn geweke_full_simulators_agree_categorical() {
 #[ignore = "full size, nightly"]
 fn geweke_full_simulators_agree_dart() {
     geweke_full(&dart_model(), "geweke_samples_dart.csv", 912);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "full size, nightly"]
+fn geweke_full_simulators_agree_linear() {
+    geweke_full(&linear_model(), "geweke_samples_linear.csv", 913);
 }
 
 fn write_csv(name: &str, lines: &[String]) {

@@ -66,3 +66,10 @@ fn the_inclusion_field_is_rejected() {
     let err = serde_json::from_str::<Config>(json).unwrap_err();
     assert!(err.to_string().contains("inclusion"), "{err}");
 }
+
+#[test]
+fn the_basis_field_is_rejected() {
+    let json = r#"{"mean_params": {"cell": {"basis": "linear"}}}"#;
+    let err = serde_json::from_str::<Config>(json).unwrap_err();
+    assert!(err.to_string().contains("basis"), "{err}");
+}

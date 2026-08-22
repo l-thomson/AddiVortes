@@ -63,6 +63,14 @@ says "Sampled values changed" with the reason.
   model-grade, with SBC and Geweke at both sizes and a broken-sampler
   fixture for the weight update. Outside the semver promise
   (docs/experimental.md).
+- (experimental) `CellParams::basis` with `Basis::Linear` on the mean
+  slot: each cell contributes mu + beta' (x_A - c) with the slopes under
+  the cell-value prior, the (d + 1)-dimensional conjugate update drawn
+  jointly and the structural moves integrating the whole coefficient
+  vector out (Prado, Moral and Parnell 2021 for the BART-family
+  precedent). Needs min-max scaled columns; the variance ensemble's
+  inverse-gamma cells keep the constant basis. Outside the semver
+  promise (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled
