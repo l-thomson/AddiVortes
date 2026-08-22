@@ -25,18 +25,20 @@ columns than rows fits and warns.
 import warnings
 
 import numpy as np
-from thiessen import Model, ThiessenError
+from thiessen import Model, TermParams, ThiessenError
 
 rng = np.random.default_rng(0)
 
 try:
-    Model(m=10, burn_in=20, draws=30).fit(rng.uniform(size=(20, 2)), np.ones(20))
+    Model(mean_params=TermParams(tessellations=10), burn_in=20, draws=30).fit(
+        rng.uniform(size=(20, 2)), np.ones(20)
+    )
 except ThiessenError as error:
     print("constant response:", error)
 
 with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always")
-    Model(m=10, burn_in=20, draws=30).fit(
+    Model(mean_params=TermParams(tessellations=10), burn_in=20, draws=30).fit(
         rng.uniform(size=(4, 6)), rng.uniform(size=4), random_state=1
     )
     print("warning:", caught[0].message)

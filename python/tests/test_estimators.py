@@ -11,21 +11,40 @@ from sklearn.model_selection import GridSearchCV, cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.validation import check_is_fitted
-from thiessen import Model, ThiessenError
-from thiessen._config import FIELDS
-from thiessen.estimators import (
-    _NON_CONFIG,
-    AddiVortesClassifier,
-    AddiVortesRegressor,
-)
+from thiessen import GeometryParams, Model, TermParams, ThiessenError, gaussian, probit
+from thiessen.estimators import AddiVortesClassifier, AddiVortesRegressor
 
 from .conftest import SMALL
 
+#: The estimator parameters: the configuration groups, the run-length
+#: settings, and the settings that are not configuration fields.
+PARAMETERS = {
+    "outcome",
+    "mean_params",
+    "variance_params",
+    "burn_in",
+    "draws",
+    "thinning",
+    "prior_only",
+    "categorical_features",
+    "n_chains",
+    "random_state",
+}
 
-def test_parameters_are_configuration_fields():
+
+def test_the_parameters_are_the_groups_and_the_run_length_settings():
     for estimator in (AddiVortesRegressor(), AddiVortesClassifier()):
-        names = set(estimator.get_params())
-        assert names - _NON_CONFIG <= set(FIELDS)
+        assert set(estimator.get_params(deep=False)) == PARAMETERS
+
+
+def test_deep_params_route_into_the_groups():
+    estimator = AddiVortesRegressor(mean_params=TermParams(tessellations=8))
+    deep = estimator.get_params(deep=True)
+    assert deep["mean_params__tessellations"] == 8
+
+    estimator.set_params(mean_params__tessellations=16)
+    assert estimator.mean_params is not None
+    assert estimator.mean_params.tessellations == 16
 
 
 def test_regressor_fits_and_predicts(gaussian_fixture):
@@ -62,7 +81,7 @@ def test_regressor_prediction_interval_brackets_the_mean(gaussian_fixture):
 def test_heteroscedastic_model(gaussian_fixture):
     x, y = gaussian_fixture
     model = AddiVortesRegressor(
-        model="heteroscedastic", m_var=5, random_state=1, **SMALL
+        variance_params=TermParams(tessellations=5), random_state=1, **SMALL
     ).fit(x, y)
 
     assert model.predict(x).shape == (48,)
@@ -71,13 +90,13 @@ def test_heteroscedastic_model(gaussian_fixture):
 def test_probit_is_rejected_by_the_regressor(gaussian_fixture):
     x, y = gaussian_fixture
     with pytest.raises(ValueError, match="AddiVortesClassifier"):
-        AddiVortesRegressor(model="probit", **SMALL).fit(x, y)
+        AddiVortesRegressor(outcome=probit(), **SMALL).fit(x, y)  # type: ignore[arg-type]
 
 
-def test_unknown_model_is_rejected(gaussian_fixture):
-    x, y = gaussian_fixture
-    with pytest.raises(ValueError, match="unknown variant `soft`"):
-        AddiVortesRegressor(model="soft", **SMALL).fit(x, y)
+def test_the_classifier_rejects_a_regression_family(probit_fixture):
+    x, y = probit_fixture
+    with pytest.raises(ValueError, match="AddiVortesRegressor"):
+        AddiVortesClassifier(outcome=gaussian(), **SMALL).fit(x, y)  # type: ignore[arg-type]
 
 
 def test_classifier_predicts_labels_and_probabilities(probit_fixture):
@@ -119,11 +138,14 @@ def test_the_estimator_and_model_agree_for_one_seed(gaussian_fixture):
 
 
 def test_clone_and_get_params_round_trip():
-    model = AddiVortesRegressor(lambda_c=25.0, m=10)
+    model = AddiVortesRegressor(mean_params=TermParams(tessellations=10, lambda_c=25.0))
     copy = clone(model)
 
     assert copy.get_params() == model.get_params()
-    assert copy.lambda_c == 25.0
+    assert copy.mean_params is not None
+    assert copy.mean_params.lambda_c == 25.0
+    # The group is cloned through its own parameters, not shared.
+    assert copy.mean_params is not model.mean_params
 
 
 def test_pickle_round_trip_preserves_predictions(gaussian_fixture):
@@ -137,7 +159,7 @@ def test_pickle_round_trip_preserves_predictions(gaussian_fixture):
 
 
 def test_pickle_of_an_unfitted_estimator(gaussian_fixture):
-    model = AddiVortesRegressor(m=10)
+    model = AddiVortesRegressor(mean_params=TermParams(tessellations=10))
     restored = pickle.loads(pickle.dumps(model))
     assert restored.get_params() == model.get_params()
 
@@ -191,17 +213,21 @@ def test_pipeline_and_cross_validation(gaussian_fixture):
     assert scores.shape == (3,)
 
 
-def test_grid_search(gaussian_fixture):
+def test_grid_search_routes_into_the_groups(gaussian_fixture):
     x, y = gaussian_fixture
     search = GridSearchCV(
         AddiVortesRegressor(random_state=1, **SMALL),
-        {"lambda_c": [5.0, 25.0]},
+        {
+            "mean_params__lambda_c": [5.0, 25.0],
+            "outcome": [gaussian(nu=3.0), gaussian(nu=6.0)],
+        },
         cv=2,
     )
 
     search.fit(x, y)
 
-    assert search.best_params_["lambda_c"] in (5.0, 25.0)
+    assert search.best_params_["mean_params__lambda_c"] in (5.0, 25.0)
+    assert search.best_params_["outcome"] in (gaussian(nu=3.0), gaussian(nu=6.0))
 
 
 def test_partial_dependence_works_through_sklearn(gaussian_fixture):
@@ -250,9 +276,13 @@ class TestCategorical:
         x, y = self._data()
         model = AddiVortesRegressor(
             categorical_features=[1],
-            metric=["euclidean", "categorical"],
+            mean_params=TermParams(
+                tessellations=8,
+                geometry=GeometryParams(metric=["euclidean", "categorical"]),
+            ),
+            burn_in=10,
+            draws=20,
             random_state=1,
-            **SMALL,
         ).fit(x, y)
 
         assert model._encoding.core_metric == ["euclidean", "categorical"]

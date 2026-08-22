@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from thiessen import Model
+from thiessen import Model, TermParams
 
 #: The seed of the core's fixed-seed fixture.
 SEED = 7
@@ -51,7 +51,8 @@ def test_draws_equal_the_core_snapshot(gaussian_fixture):
     x, y = gaussian_fixture
     stored = _stored()
 
-    fitted = Model(m=15, burn_in=50, draws=60).fit(x, y, random_state=SEED)
+    model = Model(mean_params=TermParams(tessellations=15), burn_in=50, draws=60)
+    fitted = model.fit(x, y, random_state=SEED)
 
     assert fitted.n_draws == stored.shape[0]
     np.testing.assert_array_equal(fitted.sigma(), stored[:, 0])

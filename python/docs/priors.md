@@ -7,33 +7,37 @@ that scaled response, so their defaults do not depend on the units of the data.
 
 ## The parameters
 
-| Parameter | Default | Paper | Prior |
-| --- | --- | --- | --- |
-| `m` | 200 | 200 | ensemble size of the mean function |
-| `k` | 3 | 3 | cell means N(0, sigma_mu^2), sigma_mu = 0.5 / (k sqrt(m)) |
-| `nu` | 6 | 6 | sigma^2 ~ Inv-Gamma(nu / 2, nu lambda / 2) |
-| `q` | 0.85 | 0.85 | lambda calibrated so Pr(sigma < sigma_hat) = q |
-| `sigma_c` | 0.8 | 0.8 | centre coordinates N(0, sigma_c^2), scaled space |
-| `omega` | min(3, p) | min(3, p) | dimension count, omega / p per covariate |
-| `lambda_c` | 5 | 25 | cells per tessellation, b - 1 ~ Poisson(lambda_c) |
-| `m_var` | 40 | - | variance tessellations, heteroscedastic model |
+| Parameter | Where | Default | Paper | Prior |
+| --- | --- | --- | --- | --- |
+| `tessellations` | `mean_params` | 200 | 200 | ensemble size of the mean function |
+| `k` | `TermParams` | 3 | 3 | cell means N(0, sigma_mu^2), sigma_mu = 0.5 / (k sqrt(m)) |
+| `nu` | `gaussian()` | 6 | 6 | sigma^2 ~ Inv-Gamma(nu / 2, nu lambda / 2) |
+| `q` | `gaussian()` | 0.85 | 0.85 | lambda calibrated so Pr(sigma < sigma_hat) = q |
+| `sigma_c` | `GeometryParams` | 0.8 | 0.8 | centre coordinates N(0, sigma_c^2), scaled space |
+| `omega` | `StructureParams` | min(3, p) | min(3, p) | dimension count, omega / p per covariate |
+| `lambda_c` | `TermParams` | 5 | 25 | cells per tessellation, b - 1 ~ Poisson(lambda_c) |
+| `tessellations` | `variance_params` | 0 | 40 | variance ensemble; a positive count is the heteroscedastic model |
 
 `lambda_c` is the one default that departs from the paper: CRAN AddiVortes
 takes 5 from 0.6.8 onward, and this package follows the implementation. Pass
-the paper's value as a keyword argument:
+the paper's value in the group:
 
 ```python exec="on" source="above" result="text"
 import numpy as np
-from thiessen import Model
+from thiessen import Model, TermParams
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(100, 2))
 y = x[:, 0] + rng.normal(scale=0.1, size=100)
 
-paper = Model(lambda_c=25, m=25, burn_in=50, draws=100).fit(x, y, random_state=1)
+paper = Model(
+    mean_params=TermParams(tessellations=25, lambda_c=25.0), burn_in=50, draws=100
+).fit(x, y, random_state=1)
 print("cells per tessellation:", round(float(paper.cell_counts().mean()), 2))
 
-default = Model(m=25, burn_in=50, draws=100).fit(x, y, random_state=1)
+default = Model(
+    mean_params=TermParams(tessellations=25), burn_in=50, draws=100
+).fit(x, y, random_state=1)
 print("with lambda_c = 5:     ", round(float(default.cell_counts().mean()), 2))
 ```
 
@@ -71,13 +75,18 @@ prior sampled is the one a fit on the same data would use.
 
 ```python exec="on" source="above" result="text"
 import numpy as np
-from thiessen import Model
+from thiessen import Model, TermParams
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(100, 2))
 y = x[:, 0] + rng.normal(scale=0.1, size=100)
 
-prior = Model(prior_only=True, m=25, burn_in=50, draws=100).fit(x, y, random_state=1)
+prior = Model(
+    prior_only=True,
+    mean_params=TermParams(tessellations=25),
+    burn_in=50,
+    draws=100,
+).fit(x, y, random_state=1)
 print("prior predictive spread:", round(float(prior.predict_draws(x).std()), 4))
 ```
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from thiessen import Model
+from thiessen import Model, TermParams, probit
 
 from .conftest import SMALL
 
@@ -83,7 +83,7 @@ def test_the_predictive_replicates_are_reproducible(gaussian_fixture):
 
 def test_the_probit_model_carries_no_sigma(probit_fixture):
     x, y = probit_fixture
-    fitted = Model(model="probit", **SMALL).fit(x, y, random_state=1)
+    fitted = Model(outcome=probit(), **SMALL).fit(x, y, random_state=1)
 
     posterior = fitted.to_inference_data(x, y)["posterior"].dataset
 
@@ -93,7 +93,7 @@ def test_the_probit_model_carries_no_sigma(probit_fixture):
 
 def test_the_probit_replicates_are_labels(probit_fixture):
     x, y = probit_fixture
-    fitted = Model(model="probit", **SMALL).fit(x, y, random_state=1)
+    fitted = Model(outcome=probit(), **SMALL).fit(x, y, random_state=1)
 
     replicates = fitted.to_inference_data(x, y)["posterior_predictive"].dataset["y"]
 
@@ -102,7 +102,9 @@ def test_the_probit_replicates_are_labels(probit_fixture):
 
 def test_the_heteroscedastic_model_carries_no_sigma(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(model="heteroscedastic", m_var=5, **SMALL).fit(x, y, random_state=1)
+    fitted = Model(variance_params=TermParams(tessellations=5), **SMALL).fit(
+        x, y, random_state=1
+    )
 
     posterior = fitted.to_inference_data(x, y)["posterior"].dataset
 

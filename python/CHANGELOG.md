@@ -10,8 +10,14 @@ the core crate version the package builds against, which
 
 ### Added
 
-- `Model`, the configuration, with every field of the core's `Config` as a
-  keyword argument and `fit(X, y, random_state=None, n_chains=1)`.
+- `Model`, the configuration, in the shape the core stores it: an outcome
+  family from `gaussian(nu, q)` or `probit(offset)`, one `TermParams` group
+  per ensemble (`mean_params`, `variance_params`), the flat run-length
+  settings, and `fit(X, y, random_state=None, n_chains=1)`. A positive
+  tessellation count on `variance_params` selects the heteroscedastic
+  model. The family and group objects implement `get_params`/`set_params`
+  with `<group>__<parameter>` routing, compare by value and reproduce
+  their constructor call in `repr`.
 - `n_chains` runs that many chains, each with a seed the core derives from
   the resolved seed, and pools their draws; the chain dimension of
   `to_inference_data` holds them. Two or more chains warn where R-hat
@@ -36,13 +42,16 @@ the core crate version the package builds against, which
   `AddiVortesClassifier`, meeting the scikit-learn estimator contract:
   explicit `__init__` parameters, `n_features_in_`, `feature_names_in_`,
   `classes_`, `predict(X, return_std=False)`, `predict_proba`,
-  `__sklearn_tags__`, `clone` and pickling. `scikit-learn` >= 1.6 is the
-  `sklearn` extra.
+  `__sklearn_tags__`, `clone` and pickling. The configuration groups are
+  the same objects as on `Model`, so grid search routes into them:
+  `GridSearchCV(model, {"mean_params__tessellations": [50, 200]})`.
+  `scikit-learn` >= 1.6 is the `sklearn` extra.
 - `categorical_features` on the estimators, of the
   `HistGradientBoostingRegressor` shape: `None`, `'from_dtype'`, an index
   array or a boolean mask. A named column becomes d - 1 treatment-contrast
-  indicators, the first level as reference, unless its `metric` entry is
-  `'categorical'`, in which case it passes as integer level codes.
+  indicators, the first level as reference, unless its entry in the
+  geometry's `metric` is `'categorical'`, in which case it passes as
+  integer level codes.
 - Coverage reporting for the Python suite, uploaded under the `python` flag.
 - Packaging metadata completed against the pyOpenSci guide: the issue
   tracker, the platform and language classifiers, and a statement of need,
@@ -72,7 +81,8 @@ the core crate version the package builds against, which
 - `numpy.integer` accepted for `random_state`, which already worked at
   runtime.
 - `_native.EXPERIMENTAL`, whether the extension was built with the core's
-  `experimental` feature. It is off in every wheel of this release, so `model`
-  takes the published models only. The package keeps no list of model names:
-  the core validates every name, so an item added to or graduated from the
-  feature needs no change here.
+  `experimental` feature. It is off in every wheel of this release, so the
+  published models are the only ones reachable: a gated outcome has no
+  constructor in the package and a configuration naming a gated field or
+  variant is rejected by the core, so an item added to or graduated from
+  the feature needs no change here.

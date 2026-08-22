@@ -1,33 +1,22 @@
-"""The configuration fields and their JSON encoding for the core."""
+"""Building the core's JSON configuration from the surface objects.
+
+The groups serialise exactly as the user set them; fields left unset are
+omitted, so the core's defaults apply, and the core rejects unknown fields
+and validates every value, so no validation is repeated here.
+"""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
 
-__all__ = ["FIELDS", "_config_json", "_flat_config"]
+from .families import Gaussian, Probit
+from .params import MetricEntry, TermParams
 
-#: The configuration fields, in the order of the core's `Config`.
-FIELDS = (
-    "model",
-    "m",
-    "nu",
-    "q",
-    "k",
-    "sigma_c",
-    "omega",
-    "lambda_c",
-    "burn_in",
-    "draws",
-    "thinning",
-    "prior_only",
-    "offset",
-    "m_var",
-    "metric",
-)
+__all__ = ["_config_json"]
 
 
 def _plain(value: Any) -> Any:
@@ -43,123 +32,79 @@ def _plain(value: Any) -> Any:
     return value
 
 
-def _config_json(params: Mapping[str, Any]) -> str:
-    """Encode the set configuration fields as the core's JSON.
-
-    Fields left as `None` are omitted, so the core's default applies. The
-    core rejects unknown fields and validates every value, so no validation
-    is repeated here.
+def _config_json(
+    outcome: Gaussian | Probit | None,
+    mean_params: TermParams | None,
+    variance_params: TermParams | None,
+    burn_in: int,
+    draws: int,
+    thinning: int,
+    prior_only: bool,
+    core_metric: Sequence[MetricEntry] | None = None,
+) -> str:
+    """Encode the configuration as the core's JSON.
 
     Parameters
     ----------
-    params : mapping
-        Field name to value, `None` for unset.
+    outcome : Gaussian, Probit or None
+        The outcome family; `None` takes the core's default.
+    mean_params, variance_params : TermParams or None
+        The two ensembles; `None` takes the core's defaults.
+    burn_in, draws, thinning : int
+        The sweep schedule.
+    prior_only : bool
+        Sample from the prior.
+    core_metric : sequence, optional
+        A metric over the encoded design that replaces the metric of both
+        ensembles, used where a categorical encoding has changed the
+        column count.
 
     Returns
     -------
     str
         The configuration as JSON.
+
+    Raises
+    ------
+    TypeError
+        For a group that is not its parameter object.
     """
-    flat: dict[str, Any] = {
-        name: _plain(value) for name, value in params.items() if value is not None
+    if outcome is not None and not isinstance(outcome, (Gaussian, Probit)):
+        raise TypeError(
+            "outcome must be a family object from gaussian() or probit(); "
+            f"got {outcome!r}"
+        )
+    for name, group in (
+        ("mean_params", mean_params),
+        ("variance_params", variance_params),
+    ):
+        if group is not None and not isinstance(group, TermParams):
+            raise TypeError(f"{name} must be TermParams(...) or None; got {group!r}")
+
+    mean = mean_params._core() if mean_params is not None else {}
+    variance = variance_params._core() if variance_params is not None else {}
+    if core_metric is not None:
+        mean.setdefault("geometry", {})["metric"] = list(core_metric)
+    # The ensembles share one covariate space; the core requires the slots
+    # to declare it identically while per-ensemble geometry awaits its
+    # identification argument.
+    if variance:
+        for shared in ("geometry", "structure"):
+            if shared not in variance and shared in mean:
+                variance[shared] = mean[shared]
+
+    grouped: dict[str, Any] = {
+        "general_params": {
+            "burn_in": burn_in,
+            "draws": draws,
+            "thinning": thinning,
+            "prior_only": prior_only,
+        }
     }
-    return json.dumps(_grouped(flat))
-
-
-def _grouped(flat: Mapping[str, Any]) -> dict[str, Any]:
-    """Arrange the flat fields into the core's outcome and parameter groups."""
-    flat = dict(flat)
-    model = flat.pop("model", "gaussian") or "gaussian"
-    heteroscedastic = model == "heteroscedastic"
-
-    if model in ("gaussian", "heteroscedastic"):
-        outcome_kind = "gaussian"
-    else:
-        # "probit", or an unknown name the core rejects as an outcome.
-        outcome_kind = model
-    outcome: dict[str, Any] = {}
-    for name in ("nu", "q"):
-        value = flat.pop(name, None)
-        if value is not None and outcome_kind == "gaussian":
-            outcome[name] = value
-    offset = flat.pop("offset", None)
-    if offset is not None and outcome_kind == "probit":
-        outcome["offset"] = offset
-
-    term: dict[str, Any] = {}
-    for name in ("k", "lambda_c"):
-        value = flat.pop(name, None)
-        if value is not None:
-            term[name] = value
-    geometry: dict[str, Any] = {}
-    sigma_c = flat.pop("sigma_c", None)
-    if sigma_c is not None:
-        geometry["sigma_c"] = sigma_c
-    metric = flat.pop("metric", None)
-    if metric is not None:
-        geometry["metric"] = metric
-    if geometry:
-        term["geometry"] = geometry
-    omega = flat.pop("omega", None)
-    if omega is not None:
-        term["structure"] = {"omega": omega}
-
-    mean = dict(term)
-    m = flat.pop("m", None)
-    if m is not None:
-        mean["tessellations"] = m
-
-    # The slots share geometry and structure; the ensemble count is the
-    # variance slot's own.
-    m_var = flat.pop("m_var", None)
-    variance = {
-        key: value for key, value in term.items() if key in ("geometry", "structure")
-    }
-    if heteroscedastic:
-        variance["tessellations"] = m_var if m_var is not None else 40
-
-    general = {
-        name: flat.pop(name)
-        for name in ("burn_in", "draws", "thinning", "prior_only")
-        if flat.get(name) is not None
-    }
-
-    grouped: dict[str, Any] = {"outcome": {outcome_kind: outcome}}
+    if outcome is not None:
+        grouped["outcome"] = outcome._core()
     if mean:
         grouped["mean_params"] = mean
     if variance:
         grouped["variance_params"] = variance
-    if general:
-        grouped["general_params"] = general
-    # Anything else passes through for the core to reject by name.
-    grouped.update(flat)
-    return grouped
-
-
-def _flat_config(grouped: Mapping[str, Any]) -> dict[str, Any]:
-    """Return the flat fields of a grouped configuration, in FIELDS order."""
-    outcome = grouped.get("outcome", {})
-    kind, params = next(iter(outcome.items())) if outcome else ("gaussian", {})
-    mean = grouped.get("mean_params", {})
-    variance = grouped.get("variance_params", {})
-    general = grouped.get("general_params", {})
-    geometry = mean.get("geometry", {})
-    structure = mean.get("structure", {})
-    m_var = variance.get("tessellations") or 0
-    return {
-        "model": "heteroscedastic" if kind == "gaussian" and m_var > 0 else kind,
-        "m": mean.get("tessellations", 200) or 200,
-        "nu": params.get("nu", 6.0) if kind == "gaussian" else 6.0,
-        "q": params.get("q", 0.85) if kind == "gaussian" else 0.85,
-        "k": mean.get("k"),
-        "sigma_c": geometry.get("sigma_c"),
-        "omega": structure.get("omega"),
-        "lambda_c": mean.get("lambda_c"),
-        "burn_in": general.get("burn_in"),
-        "draws": general.get("draws"),
-        "thinning": general.get("thinning"),
-        "prior_only": general.get("prior_only"),
-        "offset": params.get("offset") if kind == "probit" else None,
-        "m_var": m_var if m_var > 0 else 40,
-        "metric": geometry.get("metric"),
-    }
+    return json.dumps(_plain(grouped))

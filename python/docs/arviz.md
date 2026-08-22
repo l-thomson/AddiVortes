@@ -5,13 +5,15 @@ with the groups of the PyMC and numpyro convention. It needs the `arviz` extra.
 
 ```python exec="on" source="above" result="text"
 import numpy as np
-from thiessen import Model
+from thiessen import Model, TermParams
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(120, 2))
 y = x[:, 0] + rng.normal(scale=0.1, size=120)
 
-fitted = Model(m=25, burn_in=50, draws=100).fit(x, y, random_state=1)
+fitted = Model(mean_params=TermParams(tessellations=25), burn_in=50, draws=100).fit(
+    x, y, random_state=1
+)
 data = fitted.to_inference_data(x, y)
 print("groups:", sorted(data.children))
 print("posterior:", sorted(data["posterior"].dataset.data_vars))
@@ -32,13 +34,14 @@ directly.
 ```python exec="on" source="above" result="text"
 import arviz as az
 import numpy as np
-from thiessen import Model
+from thiessen import Model, TermParams
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(120, 2))
 y = x[:, 0] + rng.normal(scale=0.1, size=120)
 
-fitted = Model(m=25, burn_in=50, draws=500).fit(x, y, random_state=1, n_chains=4)
+model = Model(mean_params=TermParams(tessellations=25), burn_in=50, draws=500)
+fitted = model.fit(x, y, random_state=1, n_chains=4)
 data = fitted.to_inference_data(x, y)
 print("chains:", data["posterior"].dataset.sizes["chain"])
 print(az.summary(data, var_names=["sigma"], kind="diagnostics"))
@@ -54,14 +57,16 @@ and Buerkner, 2021). The check needs arviz; a fit without it says so.
 ```python exec="on" source="above" result="text"
 import arviz as az
 import numpy as np
-from thiessen import Model
+from thiessen import Model, TermParams
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(120, 2))
 y = x[:, 0] + rng.normal(scale=0.1, size=120)
 
 data = (
-    Model(m=25, burn_in=50, draws=100).fit(x, y, random_state=1).to_inference_data(x, y)
+    Model(mean_params=TermParams(tessellations=25), burn_in=50, draws=100)
+    .fit(x, y, random_state=1)
+    .to_inference_data(x, y)
 )
 print(az.summary(data, var_names=["sigma", "cell_count"]))
 ```

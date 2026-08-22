@@ -10,13 +10,16 @@ of [Priors and scaling](priors.md) as explicit keyword arguments.
 
 ```python exec="on" source="above" result="text"
 import numpy as np
+from thiessen import TermParams
 from thiessen.estimators import AddiVortesRegressor
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(200, 3))
 y = 3.0 * (x[:, 0] - 0.4) ** 2 + 0.5 * x[:, 1] + rng.normal(scale=0.1, size=200)
 
-model = AddiVortesRegressor(m=25, burn_in=50, draws=100, random_state=1).fit(x, y)
+model = AddiVortesRegressor(
+    mean_params=TermParams(tessellations=25), burn_in=50, draws=100, random_state=1
+).fit(x, y)
 print("R^2:", round(model.score(x, y), 4))
 
 mean, std = model.predict(x, return_std=True)
@@ -32,13 +35,16 @@ observation.
 
 ```python exec="on" source="above" result="text"
 import numpy as np
+from thiessen import TermParams
 from thiessen.estimators import AddiVortesClassifier
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(200, 2))
 y = np.where(x[:, 0] > 0.5, "high", "low")
 
-model = AddiVortesClassifier(m=25, burn_in=50, draws=100, random_state=1).fit(x, y)
+model = AddiVortesClassifier(
+    mean_params=TermParams(tessellations=25), burn_in=50, draws=100, random_state=1
+).fit(x, y)
 print("classes:", list(model.classes_))
 print("accuracy:", round(model.score(x, y), 4))
 print("probabilities:", model.predict_proba(x).shape)
@@ -52,6 +58,7 @@ from it. `predict_proba` puts the columns in the order of `classes_`.
 ```python exec="on" source="above" result="text"
 import numpy as np
 from sklearn.model_selection import GridSearchCV
+from thiessen import TermParams
 from thiessen.estimators import AddiVortesRegressor
 
 rng = np.random.default_rng(0)
@@ -59,8 +66,10 @@ x = rng.uniform(size=(120, 2))
 y = x[:, 0] + rng.normal(scale=0.1, size=120)
 
 search = GridSearchCV(
-    AddiVortesRegressor(m=10, burn_in=20, draws=40, random_state=1),
-    {"lambda_c": [5.0, 25.0], "k": [2.0, 3.0]},
+    AddiVortesRegressor(
+    mean_params=TermParams(tessellations=10), burn_in=20, draws=40, random_state=1
+),
+    {"mean_params__lambda_c": [5.0, 25.0], "mean_params__k": [2.0, 3.0]},
     cv=3,
 )
 search.fit(x, y)
@@ -75,13 +84,16 @@ Partial dependence and individual conditional expectation come from
 ```python exec="on" source="above" result="text"
 import numpy as np
 from sklearn.inspection import partial_dependence
+from thiessen import TermParams
 from thiessen.estimators import AddiVortesRegressor
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(150, 2))
 y = 3.0 * (x[:, 0] - 0.4) ** 2 + rng.normal(scale=0.1, size=150)
 
-model = AddiVortesRegressor(m=25, burn_in=50, draws=100, random_state=1).fit(x, y)
+model = AddiVortesRegressor(
+    mean_params=TermParams(tessellations=25), burn_in=50, draws=100, random_state=1
+).fit(x, y)
 result = partial_dependence(model, x, features=[0], grid_resolution=5)
 print("grid:   ", np.round(result["grid_values"][0], 3))
 print("average:", np.round(result["average"][0], 3))
@@ -110,6 +122,7 @@ dtypes; an index array or a boolean mask names the columns directly.
 
 ```python exec="on" source="above" result="text"
 import numpy as np
+from thiessen import GeometryParams, TermParams
 from thiessen.estimators import AddiVortesRegressor
 
 rng = np.random.default_rng(0)
@@ -119,14 +132,20 @@ x = np.column_stack([rng.uniform(size=n), group])
 y = x[:, 0] + 0.5 * group + rng.normal(scale=0.1, size=n)
 
 expanded = AddiVortesRegressor(
-    categorical_features=[1], m=25, burn_in=50, draws=100, random_state=1
+    categorical_features=[1],
+    mean_params=TermParams(tessellations=25),
+    burn_in=50,
+    draws=100,
+    random_state=1,
 ).fit(x, y)
 print("columns the core sees:", len(expanded._encoding.core_metric))
 
 codes = AddiVortesRegressor(
     categorical_features=[1],
-    metric=["euclidean", "categorical"],
-    m=25,
+    mean_params=TermParams(
+        tessellations=25,
+        geometry=GeometryParams(metric=["euclidean", "categorical"]),
+    ),
     burn_in=50,
     draws=100,
     random_state=1,
@@ -146,13 +165,14 @@ unchanged, so the estimators and `Model` draw alike:
 
 ```python exec="on" source="above" result="text"
 import numpy as np
-from thiessen import Model
+from thiessen import Model, TermParams
+from thiessen import TermParams
 from thiessen.estimators import AddiVortesRegressor
 
 rng = np.random.default_rng(0)
 x = rng.uniform(size=(80, 2))
 y = x[:, 0] + rng.normal(scale=0.1, size=80)
-sweep = {"m": 10, "burn_in": 20, "draws": 40}
+sweep = {"mean_params": TermParams(tessellations=10), "burn_in": 20, "draws": 40}
 
 through_estimator = AddiVortesRegressor(random_state=1, **sweep).fit(x, y).predict(x)
 through_model = Model(**sweep).fit(x, y, random_state=1).predict(x)

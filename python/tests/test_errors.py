@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from thiessen import Model, ThiessenError, _native
+from thiessen import GeometryParams, Model, TermParams, ThiessenError, _native
 
 from .conftest import SMALL
 
@@ -64,17 +64,36 @@ def test_the_core_rejects_an_unknown_configuration_field():
         _native.validate_config('{"nonexistent": 1.0}')
 
 
-def test_an_unknown_model_is_rejected():
+def test_an_unknown_outcome_name_is_rejected_by_the_core():
     with pytest.raises(ThiessenError, match="unknown variant `quantile`"):
-        Model(model="quantile").validate()
+        _native.validate_config('{"outcome": {"quantile": {}}}')
+
+
+def test_an_unknown_group_setting_names_the_group():
+    with pytest.raises(TypeError, match="TermParams"):
+        TermParams(zeta=1.0)  # type: ignore[call-arg]
+    with pytest.raises(ValueError, match="TermParams"):
+        TermParams().set_params(zeta=1.0)
+
+
+def test_a_group_of_the_wrong_type_is_rejected():
+    with pytest.raises(TypeError, match="mean_params"):
+        Model(mean_params={"tessellations": 8}).validate()  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="outcome"):
+        Model(outcome="gaussian").validate()  # type: ignore[arg-type]
 
 
 def test_a_non_integer_category_code_is_rejected():
     n = 30
     x = np.column_stack([np.linspace(0.0, 1.0, n), np.linspace(0.0, 3.0, n)])
     y = np.linspace(0.0, 1.0, n)
+    geometry = GeometryParams(metric=["euclidean", "categorical"])
     with pytest.raises(ThiessenError):
-        Model(metric=["euclidean", "categorical"], **SMALL).fit(x, y, random_state=1)
+        Model(
+            mean_params=TermParams(tessellations=8, geometry=geometry),
+            burn_in=10,
+            draws=20,
+        ).fit(x, y, random_state=1)
 
 
 def test_an_invalid_probability_is_rejected(gaussian_fixture):

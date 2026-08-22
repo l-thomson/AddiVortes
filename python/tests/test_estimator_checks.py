@@ -7,13 +7,15 @@ does not depend on the sweep schedule.
 
 from __future__ import annotations
 
+from typing import Any
+
 from sklearn.utils.estimator_checks import parametrize_with_checks
 from thiessen.estimators import AddiVortesClassifier, AddiVortesRegressor
 
-from .conftest import Sweep
+from .conftest import sweep
 
 #: Large enough that the suite's accuracy thresholds are met.
-SMALL: Sweep = {"m": 20, "burn_in": 30, "draws": 60}
+SMALL: dict[str, Any] = sweep(20, 30, 60)
 
 EXPECTED_FAILURES: dict[str, str] = {}
 
