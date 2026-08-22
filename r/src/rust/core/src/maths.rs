@@ -30,6 +30,11 @@ pub(crate) fn acos(x: f64) -> f64 {
     libm::acos(x)
 }
 
+#[cfg(feature = "experimental")]
+pub(crate) fn powf(x: f64, y: f64) -> f64 {
+    libm::pow(x, y)
+}
+
 /// Standard normal CDF, Phi(z) = erfc(-z / sqrt 2) / 2.
 pub(crate) fn normal_cdf(z: f64) -> f64 {
     0.5 * erfc(-z * std::f64::consts::FRAC_1_SQRT_2)

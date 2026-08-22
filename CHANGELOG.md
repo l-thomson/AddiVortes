@@ -10,6 +10,13 @@ says "Sampled values changed" with the reason.
 
 ### Added
 
+- (experimental) `Metric::Minkowski` with order p >= 1 and
+  `Metric::Manhattan`, its p = 1 alias: Minkowski distance on the scaled
+  active coordinates, the active columns of one order combined as
+  (sum |x_d - c_d|^p)^(2 / p), so p = 2 is Euclidean bit-for-bit. Centre
+  coordinates and structural moves are those of Euclidean; only the
+  assignment of rows to cells changes. Outside the semver promise
+  (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled
