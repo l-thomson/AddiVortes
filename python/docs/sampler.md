@@ -79,4 +79,55 @@ print("draws:", fitted.n_draws)
 ```
 
 The redraw above is illustrative; a faithful truncated-normal draw would
-invert the conditional tail probability.
+invert the conditional tail probability, as the prototype below does.
+
+## Prototyping an outcome model
+
+An outcome model with a latent Gaussian representation can be prototyped
+in the loop before it earns a family: impute the latent from its
+conditional given the observed outcome, hand it back, sweep. The probit
+model is the worked case, its latent drawn from the normal truncated to
+the side its label demands (Albert and Chib 1993).
+
+```python exec="on" source="above" result="text"
+import numpy as np
+from scipy.stats import norm
+from thiessen import Model, TermParams, probit
+from thiessen.sampler import Sampler
+
+rng = np.random.default_rng(0)
+n = 80
+x = rng.uniform(size=(n, 2))
+labels = (x[:, 0] + rng.normal(scale=0.3, size=n) > 0.5).astype(float)
+
+z = np.where(labels == 1.0, 0.5, -0.5)
+sampler = Sampler(x, z, mean_params=TermParams(tessellations=10), random_state=1)
+sampler.step(30)
+latent_mean = np.zeros(n)
+for _ in range(60):
+    f = sampler.fitted_values()
+    scale = np.sqrt(sampler.noise_variances())
+    # The conditional mass below zero, then a draw from the label's side
+    # of it, by inversion.
+    at_zero = norm.cdf((0.0 - f) / scale)
+    u = rng.uniform(size=n)
+    inside = np.where(labels == 1.0, at_zero + u * (1.0 - at_zero), u * at_zero)
+    sampler.set_response(f + scale * norm.ppf(inside))
+    sampler.step(1)
+    latent_mean += sampler.fitted_values()
+latent_mean /= 60
+
+family = Model(
+    outcome=probit(), mean_params=TermParams(tessellations=10), burn_in=30, draws=60
+)
+fitted = family.fit(x, labels, random_state=1)
+agreement = np.mean((latent_mean > 0.0) == (fitted.predict(x) > 0.5))
+print("classification agreement with the probit family:", agreement)
+```
+
+The prototype and the family are the same model up to one difference:
+the family fixes the latent variance at 1 for identification, while the
+prototype keeps sampling sigma^2. Differences of that kind are what
+graduate a prototype into an outcome family. A prototype is checked
+distributionally, by simulation-based calibration and posterior
+summaries within Monte Carlo error, never bitwise against the family.
