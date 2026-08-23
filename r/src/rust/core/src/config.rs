@@ -43,6 +43,16 @@ pub enum Outcome {
     /// Experimental (`docs/experimental.md`).
     #[cfg(feature = "experimental")]
     Aft(AftParams),
+    /// y* = f(x) + e, e ~ N(0, sigma^2), observed only as a pair of
+    /// bounds [l_i, u_i] per row (an equal pair is an exact value, an
+    /// infinite endpoint one-sided censoring), fitted by censored-data
+    /// augmentation with a two-sided truncated draw. The bounds are
+    /// data: the model is fitted through
+    /// [`fit_interval_censored`](crate::fit_interval_censored) or
+    /// [`Sampler::interval_censored`](crate::Sampler::interval_censored).
+    /// Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    IntervalCensored(IntervalCensoredParams),
 }
 
 /// The stable variants plus the gated names, so a build without the
@@ -56,6 +66,7 @@ enum StableOutcome {
     Probit(ProbitParams),
     Tobit(serde::de::IgnoredAny),
     Aft(serde::de::IgnoredAny),
+    IntervalCensored(serde::de::IgnoredAny),
 }
 
 #[cfg(not(feature = "experimental"))]
@@ -72,6 +83,10 @@ impl TryFrom<StableOutcome> for Outcome {
             }),
             StableOutcome::Aft(_) => Err(crate::error::Error::RequiresFeature {
                 item: "the `aft` outcome".into(),
+                feature: "experimental",
+            }),
+            StableOutcome::IntervalCensored(_) => Err(crate::error::Error::RequiresFeature {
+                item: "the `interval_censored` outcome".into(),
                 feature: "experimental",
             }),
         }
@@ -114,6 +129,13 @@ impl Outcome {
         Outcome::Aft(AftParams::default())
     }
 
+    /// The interval-censored outcome with the default sigma^2 prior;
+    /// the bound pairs are given at fit. Experimental.
+    #[cfg(feature = "experimental")]
+    pub fn interval_censored() -> Self {
+        Outcome::IntervalCensored(IntervalCensoredParams::default())
+    }
+
     /// What the outcome does with sigma^2; scale validity derives from
     /// this value, never from a per-outcome table.
     pub(crate) fn sigma2_mode(&self) -> Sigma2Mode {
@@ -124,6 +146,8 @@ impl Outcome {
             Outcome::Tobit(_) => Sigma2Mode::Sampled,
             #[cfg(feature = "experimental")]
             Outcome::Aft(_) => Sigma2Mode::Sampled,
+            #[cfg(feature = "experimental")]
+            Outcome::IntervalCensored(_) => Sigma2Mode::Sampled,
         }
     }
 
@@ -136,6 +160,8 @@ impl Outcome {
             Outcome::Tobit(_) => RequiredData::Continuous,
             #[cfg(feature = "experimental")]
             Outcome::Aft(_) => RequiredData::Continuous,
+            #[cfg(feature = "experimental")]
+            Outcome::IntervalCensored(_) => RequiredData::Continuous,
         }
     }
 }
@@ -226,6 +252,34 @@ pub struct AftParams {
 
 #[cfg(feature = "experimental")]
 impl Default for AftParams {
+    fn default() -> Self {
+        let defaults = GaussianParams::default();
+        Self {
+            nu: defaults.nu,
+            q: defaults.q,
+        }
+    }
+}
+
+/// The interval-censored outcome's parameters: the sigma^2 prior,
+/// folded onto the outcome because it is a fact about the observation
+/// model; the bound pairs are data, not parameters. Experimental
+/// (`docs/experimental.md`).
+#[cfg(feature = "experimental")]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct IntervalCensoredParams {
+    /// sigma^2 prior degrees of freedom nu, as the Gaussian outcome's.
+    /// Default 6. A variance ensemble requires nu > 2.
+    pub nu: f64,
+    /// sigma^2 prior calibration quantile q, Pr(sigma < sigma_hat) = q.
+    /// Default 0.85.
+    pub q: f64,
+}
+
+#[cfg(feature = "experimental")]
+impl Default for IntervalCensoredParams {
     fn default() -> Self {
         let defaults = GaussianParams::default();
         Self {
@@ -620,6 +674,8 @@ impl Config {
             Outcome::Tobit(params) => params.nu = nu,
             #[cfg(feature = "experimental")]
             Outcome::Aft(params) => params.nu = nu,
+            #[cfg(feature = "experimental")]
+            Outcome::IntervalCensored(params) => params.nu = nu,
             _ => {}
         }
         self
@@ -635,6 +691,8 @@ impl Config {
             Outcome::Tobit(params) => params.q = q,
             #[cfg(feature = "experimental")]
             Outcome::Aft(params) => params.q = q,
+            #[cfg(feature = "experimental")]
+            Outcome::IntervalCensored(params) => params.q = q,
             _ => {}
         }
         self
@@ -767,6 +825,8 @@ impl Config {
             (Outcome::Tobit(_), _) => "tobit",
             #[cfg(feature = "experimental")]
             (Outcome::Aft(_), _) => "aft",
+            #[cfg(feature = "experimental")]
+            (Outcome::IntervalCensored(_), _) => "interval_censored",
         }
     }
 
@@ -805,6 +865,8 @@ impl Config {
             Outcome::Tobit(params) => (params.nu, params.q),
             #[cfg(feature = "experimental")]
             Outcome::Aft(params) => (params.nu, params.q),
+            #[cfg(feature = "experimental")]
+            Outcome::IntervalCensored(params) => (params.nu, params.q),
             Outcome::Probit(_) => {
                 let defaults = GaussianParams::default();
                 (defaults.nu, defaults.q)
@@ -856,6 +918,16 @@ impl Config {
         match &self.outcome {
             #[cfg(feature = "experimental")]
             Outcome::Aft(params) => {
+                positive("nu", params.nu)?;
+                if !(params.q.is_finite() && params.q > 0.0 && params.q < 1.0) {
+                    return Err(invalid(
+                        "q",
+                        format!("must be in the open interval (0, 1), got {}", params.q),
+                    ));
+                }
+            }
+            #[cfg(feature = "experimental")]
+            Outcome::IntervalCensored(params) => {
                 positive("nu", params.nu)?;
                 if !(params.q.is_finite() && params.q > 0.0 && params.q < 1.0) {
                     return Err(invalid(

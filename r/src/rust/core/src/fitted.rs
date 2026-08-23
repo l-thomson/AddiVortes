@@ -363,9 +363,9 @@ impl Fitted {
 
     /// Posterior mean at each row of `x`, caller scale: of f(x), or of
     /// P(y = 1 | x) = Phi(c + f(x)) under the probit model. Under the
-    /// tobit model the quantity is the uncensored f(x), the latent mean;
-    /// under the AFT model it is f(x) on the log-time scale (the BART
-    /// package's `yhat` convention for `abart`).
+    /// tobit and interval-censored models the quantity is the uncensored
+    /// f(x), the latent mean; under the AFT model it is f(x) on the
+    /// log-time scale (the BART package's `yhat` convention for `abart`).
     ///
     /// # Errors
     ///
@@ -589,8 +589,11 @@ impl Fitted {
     /// its censored term, ln Phi((lower - f_d) / s_d) or
     /// ln Phi((f_d - upper) / s_d), and the Normal log density otherwise.
     /// `NotApplicable` under the AFT model, whose pointwise likelihood
-    /// needs the event indicator:
-    /// [`log_likelihood_survival`](Self::log_likelihood_survival).
+    /// needs the event indicator
+    /// ([`log_likelihood_survival`](Self::log_likelihood_survival)), and
+    /// under the interval-censored model, whose pointwise likelihood
+    /// needs the bounds
+    /// ([`log_likelihood_interval_censored`](Self::log_likelihood_interval_censored)).
     ///
     /// # Errors
     ///
@@ -599,7 +602,10 @@ impl Fitted {
     /// predict errors.
     pub fn log_likelihood(&self, x: &Data, y: &[f64]) -> Result<Vec<Vec<f64>>> {
         #[cfg(feature = "experimental")]
-        if matches!(self.config.outcome, Outcome::Aft(_)) {
+        if matches!(
+            self.config.outcome,
+            Outcome::Aft(_) | Outcome::IntervalCensored(_)
+        ) {
             return Err(self.not_applicable("log_likelihood"));
         }
         if y.len() != x.n_rows() {
@@ -735,6 +741,84 @@ impl Fitted {
                             -0.5 * (ln_2pi + maths::ln(var) + z)
                         } else {
                             maths::ln(maths::normal_cdf((fit - v) / var.sqrt()))
+                        }
+                    })
+                    .collect()
+            })
+            .collect())
+    }
+
+    /// Pointwise interval log-likelihood per draw under the
+    /// interval-censored model, draw-major (`n_draws` by `n_rows`):
+    /// ln N(l_i; f_d(x_i), s_d^2(x_i)) at an exact row (l_i = u_i) and
+    /// ln(Phi((u_i - f_d) / s_d) - Phi((l_i - f_d) / s_d)) at a censored
+    /// one, an infinite endpoint dropping its term. Experimental
+    /// (`docs/experimental.md`).
+    ///
+    /// # Errors
+    ///
+    /// `NotApplicable` under another model; `RowCountMismatch`,
+    /// `BoundCountMismatch`, `InvalidInterval`; the predict errors.
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn log_likelihood_interval_censored(
+        &self,
+        x: &Data,
+        lower: &[f64],
+        upper: &[f64],
+    ) -> Result<Vec<Vec<f64>>> {
+        if !matches!(self.config.outcome, Outcome::IntervalCensored(_)) {
+            return Err(self.not_applicable("log_likelihood_interval_censored"));
+        }
+        if lower.len() != x.n_rows() {
+            return Err(Error::RowCountMismatch {
+                y_len: lower.len(),
+                x_rows: x.n_rows(),
+            });
+        }
+        if upper.len() != lower.len() {
+            return Err(Error::BoundCountMismatch {
+                lower: lower.len(),
+                upper: upper.len(),
+            });
+        }
+        if let Some(row) = lower.iter().zip(upper).position(|(&lo, &hi)| {
+            lo.is_nan()
+                || hi.is_nan()
+                || lo > hi
+                || (lo == hi && !lo.is_finite())
+                || (lo == f64::NEG_INFINITY && hi == f64::INFINITY)
+        }) {
+            return Err(Error::InvalidInterval { row });
+        }
+        let per_draw = self.predict_draws(x)?;
+        let variances = self.predict_variance(x)?;
+        let ln_2pi = maths::ln(2.0 * std::f64::consts::PI);
+        Ok(per_draw
+            .iter()
+            .zip(&variances)
+            .map(|(fits, variance)| {
+                lower
+                    .iter()
+                    .zip(upper)
+                    .zip(fits.iter().zip(variance))
+                    .map(|((&lo, &hi), (&fit, &var))| {
+                        if lo == hi {
+                            let z = (lo - fit) * (lo - fit) / var;
+                            -0.5 * (ln_2pi + maths::ln(var) + z)
+                        } else {
+                            let sd = var.sqrt();
+                            let above = if hi == f64::INFINITY {
+                                1.0
+                            } else {
+                                maths::normal_cdf((hi - fit) / sd)
+                            };
+                            let below = if lo == f64::NEG_INFINITY {
+                                0.0
+                            } else {
+                                maths::normal_cdf((lo - fit) / sd)
+                            };
+                            maths::ln(above - below)
                         }
                     })
                     .collect()

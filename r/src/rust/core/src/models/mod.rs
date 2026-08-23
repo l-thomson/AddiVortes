@@ -18,6 +18,9 @@ pub mod aft;
 pub(crate) mod censoring;
 pub mod gaussian;
 pub mod heteroscedastic;
+#[cfg(feature = "experimental")]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+pub mod interval_censored;
 pub mod probit;
 #[cfg(feature = "experimental")]
 #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
@@ -82,6 +85,36 @@ pub fn fit_aft(
 ) -> Result<Fitted> {
     run_schedule(
         Sampler::aft(config, x, times, events, seed)?,
+        config,
+        &mut |_, _| {},
+    )
+}
+
+/// Fit the interval-censored model: as [`fit`], with one pair of bounds
+/// per row in place of a plain response
+/// ([`Outcome::IntervalCensored`](crate::Outcome::IntervalCensored)).
+/// Experimental (`docs/experimental.md`).
+///
+/// # Arguments
+///
+/// `x` is n by p; `lower` and `upper` hold n bounds each (an equal pair
+/// is an exact value, an infinite endpoint one-sided censoring); `seed`
+/// keys the chain RNG.
+///
+/// # Errors
+///
+/// [`Sampler::interval_censored`].
+#[cfg(feature = "experimental")]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+pub fn fit_interval_censored(
+    config: &Config,
+    x: &Data,
+    lower: &[f64],
+    upper: &[f64],
+    seed: u64,
+) -> Result<Fitted> {
+    run_schedule(
+        Sampler::interval_censored(config, x, lower, upper, seed)?,
         config,
         &mut |_, _| {},
     )

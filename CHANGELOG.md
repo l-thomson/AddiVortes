@@ -105,6 +105,19 @@ says "Sampled values changed" with the reason.
   informational comparison against `abart`
   (benchmarks/upstream/aft_abart.R). Outside the semver promise
   (docs/experimental.md).
+- (experimental) `Outcome::IntervalCensored` with
+  `IntervalCensoredParams`, `fit_interval_censored`,
+  `Sampler::interval_censored` and
+  `Fitted::log_likelihood_interval_censored`: the model for a response
+  known only to lie between two row-specific bounds (Sun 2006), fitted
+  by censored-data augmentation with the tobit model's refresh extended
+  to a two-sided truncated draw (Robert 1995, section 2). A pair of
+  bounds per row is data, entering through the bound entry points; an
+  equal pair is an exact value, an infinite endpoint one-sided
+  censoring, and `fit` rejects the outcome. Exact data reproduces the
+  Gaussian chain draw for draw at the same seed. Validated by an
+  interval-likelihood quadrature known-answer test and SBC and Geweke
+  at both sizes. Outside the semver promise (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled

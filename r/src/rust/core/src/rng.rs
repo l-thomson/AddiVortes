@@ -87,6 +87,54 @@ pub(crate) fn truncated_standard_normal_above(a: f64, rng: &mut Rng) -> f64 {
     }
 }
 
+/// Standard normal draw restricted to a <= z <= b, a < b, both finite
+/// (Robert 1995, section 2). An interval covering 0 takes plain
+/// rejection from N(0, 1) when it is at least sqrt(2 pi) wide and
+/// uniform rejection against the density maximum at 0 otherwise; an
+/// interval with a > 0 takes the one-sided exponential proposal
+/// restricted to [a, b] when b lies beyond Robert's crossover and
+/// uniform rejection against the density maximum at a otherwise; an
+/// interval with b < 0 reflects. Every branch is an exact rejection
+/// sampler; the crossover sets only the acceptance rate.
+#[cfg(feature = "experimental")]
+pub(crate) fn truncated_standard_normal_between(a: f64, b: f64, rng: &mut Rng) -> f64 {
+    debug_assert!(a.is_finite() && b.is_finite() && a < b);
+    if b <= 0.0 {
+        return -truncated_standard_normal_between(-b, -a, rng);
+    }
+    if a <= 0.0 {
+        if b - a >= (2.0 * std::f64::consts::PI).sqrt() {
+            loop {
+                let z = standard_normal(rng);
+                if a <= z && z <= b {
+                    return z;
+                }
+            }
+        }
+        loop {
+            let z = a + (b - a) * uniform(rng);
+            if uniform(rng) <= libm::exp(-0.5 * z * z) {
+                return z;
+            }
+        }
+    }
+    let alpha = 0.5 * (a + (a * a + 4.0).sqrt());
+    if b > a + libm::exp(0.5 + 0.25 * (a * a - a * (a * a + 4.0).sqrt())) / alpha {
+        loop {
+            let z = a - libm::log(1.0 - uniform(rng)) / alpha;
+            if z <= b && uniform(rng) <= libm::exp(-0.5 * (z - alpha) * (z - alpha)) {
+                return z;
+            }
+        }
+    }
+    loop {
+        let z = a + (b - a) * uniform(rng);
+        if uniform(rng) <= libm::exp(0.5 * (a * a - z * z)) {
+            return z;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,6 +160,42 @@ mod tests {
                 (mean - mean_above(a)).abs() < 0.01,
                 "a = {a}: {mean} vs {}",
                 mean_above(a)
+            );
+        }
+    }
+
+    /// The pairs cover every branch: the plain Normal rejection, the
+    /// central and the shifted uniform rejection, the restricted
+    /// exponential rejection and the reflection.
+    #[cfg(feature = "experimental")]
+    #[test]
+    fn two_sided_truncated_normal_moments_on_every_branch() {
+        // E[Z | a <= Z <= b] = (phi(a) - phi(b)) / (Phi(b) - Phi(a)).
+        let phi = |z: f64| (-0.5 * z * z).exp() / (2.0 * std::f64::consts::PI).sqrt();
+        let cdf = |z: f64| 0.5 * libm::erfc(-z * std::f64::consts::FRAC_1_SQRT_2);
+        let mut rng = chain_rng(13);
+        let n = 200_000;
+        for (a, b) in [
+            (-3.0, 3.0),
+            (-0.5, 0.5),
+            (-0.4, 1.8),
+            (1.0, 1.2),
+            (1.0, 8.0),
+            (2.0, 2.05),
+            (-1.2, -1.0),
+            (-8.0, -1.0),
+        ] {
+            let mut sum = 0.0;
+            for _ in 0..n {
+                let z = truncated_standard_normal_between(a, b, &mut rng);
+                assert!((a..=b).contains(&z), "({a}, {b}): {z}");
+                sum += z;
+            }
+            let mean = sum / n as f64;
+            let expected = (phi(a) - phi(b)) / (cdf(b) - cdf(a));
+            assert!(
+                (mean - expected).abs() < 0.01,
+                "({a}, {b}): {mean} vs {expected}"
             );
         }
     }

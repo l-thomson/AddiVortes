@@ -54,6 +54,8 @@ fn gaussian_prior(config: &Config) -> (f64, f64) {
         thiessen::Outcome::Tobit(params) => (params.nu, params.q),
         #[cfg(feature = "experimental")]
         thiessen::Outcome::Aft(params) => (params.nu, params.q),
+        #[cfg(feature = "experimental")]
+        thiessen::Outcome::IntervalCensored(params) => (params.nu, params.q),
         _ => unreachable!("the tests read nu and q under a sampled sigma^2"),
     }
 }
@@ -104,6 +106,38 @@ enum Kind {
     Aft {
         threshold: f64,
     },
+    /// Interval censoring under a fixed inspection scheme: even rows
+    /// exact, odd rows binned into the cutpoint grid of
+    /// [`interval_bounds`], the outer bins one-sided.
+    #[cfg(feature = "experimental")]
+    IntervalCensored,
+}
+
+/// The fixed inspection scheme of the interval-censored model, a
+/// deterministic function of the generated response, so the bounds are
+/// data with no randomness of their own.
+#[cfg(feature = "experimental")]
+fn interval_bounds(y: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    const CUTS: [f64; 4] = [-0.3, -0.1, 0.1, 0.3];
+    let mut lower = Vec::with_capacity(y.len());
+    let mut upper = Vec::with_capacity(y.len());
+    for (i, &v) in y.iter().enumerate() {
+        if i % 2 == 0 {
+            lower.push(v);
+            upper.push(v);
+        } else if v < CUTS[0] {
+            lower.push(f64::NEG_INFINITY);
+            upper.push(CUTS[0]);
+        } else if v >= CUTS[CUTS.len() - 1] {
+            lower.push(CUTS[CUTS.len() - 1]);
+            upper.push(f64::INFINITY);
+        } else {
+            let j = CUTS.iter().rposition(|&c| v >= c).unwrap();
+            lower.push(CUTS[j]);
+            upper.push(CUTS[j + 1]);
+        }
+    }
+    (lower, upper)
 }
 
 /// The centre-coordinate law of one column, the test's own: N(mean, sd^2),
@@ -529,6 +563,22 @@ fn aft_model() -> Model {
     }
 }
 
+/// The interval-censored model at the calibration size: the Gaussian
+/// model's rows, structural prior and lambda, the response observed
+/// through the fixed inspection scheme of [`interval_bounds`], which
+/// censors half of the rows.
+#[cfg(feature = "experimental")]
+fn interval_censored_model() -> Model {
+    let gaussian = gaussian_model();
+    Model {
+        kind: Kind::IntervalCensored,
+        config: gaussian
+            .config
+            .with_outcome(thiessen::Outcome::interval_censored()),
+        ..gaussian
+    }
+}
+
 /// The heteroscedastic model at the calibration size: the Gaussian
 /// model's rows, structural prior and lambda, with m' = 2 variance
 /// tessellations (nu' = 2 / (1 - (2 / 3)^(1 / 2)), lambda' = 0.2).
@@ -557,6 +607,8 @@ impl Model {
             Kind::Tobit { .. } => 0.5,
             #[cfg(feature = "experimental")]
             Kind::Aft { .. } => 0.5,
+            #[cfg(feature = "experimental")]
+            Kind::IntervalCensored => 0.5,
         };
         scale / (self.config.mean_params.k * (self.config.mean_tessellations() as f64).sqrt())
     }
@@ -919,6 +971,11 @@ impl Model {
                     Kind::Aft { threshold } => {
                         (f + self.variance_at(draw, i).sqrt() * rng.normal()).min(threshold)
                     }
+                    // The inspection scheme is a deterministic function
+                    // of the response, applied where the sampler reads
+                    // its bounds.
+                    #[cfg(feature = "experimental")]
+                    Kind::IntervalCensored => f + self.variance_at(draw, i).sqrt() * rng.normal(),
                 }
             })
             .collect()
@@ -1013,6 +1070,8 @@ impl Model {
                 Kind::Tobit { lower, upper } => (f + v.sqrt() * rng.normal()).clamp(lower, upper),
                 #[cfg(feature = "experimental")]
                 Kind::Aft { threshold } => (f + v.sqrt() * rng.normal()).min(threshold),
+                #[cfg(feature = "experimental")]
+                Kind::IntervalCensored => f + v.sqrt() * rng.normal(),
             };
         }
     }
@@ -1026,6 +1085,8 @@ impl Model {
             Kind::Tobit { .. } => true,
             #[cfg(feature = "experimental")]
             Kind::Aft { .. } => true,
+            #[cfg(feature = "experimental")]
+            Kind::IntervalCensored => true,
         }
     }
 
@@ -1041,6 +1102,19 @@ impl Model {
                 Sampler::pinned_prior_aft(&self.config, &self.x, &times, &events, self.lambda, seed)
                     .unwrap()
             }
+            #[cfg(feature = "experimental")]
+            Kind::IntervalCensored => {
+                let (lower, upper) = interval_bounds(y);
+                Sampler::pinned_prior_interval_censored(
+                    &self.config,
+                    &self.x,
+                    &lower,
+                    &upper,
+                    self.lambda,
+                    seed,
+                )
+                .unwrap()
+            }
             _ => Sampler::pinned_prior(&self.config, &self.x, y, self.lambda, seed).unwrap(),
         }
     }
@@ -1054,6 +1128,13 @@ impl Model {
                 let times: Vec<f64> = y.iter().map(|&v| v.exp()).collect();
                 let events: Vec<bool> = y.iter().map(|&v| v != threshold).collect();
                 sampler.set_aft_response(&times, &events).unwrap();
+            }
+            #[cfg(feature = "experimental")]
+            Kind::IntervalCensored => {
+                let (lower, upper) = interval_bounds(y);
+                sampler
+                    .set_interval_censored_response(&lower, &upper)
+                    .unwrap();
             }
             _ => sampler.set_response(y).unwrap(),
         }
@@ -1260,6 +1341,14 @@ fn sbc_small_ranks_are_uniform_aft() {
     assert_uniform(&model, &ranks, 19);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+fn sbc_small_ranks_are_uniform_interval_censored() {
+    let model = interval_censored_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 417);
+    assert_uniform(&model, &ranks, 19);
+}
+
 /// The bandwidth walks on ln tau and needs heavier thinning than the
 /// structural quantities, here and in the full run.
 #[cfg(feature = "experimental")]
@@ -1338,6 +1427,17 @@ fn sbc_full_ranks_are_uniform_tobit() {
 #[ignore = "full size, nightly"]
 fn sbc_full_ranks_are_uniform_aft() {
     sbc_full(&aft_model(), "sbc_ranks_aft.csv", 416);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "full size, nightly"]
+fn sbc_full_ranks_are_uniform_interval_censored() {
+    sbc_full(
+        &interval_censored_model(),
+        "sbc_ranks_interval_censored.csv",
+        417,
+    );
 }
 
 #[cfg(feature = "experimental")]
@@ -1591,6 +1691,14 @@ fn geweke_small_simulators_agree_aft() {
     assert_simulators_agree(&model, &mc, &sc);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+fn geweke_small_simulators_agree_interval_censored() {
+    let model = interval_censored_model();
+    let (mc, sc) = geweke_samples(&model, 2000, 800, 45, 200, 917);
+    assert_simulators_agree(&model, &mc, &sc);
+}
+
 /// Files first, so a failed gate still leaves the R evaluation its input.
 fn geweke_full(model: &Model, file: &str, seed: u64) {
     let (mc, sc) = geweke_samples(model, 20_000, 5000, 45, 500, seed);
@@ -1676,6 +1784,17 @@ fn geweke_full_simulators_agree_aft() {
     geweke_full(&aft_model(), "geweke_samples_aft.csv", 916);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "full size, nightly"]
+fn geweke_full_simulators_agree_interval_censored() {
+    geweke_full(
+        &interval_censored_model(),
+        "geweke_samples_interval_censored.csv",
+        917,
+    );
+}
+
 fn write_csv(name: &str, lines: &[String]) {
     // The test binary's working directory is the crate, two levels below
     // the workspace target directory.
@@ -1693,12 +1812,16 @@ fn write_csv(name: &str, lines: &[String]) {
 #[cfg(feature = "experimental")]
 #[test]
 fn calibrated_configuration_list_is_current() {
-    let entries: [(&str, Model); 16] = [
+    let entries: [(&str, Model); 17] = [
         ("gaussian", gaussian_model()),
         ("probit", probit_model()),
         ("heteroscedastic", heteroscedastic_model()),
         ("tobit (experimental)", tobit_model()),
         ("aft (experimental)", aft_model()),
+        (
+            "interval censored (experimental)",
+            interval_censored_model(),
+        ),
         ("spherical metric", spherical_model()),
         ("categorical metric", categorical_model()),
         ("minkowski metric (experimental)", minkowski_model()),

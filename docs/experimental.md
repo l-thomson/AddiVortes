@@ -30,6 +30,7 @@ history.
 | Soft membership | membership rule (model-grade validation) | `mean_params.geometry.membership` entry `{"soft": {"rate": ...}}` | 0.3.0 | known answer; SBC and Geweke, both sizes; broken-sampler fixture | experimental | [#78](https://github.com/l-thomson/thiessen/pull/78) |
 | Tobit outcome | outcome model (model-grade validation) | `outcome` entry `{"tobit": {"lower": ..., "upper": ...}}` | 0.3.0 | known answer (censored-likelihood quadrature); SBC and Geweke, both sizes | experimental | [#81](https://github.com/l-thomson/thiessen/pull/81) |
 | AFT outcome | outcome model (model-grade validation) | `outcome` entry `{"aft": {}}` with `fit_aft(x, times, events)` | 0.3.0 | known answer (censored-likelihood quadrature); SBC and Geweke, both sizes; informational `abart` comparison | experimental | [#82](https://github.com/l-thomson/thiessen/pull/82) |
+| Interval-censored outcome | outcome model (model-grade validation) | `outcome` entry `{"interval_censored": {}}` with `fit_interval_censored(x, lower, upper)` | 0.3.0 | known answer (interval-likelihood quadrature); SBC and Geweke, both sizes | experimental | [#83](https://github.com/l-thomson/thiessen/pull/83) |
 
 Columns: the configuration field or variant; the first core version
 carrying the item behind the feature; calibration status (SBC and Geweke
