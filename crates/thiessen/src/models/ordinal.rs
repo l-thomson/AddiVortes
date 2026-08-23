@@ -490,11 +490,11 @@ mod tests {
         (config, Data::new(xs, n, 1).unwrap(), labels)
     }
 
-    fn chain_summary(
-        sampler: &mut Sampler,
-        centres: Vec<f64>,
-        labels: &[f64],
-    ) -> ((f64, f64), Vec<(f64, f64)>, Vec<Vec<usize>>) {
+    /// (mean, MCSE) of gamma_2, the same per cell mean, and each
+    /// cell's labels.
+    type ChainSummary = ((f64, f64), Vec<(f64, f64)>, Vec<Vec<usize>>);
+
+    fn chain_summary(sampler: &mut Sampler, centres: Vec<f64>, labels: &[f64]) -> ChainSummary {
         let b = centres.len();
         sampler.fix_mean_tessellation(
             0,
