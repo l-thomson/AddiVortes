@@ -31,9 +31,12 @@ Imports:
 Suggests:
     bayesplot,
     callr,
+    knitr,
     loo,
+    rmarkdown,
     testthat (>= 3.0.0),
     tidybayes
+VignetteBuilder: knitr
 Roxygen: list(markdown = TRUE, load = "source")
 Config/testthat/edition: 3
 Config/thiessen/core-version: 0.3.0

@@ -1,0 +1,113 @@
+---
+title: "The sampler API"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{The sampler API}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+`thiessen_sampler()` is the researcher's interface, and it is
+experimental: it may change in a minor release without a deprecation
+cycle. It follows the updatable sampler object of dbarts and the
+low-level interface of stochtree: construct with the configuration, the
+data and a seed, then drive the Gibbs loop yourself. Burn-in and
+thinning are the caller's loop, and the response may be replaced between
+sweeps. Anything that is not an outcome family or a setting goes through
+this loop and stays there until it earns a name.
+
+## The contracts
+
+The response is on the caller's scale through an affine map frozen at
+construction, so a response outside the training range is legitimate;
+that is what makes censoring and imputation work. The sampler owns its
+RNG, seeded at construction with the chain that `thiessen()` would run
+first, so driving the configured schedule by hand reproduces a one-chain
+fit bit for bit. The loop cannot rewire tessellation membership or cell
+internals.
+
+## A fit as its own loop
+
+```{r}
+library(thiessen)
+
+set.seed(1)
+n <- 120
+x <- cbind(runif(n), runif(n))
+y <- x[, 1] + rnorm(n, sd = 0.1)
+control <- thiessen_control(
+  tessellations = 10,
+  general_params = general_params(burn_in = 50, draws = 100)
+)
+
+sampler <- thiessen_sampler(x, y, control, seed = 1)
+sampler$step(50)
+for (draw in seq_len(100)) {
+  sampler$step(1)
+  sampler$keep()
+}
+driven <- sampler$finish()
+
+fit <- thiessen(x, y, control, seed = 1)
+identical(predict(driven, x), predict(fit, x))
+```
+
+## Imputation between sweeps
+
+A right-censored response can be redrawn from its conditional before
+each sweep: read the current mean function and noise level, redraw the
+censored values above the limit, and hand the response back. The redraw
+below inverts the conditional tail probability, so it is a draw from the
+truncated normal.
+
+```{r}
+set.seed(1)
+latent <- x[, 1] + rnorm(n, sd = 0.1)
+limit <- quantile(latent, 0.8)
+censored <- latent > limit
+y_observed <- pmin(latent, limit)
+
+sampler <- thiessen_sampler(x, y_observed, control, seed = 1)
+sampler$step(50)
+for (draw in seq_len(100)) {
+  mean_f <- sampler$fitted_values()
+  scale <- sqrt(sampler$noise_variances())
+  lower <- pnorm(limit, mean_f[censored], scale[censored])
+  tail_draw <- qnorm(
+    lower + runif(sum(censored)) * (1 - lower),
+    mean_f[censored], scale[censored]
+  )
+  working <- y_observed
+  working[censored] <- tail_draw
+  sampler$set_response(working)
+  sampler$step(1)
+  sampler$keep()
+}
+fit_censored <- sampler$finish()
+fit_censored$n_draws
+```
+
+The censored fit recovers more of the upper tail than a fit to the
+clamped response:
+
+```{r}
+clamped <- thiessen(x, y_observed, control, seed = 1)
+c(
+  censored = max(predict(fit_censored, x)),
+  clamped = max(predict(clamped, x)),
+  limit = unname(limit)
+)
+```
+
+## The verbs
+
+`$step(n)` runs n sweeps; `$keep()` records the state as a posterior
+draw; `$n_kept()` counts them; `$set_response(y)` replaces the response,
+keeping the tessellations, the cell values and sigma^2; `$fitted_values()`
+and `$noise_variances()` read the current state at the training rows;
+`$finish()` returns the fit `thiessen()` returns and consumes the
+sampler. Every later call on a finished sampler errors.

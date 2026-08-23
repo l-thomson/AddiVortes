@@ -1,0 +1,105 @@
+---
+title: "The control surface"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{The control surface}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+The configuration of a fit has four parts, and `thiessen_control()`
+holds one of each. Every name is a name in the core's stored
+configuration and in the Python package, so one description serves all
+three surfaces; the full mapping is `docs/parity.md` in the repository.
+
+```{r}
+library(thiessen)
+
+thiessen_control()
+```
+
+## The outcome family
+
+`outcome` selects the observation model, the `glm(family = )` idiom:
+`gaussian(nu, q)` for continuous responses, carrying the sigma^2 prior's
+degrees of freedom and calibration quantile, and `probit(offset)` for
+binary ones. Attaching `variance_params` with a positive tessellation
+count extends the Gaussian family to the heteroscedastic model.
+
+```{r}
+gaussian(nu = 3)
+probit()
+```
+
+## The ensembles
+
+`mean_params` describes the ensemble behind the average and
+`variance_params`, when given, the ensemble behind the spread. Each is a
+`term_params()` group: the tessellation count, the cell-value prior
+spread `k`, the cell-count prior rate `lambda_c`, and two nested groups.
+
+```{r}
+term_params(tessellations = 200, k = 3, lambda_c = 25)
+```
+
+`geometry_params()` is the covariate space: the `metric` of each column
+(`"euclidean"`, `"categorical"`, or a labelled sphere) and the
+centre-coordinate scale `sigma_c`. `structure_params()` is the
+covariate-inclusion prior: `omega / p` is the prior probability of
+including a covariate, resolved to `min(3, p)` at fit when unset. The
+two ensembles share one covariate space: set these on `mean_params` and
+they apply to `variance_params` as well.
+
+```{r}
+term_params(
+  geometry = geometry_params(metric = list("euclidean", "categorical")),
+  structure = structure_params(omega = 2)
+)
+```
+
+## The sweep schedule
+
+`general_params()` carries the run lengths: `burn_in`, `draws`,
+`thinning`, and `prior_only`, which switches the likelihood off so the
+chain draws from the prior.
+
+```{r}
+general_params(burn_in = 500, draws = 2000, thinning = 2)
+```
+
+## The shortcut, and validation
+
+`thiessen_control(tessellations = 200)` sets the mean ensemble's size
+without spelling the group; it is the single number most fits tune, and
+it is the only flat argument. Every value is validated by the core at
+construction, with the reason kept:
+
+```{r, error = TRUE}
+thiessen_control(outcome = gaussian(q = 1.5))
+thiessen_control(
+  outcome = probit(),
+  variance_params = term_params(tessellations = 40)
+)
+```
+
+An unknown name in any group is an ordinary unused-argument error, since
+each group is a function with a fixed signature:
+
+```{r, error = TRUE}
+term_params(zeta = 1)
+```
+
+## Defaults
+
+An argument left at its default gives the core's default, so
+`thiessen_control()` is the published configuration: 200 tessellations,
+`k = 3`, `lambda_c = 5`, `nu = 6`, `q = 0.85`, `sigma_c = 0.8`,
+`omega = min(3, p)`. The one default that departs from the paper is
+`lambda_c`: Stone and Gosling (2025), s. 2.3, report 25, and CRAN
+AddiVortes takes 5 from 0.6.8 onward; this package follows the
+implementation, and `term_params(lambda_c = 25)` is the paper's
+setting.

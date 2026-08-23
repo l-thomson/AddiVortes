@@ -36,6 +36,10 @@
   repeat the warning, where R-hat exceeds 1.01 or an effective sample size
   falls below 400 (Vehtari and others, 2021); a fit of one chain says so
   instead.
+* Five vignettes, executed at build: getting started, H-AddiVortes and
+  Binary AddiVortes by their paper names, the control surface, and the
+  sampler API with a worked censored-response imputation. A pkgdown site
+  configuration groups the reference by surface.
 * `thiessen_sampler()` (experimental) drives the core's Gibbs loop one
   call at a time: `$step(n)`, `$keep()`, `$set_response()`,
   `$fitted_values()`, `$noise_variances()`, `$finish()` returning the fit

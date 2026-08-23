@@ -1,0 +1,65 @@
+url: ~
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left: [intro, reference, articles, news]
+    right: [search, github]
+
+articles:
+- title: Vignettes
+  navbar: ~
+  contents:
+  - thiessen
+  - h-addivortes
+  - binary-addivortes
+  - control-surface
+  - sampler-api
+
+reference:
+- title: Fitting
+  contents:
+  - thiessen
+  - thiessen_control
+- title: Outcome families
+  contents:
+  - gaussian
+  - probit
+  - print.thiessen_outcome
+- title: Parameter groups
+  contents:
+  - term_params
+  - geometry_params
+  - structure_params
+  - general_params
+  - print.params
+  - print.thiessen_control
+- title: Fitted-model methods
+  contents:
+  - predict.thiessen
+  - fitted.thiessen
+  - sigma.thiessen
+  - summary.thiessen
+  - print.thiessen
+- title: Posterior and rstantools generics
+  contents:
+  - as_draws_df.thiessen
+  - ndraws.thiessen
+  - posterior_predict.thiessen
+  - posterior_epred.thiessen
+  - log_lik.thiessen
+  - predictive_interval.thiessen
+  - reexports
+- title: Diagnostics
+  contents:
+  - thiessen_diagnostics
+  - variable_inclusion
+- title: The sampler API
+  contents:
+  - thiessen_sampler
+  - print.thiessen_sampler
+- title: Build information
+  contents:
+  - core_version
+  - thiessen-package

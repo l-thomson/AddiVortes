@@ -240,6 +240,11 @@ jobs:
         working-directory: r/src/rust
       - run: cargo clippy --locked --all-targets -- -D warnings
         working-directory: r/src/rust
+      # R CMD build installs the package to rebuild the vignettes, so the
+      # dependencies must be present before the build.
+      - uses: r-lib/actions/setup-r-dependencies@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2
+        with:
+          working-directory: r
       - run: R CMD build r
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -293,6 +298,34 @@ jobs:
         with:
           name: r-check-${{ matrix.os }}-${{ matrix.r }}
           path: check
+
+  r-docs:
+    name: r-docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+      - uses: r-lib/actions/setup-r@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2
+        with:
+          working-directory: r
+          extra-packages: any::pkgdown
+      # The vignettes and examples run at build against the installed
+      # package, so the site build is the executed-documentation gate.
+      - run: |
+          install.packages(".", repos = NULL, type = "source")
+          pkgdown::build_site(".", preview = FALSE, install = FALSE,
+                              new_process = FALSE)
+        shell: Rscript {0}
+        working-directory: r
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: r-docs
+          path: r/docs
 
   py-lint:
     name: py-lint
@@ -379,7 +412,7 @@ jobs:
     name: alls-green
     if: always()
     needs: [fmt, clippy, test, deny, doc, semver, calibration-full, coverage, cff,
-            py-lint, py-test, py-coverage, py-docs, r-source, r-check]
+            py-lint, py-test, py-coverage, py-docs, r-source, r-check, r-docs]
     runs-on: ubuntu-latest
     steps:
       - uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # release/v1

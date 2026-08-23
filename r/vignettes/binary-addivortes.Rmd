@@ -1,0 +1,71 @@
+---
+title: "Binary AddiVortes: probit classification"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Binary AddiVortes: probit classification}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+Binary AddiVortes is the classification variant of Stone and Gosling
+(2025): P(y = 1 | x) = Phi(c + f(x)), fitted with the latent-variable
+augmentation of Albert and Chib (1993), as BART's `pbart` fits its
+probit model. It is selected by the `probit()` family. The offset c
+defaults to Phi^-1(ybar), resolved at fit.
+
+```{r}
+library(thiessen)
+
+set.seed(1)
+n <- 300
+x <- cbind(runif(n), runif(n))
+label <- factor(ifelse(x[, 1] + 0.3 * x[, 2] + rnorm(n, sd = 0.2) > 0.6,
+                       "yes", "no"))
+
+control <- thiessen_control(
+  outcome = probit(),
+  tessellations = 25,
+  general_params = general_params(burn_in = 100, draws = 200)
+)
+fit <- thiessen(x, label, control, seed = 1)
+fit
+```
+
+A two-level factor response becomes 0 and 1 with the first level as the
+zero, as `glm` treats one; the levels are kept on the fit. `predict()`
+returns the posterior mean probability of the second level, and
+`predict(type = "latent")` the latent mean c + f(x) per draw:
+
+```{r}
+probabilities <- predict(fit, x)
+range(probabilities)
+mean((probabilities > 0.5) == (label == "yes"))
+```
+
+Credible intervals are on the probability scale:
+
+```{r}
+head(predict(fit, x, interval = "credible", level = 0.9))
+```
+
+## What the model fixes
+
+The latent scale is 1 for identification, so `sigma()` is empty, a
+variance ensemble is not available, and `predict(interval =
+"prediction")` errors: a two-point distribution has no continuous
+predictive interval. The likelihood in `log_lik()` is Bernoulli, and
+`fit$in_sample_rmse` is the root Brier score.
+
+## References
+
+Albert, J. H. and Chib, S. (1993). Bayesian analysis of binary and
+polychotomous response data. *Journal of the American Statistical
+Association* 88(422), 669-679.
+
+Stone, A. and Gosling, J. P. (2025). AddiVortes: (Bayesian) additive
+Voronoi tessellations. *Journal of Computational and Graphical
+Statistics* 34(3), 859-871.
