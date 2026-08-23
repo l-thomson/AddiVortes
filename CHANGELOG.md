@@ -92,6 +92,19 @@ says "Sampled values changed" with the reason.
   draw for draw at the same seed. Validated by a censored-likelihood
   quadrature known-answer test and SBC and Geweke at both sizes.
   Outside the semver promise (docs/experimental.md).
+- (experimental) `Outcome::Aft` with `AftParams`, `fit_aft`,
+  `Sampler::aft` and `Fitted::log_likelihood_survival`: the lognormal
+  accelerated failure time model for a right-censored time-to-event
+  response (Wei 1992; the BART package's `abart`), fitted by
+  censored-data augmentation on the log scale with the censored refresh
+  shared with the tobit model. The times and the event indicator are
+  data, entering through the survival entry points; `fit` rejects the
+  outcome. All-event data reproduces the Gaussian chain on log times
+  draw for draw at the same seed. Validated by a censored-likelihood
+  quadrature known-answer test, SBC and Geweke at both sizes, and an
+  informational comparison against `abart`
+  (benchmarks/upstream/aft_abart.R). Outside the semver promise
+  (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled

@@ -36,6 +36,7 @@ thiserror = "2"
 
 [dev-dependencies]
 insta = "1.48.0"
+libm = "0.2"
 proptest = { version = "1.8", default-features = false, features = ["no_std", "alloc"] }
 serde_json = { version = "1.0.100", features = ["float_roundtrip"] }
 

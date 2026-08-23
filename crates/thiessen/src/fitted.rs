@@ -363,7 +363,9 @@ impl Fitted {
 
     /// Posterior mean at each row of `x`, caller scale: of f(x), or of
     /// P(y = 1 | x) = Phi(c + f(x)) under the probit model. Under the
-    /// tobit model the quantity is the uncensored f(x), the latent mean.
+    /// tobit model the quantity is the uncensored f(x), the latent mean;
+    /// under the AFT model it is f(x) on the log-time scale (the BART
+    /// package's `yhat` convention for `abart`).
     ///
     /// # Errors
     ///
@@ -586,6 +588,9 @@ impl Fitted {
     /// draw's P(y = 1 | x). Under the tobit model a row at a limit takes
     /// its censored term, ln Phi((lower - f_d) / s_d) or
     /// ln Phi((f_d - upper) / s_d), and the Normal log density otherwise.
+    /// `NotApplicable` under the AFT model, whose pointwise likelihood
+    /// needs the event indicator:
+    /// [`log_likelihood_survival`](Self::log_likelihood_survival).
     ///
     /// # Errors
     ///
@@ -593,6 +598,10 @@ impl Fitted {
     /// probit model, `ResponseBeyondLimit` under the tobit model; the
     /// predict errors.
     pub fn log_likelihood(&self, x: &Data, y: &[f64]) -> Result<Vec<Vec<f64>>> {
+        #[cfg(feature = "experimental")]
+        if matches!(self.config.outcome, Outcome::Aft(_)) {
+            return Err(self.not_applicable("log_likelihood"));
+        }
         if y.len() != x.n_rows() {
             return Err(Error::RowCountMismatch {
                 y_len: y.len(),
@@ -665,6 +674,68 @@ impl Fitted {
                     .map(|(&yi, (&fit, &var))| {
                         let z = (yi - fit) * (yi - fit) / var;
                         -0.5 * (ln_2pi + maths::ln(var) + z)
+                    })
+                    .collect()
+            })
+            .collect())
+    }
+
+    /// Pointwise survival log-likelihood per draw under the AFT model,
+    /// draw-major (`n_draws` by `n_rows`): ln N(ln t_i; f_d(x_i),
+    /// s_d^2(x_i)) at an event and ln Phi((f_d(x_i) - ln t_i) / s_d(x_i))
+    /// at a censored row, the log-time density and the survival
+    /// probability of the lognormal AFT model. Experimental
+    /// (`docs/experimental.md`).
+    ///
+    /// # Errors
+    ///
+    /// `NotApplicable` under another model; `RowCountMismatch`,
+    /// `EventCountMismatch`, `InvalidSurvivalTime`; the predict errors.
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn log_likelihood_survival(
+        &self,
+        x: &Data,
+        times: &[f64],
+        events: &[bool],
+    ) -> Result<Vec<Vec<f64>>> {
+        if !matches!(self.config.outcome, Outcome::Aft(_)) {
+            return Err(self.not_applicable("log_likelihood_survival"));
+        }
+        if times.len() != x.n_rows() {
+            return Err(Error::RowCountMismatch {
+                y_len: times.len(),
+                x_rows: x.n_rows(),
+            });
+        }
+        if events.len() != times.len() {
+            return Err(Error::EventCountMismatch {
+                events: events.len(),
+                times: times.len(),
+            });
+        }
+        if let Some(row) = times.iter().position(|&t| !(t.is_finite() && t > 0.0)) {
+            return Err(Error::InvalidSurvivalTime { row });
+        }
+        let per_draw = self.predict_draws(x)?;
+        let variances = self.predict_variance(x)?;
+        let ln_2pi = maths::ln(2.0 * std::f64::consts::PI);
+        let log_times: Vec<f64> = times.iter().map(|&t| maths::ln(t)).collect();
+        Ok(per_draw
+            .iter()
+            .zip(&variances)
+            .map(|(fits, variance)| {
+                log_times
+                    .iter()
+                    .zip(events)
+                    .zip(fits.iter().zip(variance))
+                    .map(|((&v, &event), (&fit, &var))| {
+                        if event {
+                            let z = (v - fit) * (v - fit) / var;
+                            -0.5 * (ln_2pi + maths::ln(var) + z)
+                        } else {
+                            maths::ln(maths::normal_cdf((fit - v) / var.sqrt()))
+                        }
                     })
                     .collect()
             })

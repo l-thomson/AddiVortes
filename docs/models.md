@@ -370,6 +370,69 @@ Validation: fixed-tessellation quadrature known-answer test against
 numerical integration of the censored likelihood, SBC and Geweke at
 both sizes.
 
+### AFT survival (`Outcome::Aft`, experimental)
+
+    ln T_i = f(x_i) + e_i,   e_i ~ N(0, sigma^2),
+    observed (t_i, delta_i): delta_i = 1 is an event (T_i = t_i),
+                             delta_i = 0 right-censoring (T_i > t_i)
+
+The lognormal accelerated failure time model (Wei 1992), the model of
+the BART package's `abart`. The times are positive
+(`Error::InvalidSurvivalTime`), the event indicator is one flag per row
+(`Error::EventCountMismatch`), and both are data: the model is fitted
+through `fit_aft` or `Sampler::aft`, and `fit` rejects the outcome.
+Right-censoring only; interval censoring is a separate model.
+
+Sampler: censored-data augmentation on the log scale, the censored
+refresh shared with the tobit model. Each censored row's latent log
+time is refreshed before the sweep from N(f(x_i), sigma^2) truncated to
+[ln t_i, inf) (Robert 1995 exponential rejection), an event row's
+latent being ln t_i, and the completed log-time response runs the
+Gaussian model's sweep unchanged, with the tobit model's scan order
+(refresh first). No structural move gains an acceptance-ratio term.
+With a variance ensemble the truncated draw's variance is s^2(x_i).
+
+Priors: the Gaussian model's exactly, on ln t min-max scaled to
+[-0.5, 0.5]; a censored row's truncation point is its own scaled
+ln t_i, so nothing beyond the response crosses the frozen map;
+sigma_hat calibrates from the observed log times, censored rows at
+their censoring values. All-event data reproduces the Gaussian model
+on ln t draw for draw at the same seed.
+
+| crate      | BART `abart`  |
+|------------|---------------|
+| `times`    | `times`       |
+| `events`   | `delta`       |
+| `m`        | `ntree`       |
+| `k`        | `k`           |
+| `nu`       | `sigdf`       |
+| `q`        | `sigquant`    |
+| `burn_in`  | `nskip`       |
+| `draws`    | `ndpost`      |
+| `thinning` | `keepevery`   |
+
+`abart` defaults to k = 2, `sigdf = 3` and `sigquant = 0.90`; the crate
+keeps its own defaults (k = 3, nu = 6, q = 0.85). `abart` centres the
+response with an offset; here the min-max response map carries the
+centring. The comparison against `abart` on a fixed dataset is
+informational (`benchmarks/upstream/aft_abart.R`): trees and
+tessellations are different priors, so the posteriors are close but
+not equal.
+
+Fitted model: `predict` is the posterior mean of f(x) on the log-time
+scale (`abart`'s `yhat`); `predict_variance` is sigma_d^2 on the log
+scale (s_d^2(x) under a variance ensemble); `prediction_interval` is
+the predictive interval of a new log time; `log_likelihood` is
+`Error::NotApplicable` (the pointwise likelihood needs the event
+indicator) and `log_likelihood_survival(x, times, events)` takes it:
+ln N(ln t_i; f_d, s_d^2) at an event, ln Phi((f_d - ln t_i) / s_d) at
+a censored row; `sigma` is sigma_d times the training range of ln t;
+`in_sample_rmse` is on the log-time scale against the observed log
+times, censored rows at their censoring values. Validation:
+fixed-tessellation quadrature known-answer test against numerical
+integration of the model's own censored likelihood, SBC and Geweke at
+both sizes.
+
 ## References
 
 - Albert, J. H. and Chib, S. (1993). Bayesian analysis of binary and
@@ -414,3 +477,6 @@ both sizes.
   Statistics 34(3), 859-871.
 - Tobin, J. (1958). Estimation of relationships for limited dependent
   variables. Econometrica 26(1), 24-36.
+- Wei, L. J. (1992). The accelerated failure time model: a useful
+  alternative to the Cox regression model in survival analysis.
+  Statistics in Medicine 11(14-15), 1871-1879.

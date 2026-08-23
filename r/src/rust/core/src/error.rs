@@ -105,6 +105,22 @@ pub enum Error {
         /// The Cargo feature.
         feature: &'static str,
     },
+    /// A survival time is not finite and positive.
+    #[cfg(feature = "experimental")]
+    #[error("survival time at row {row} must be finite and positive")]
+    InvalidSurvivalTime {
+        /// Zero-based row.
+        row: usize,
+    },
+    /// The event indicator and the times differ in length.
+    #[cfg(feature = "experimental")]
+    #[error("event indicator has {events} rows but the times have {times}")]
+    EventCountMismatch {
+        /// Length of the event indicator.
+        events: usize,
+        /// Length of the times.
+        times: usize,
+    },
     /// A response value lies beyond a declared censoring limit.
     #[cfg(feature = "experimental")]
     #[error("response value at row {row} lies beyond the censoring limit")]
