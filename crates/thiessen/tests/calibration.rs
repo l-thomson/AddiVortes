@@ -16,7 +16,7 @@ mod common;
 use common::TestRng;
 use std::f64::consts::PI;
 #[cfg(feature = "experimental")]
-use thiessen::{Basis, GowerKind, Inclusion};
+use thiessen::{Basis, GowerKind, Inclusion, Membership};
 use thiessen::{Config, Data, Metric, Sampler};
 
 /// Quantities of the Gaussian model, in column order: sigma^2, total cells
@@ -37,6 +37,13 @@ const F_ROWS: [usize; 3] = [10, 25, 40];
 #[cfg(feature = "experimental")]
 const DART_QUANTITIES: [&str; 9] = [
     "sigma_sq", "cells", "dims", "f_a", "f_b", "f_c", "s0", "theta", "y_mean",
+];
+
+/// Quantities of the soft-membership model: the Gaussian model's, plus
+/// the first tessellation's bandwidth.
+#[cfg(feature = "experimental")]
+const SOFT_QUANTITIES: [&str; 8] = [
+    "sigma_sq", "cells", "dims", "f_a", "f_b", "f_c", "tau0", "y_mean",
 ];
 
 /// The Gaussian outcome's sigma^2 prior (nu, q) of a configuration.
@@ -159,14 +166,18 @@ struct Model {
     dart: Option<(f64, f64, f64)>,
     /// The linear cell basis on the mean ensemble.
     linear: bool,
+    /// The rate of the soft-membership bandwidth prior on the mean
+    /// ensemble; None is hard membership.
+    soft: Option<f64>,
     quantities: &'static [&'static str],
     n_sbc: usize,
     gates: Gates,
 }
 
 /// One tessellation of a prior draw: active columns, row-major centres,
-/// cell values, row-major cell slopes (empty under the constant basis).
-type DrawnTessellation = (Vec<usize>, Vec<f64>, Vec<f64>, Vec<f64>);
+/// cell values, row-major cell slopes (empty under the constant basis),
+/// and the soft-membership bandwidth (None under hard membership).
+type DrawnTessellation = (Vec<usize>, Vec<f64>, Vec<f64>, Vec<f64>, Option<f64>);
 
 /// One prior draw of the ensembles, engine-free: the test's own sampler.
 struct PriorDraw {
@@ -213,6 +224,7 @@ fn gaussian_model() -> Model {
         weights: None,
         dart: None,
         linear: false,
+        soft: None,
         quantities: &GAUSSIAN_QUANTITIES,
         n_sbc: 6,
         gates: GAUSSIAN_GATES,
@@ -428,6 +440,33 @@ fn linear_model() -> Model {
     }
 }
 
+/// The Gaussian model under soft membership, bandwidth prior
+/// Exponential(10): rows spanning each column's exact scaled range, so
+/// the harness's raw coordinates equal the engine's scaled ones; the
+/// kernel weights would otherwise disagree by the range ratio.
+#[cfg(feature = "experimental")]
+fn soft_model() -> Model {
+    let gaussian = gaussian_model();
+    let n = gaussian.rows.len();
+    let rows: Vec<[f64; 2]> = (0..n)
+        .map(|i| {
+            [
+                i as f64 / (n - 1) as f64 - 0.5,
+                ((i * 17) % n) as f64 / (n - 1) as f64 - 0.5,
+            ]
+        })
+        .collect();
+    Model {
+        config: gaussian.config.with_membership(Membership::soft()),
+        x: Data::from_rows(&rows).unwrap(),
+        rows,
+        soft: Some(10.0),
+        quantities: &SOFT_QUANTITIES,
+        n_sbc: 7,
+        ..gaussian
+    }
+}
+
 /// The probit model at the calibration size: the Gaussian model's rows
 /// and structural prior, offset c = -0.2 fixed, k = 3, no sigma^2.
 fn probit_model() -> Model {
@@ -494,6 +533,7 @@ impl Model {
         &self,
         weights: Option<[f64; 2]>,
         slopes: bool,
+        soft_rate: Option<f64>,
         rng: &mut TestRng,
         value: &dyn Fn(&mut TestRng) -> f64,
     ) -> DrawnTessellation {
@@ -550,7 +590,8 @@ impl Model {
                 } else {
                     Vec::new()
                 };
-                return (dims, centres, values, tilts);
+                let tau = soft_rate.map(|rate| -(1.0 - rng.uniform()).ln() / rate);
+                return (dims, centres, values, tilts, tau);
             }
         }
     }
@@ -598,7 +639,9 @@ impl Model {
         let weights = dart.map(|(s, _)| s).or(self.weights);
         let tessellations = (0..self.config.mean_tessellations())
             .map(|_| {
-                self.prior_tessellation(weights, self.linear, rng, &|rng| sigma_mu * rng.normal())
+                self.prior_tessellation(weights, self.linear, self.soft, rng, &|rng| {
+                    sigma_mu * rng.normal()
+                })
             })
             .collect();
         let sigma_sq = match self.kind {
@@ -613,7 +656,7 @@ impl Model {
                 let (nu, lambda) = self.variance_cell_prior();
                 (0..self.config.variance_tessellations())
                     .map(|_| {
-                        self.prior_tessellation(weights, false, rng, &|rng| {
+                        self.prior_tessellation(weights, false, None, rng, &|rng| {
                             0.5 * nu * lambda / rng.gamma(0.5 * nu)
                         })
                     })
@@ -635,7 +678,26 @@ impl Model {
         let row = &self.rows[i];
         draw.tessellations
             .iter()
-            .map(|(dims, centres, mus, tilts)| {
+            .map(|(dims, centres, mus, tilts, tau)| {
+                if let Some(tau) = tau {
+                    // The kernel-weighted value, computed from the
+                    // smallest key so the nearest factor is 1, as the
+                    // engine does.
+                    let keys: Vec<f64> = centres
+                        .chunks_exact(dims.len())
+                        .map(|centre| self.key(row, dims, centre))
+                        .collect();
+                    let min = keys.iter().cloned().fold(f64::INFINITY, f64::min);
+                    let scale = 1.0 / (2.0 * tau * tau);
+                    let mut total = 0.0;
+                    let mut value = 0.0;
+                    for (key, &mu) in keys.iter().zip(mus) {
+                        let g = (-(key - min) * scale).exp();
+                        total += g;
+                        value += g * mu;
+                    }
+                    return value / total;
+                }
                 let k = self.nearest(row, dims, centres);
                 let d = dims.len();
                 let mut value = mus[k];
@@ -655,7 +717,7 @@ impl Model {
             Kind::Heteroscedastic => draw
                 .variance
                 .iter()
-                .map(|(dims, centres, values, _)| {
+                .map(|(dims, centres, values, _, _)| {
                     values[self.nearest(&self.rows[i], dims, centres)]
                 })
                 .product(),
@@ -806,8 +868,16 @@ impl Model {
 
     /// The quantities of a marginal-conditional draw.
     fn mc_quantities(&self, draw: &PriorDraw, y: &[f64]) -> Vec<f64> {
-        let cells: usize = draw.tessellations.iter().map(|(_, _, m, _)| m.len()).sum();
-        let dims: usize = draw.tessellations.iter().map(|(d, _, _, _)| d.len()).sum();
+        let cells: usize = draw
+            .tessellations
+            .iter()
+            .map(|(_, _, m, _, _)| m.len())
+            .sum();
+        let dims: usize = draw
+            .tessellations
+            .iter()
+            .map(|(d, _, _, _, _)| d.len())
+            .sum();
         let mut out = Vec::with_capacity(self.quantities.len());
         if self.kind == Kind::Gaussian {
             out.push(draw.sigma_sq);
@@ -815,8 +885,11 @@ impl Model {
         out.push(cells as f64);
         out.push(dims as f64);
         out.extend(F_ROWS.iter().map(|&r| self.offset() + self.f_at(draw, r)));
+        if self.soft.is_some() {
+            out.push(draw.tessellations[0].4.expect("soft bandwidth"));
+        }
         if self.kind == Kind::Heteroscedastic {
-            let vcells: usize = draw.variance.iter().map(|(_, _, v, _)| v.len()).sum();
+            let vcells: usize = draw.variance.iter().map(|(_, _, v, _, _)| v.len()).sum();
             out.push(vcells as f64);
             out.extend(F_ROWS.iter().map(|&r| self.variance_at(draw, r)));
         }
@@ -841,6 +914,14 @@ impl Model {
         out.push(cells as f64);
         out.push(dims as f64);
         out.extend(F_ROWS.iter().map(|&r| fit[r]));
+        #[cfg(feature = "experimental")]
+        if self.soft.is_some() {
+            out.push(
+                sampler.tessellations()[0]
+                    .bandwidth()
+                    .expect("soft bandwidth"),
+            );
+        }
         if self.kind == Kind::Heteroscedastic {
             let vcells: usize = sampler
                 .variance_tessellations()
@@ -1061,6 +1142,16 @@ fn sbc_small_ranks_are_uniform_linear() {
     assert_uniform(&model, &ranks, 19);
 }
 
+/// The bandwidth walks on ln tau and needs heavier thinning than the
+/// structural quantities, here and in the full run.
+#[cfg(feature = "experimental")]
+#[test]
+fn sbc_small_ranks_are_uniform_soft() {
+    let model = soft_model();
+    let ranks = sbc_ranks(&model, 160, 19, 25, 150, 414);
+    assert_uniform(&model, &ranks, 19);
+}
+
 /// Files first, so a failed gate still leaves the R evaluation its input.
 fn sbc_full(model: &Model, file: &str, seed: u64) {
     let ranks = sbc_ranks(model, 1000, 99, 20, 300, seed);
@@ -1115,6 +1206,22 @@ fn sbc_full_ranks_are_uniform_categorical() {
 #[ignore = "full size, nightly"]
 fn sbc_full_ranks_are_uniform_linear() {
     sbc_full(&linear_model(), "sbc_ranks_linear.csv", 413);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "full size, nightly"]
+fn sbc_full_ranks_are_uniform_soft() {
+    let model = soft_model();
+    let ranks = sbc_ranks(&model, 1000, 99, 30, 300, 414);
+    let mut lines = vec!["quantity,rank,max_rank".to_string()];
+    for (q, series) in ranks.iter().enumerate() {
+        for rank in series {
+            lines.push(format!("{},{rank},99", model.quantities[q]));
+        }
+    }
+    write_csv("sbc_ranks_soft.csv", &lines);
+    assert_uniform(&model, &ranks, 99);
 }
 
 #[cfg(feature = "experimental")]
@@ -1329,6 +1436,14 @@ fn geweke_small_simulators_agree_linear() {
     assert_simulators_agree(&model, &mc, &sc);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+fn geweke_small_simulators_agree_soft() {
+    let model = soft_model();
+    let (mc, sc) = geweke_samples(&model, 2000, 800, 45, 200, 914);
+    assert_simulators_agree(&model, &mc, &sc);
+}
+
 /// Files first, so a failed gate still leaves the R evaluation its input.
 fn geweke_full(model: &Model, file: &str, seed: u64) {
     let (mc, sc) = geweke_samples(model, 20_000, 5000, 45, 500, seed);
@@ -1393,6 +1508,13 @@ fn geweke_full_simulators_agree_linear() {
     geweke_full(&linear_model(), "geweke_samples_linear.csv", 913);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "full size, nightly"]
+fn geweke_full_simulators_agree_soft() {
+    geweke_full(&soft_model(), "geweke_samples_soft.csv", 914);
+}
+
 fn write_csv(name: &str, lines: &[String]) {
     // The test binary's working directory is the crate, two levels below
     // the workspace target directory.
@@ -1410,7 +1532,7 @@ fn write_csv(name: &str, lines: &[String]) {
 #[cfg(feature = "experimental")]
 #[test]
 fn calibrated_configuration_list_is_current() {
-    let entries: [(&str, Model); 13] = [
+    let entries: [(&str, Model); 14] = [
         ("gaussian", gaussian_model()),
         ("probit", probit_model()),
         ("heteroscedastic", heteroscedastic_model()),
@@ -1424,6 +1546,7 @@ fn calibrated_configuration_list_is_current() {
         ("weighted inclusion (experimental)", weighted_model()),
         ("dart inclusion (experimental)", dart_model()),
         ("linear cell basis (experimental)", linear_model()),
+        ("soft membership (experimental)", soft_model()),
     ];
     let mut rendered = String::from(
         "# Calibrated configurations\n\n\

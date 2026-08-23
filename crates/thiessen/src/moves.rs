@@ -324,6 +324,7 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
                     dims: t.dims.clone(),
                     mus,
                     betas: Vec::new(),
+                    tau: t.tau,
                 },
                 delta: Delta::CentreAdded,
                 log_structure_ratio: prior.log_cell_count_ratio(b + 1),
@@ -341,6 +342,7 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
                     dims: t.dims.clone(),
                     mus,
                     betas: Vec::new(),
+                    tau: t.tau,
                 },
                 delta: Delta::CentreRemoved(removed),
                 log_structure_ratio: -prior.log_cell_count_ratio(b),
@@ -384,6 +386,7 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
                     dims,
                     mus: t.mus.clone(),
                     betas: Vec::new(),
+                    tau: t.tau,
                 },
                 delta: Delta::Full,
                 log_structure_ratio,
@@ -408,6 +411,7 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
                     dims,
                     mus: t.mus.clone(),
                     betas: Vec::new(),
+                    tau: t.tau,
                 },
                 delta: Delta::Full,
                 log_structure_ratio: {
@@ -439,6 +443,7 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
                     dims: t.dims.clone(),
                     mus: t.mus.clone(),
                     betas: Vec::new(),
+                    tau: t.tau,
                 },
                 delta: Delta::CentreMoved(cell),
                 log_structure_ratio: 0.0,
@@ -478,6 +483,7 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
                     dims,
                     mus: t.mus.clone(),
                     betas: Vec::new(),
+                    tau: t.tau,
                 },
                 delta: Delta::Full,
                 log_structure_ratio,
@@ -554,6 +560,7 @@ mod tests {
             dims,
             mus: vec![0.0; b],
             betas: Vec::new(),
+            tau: None,
         }
     }
 

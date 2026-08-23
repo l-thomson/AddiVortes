@@ -288,6 +288,39 @@ cells keep the constant basis. Validation: known-answer tests of the
 marginal and the joint draw, SBC and Geweke at both sizes, and a
 broken-sampler fixture dropping the determinant term.
 
+### Soft membership (`geometry.membership` entry `soft`, experimental)
+
+Not a model: a value of the mean term group's geometry, softening the
+nearest-centre assignment the way SBART softens the tree split (Linero
+and Yang 2018; the SoftBart package). It is stated here because it is
+model-grade in validation: each observation loads on every cell, so the
+cell conjugate update changes, which changes the posterior.
+
+    w_k(x) proportional to exp(-d_k^2(x) / (2 tau^2)),  sum_k w_k(x) = 1,
+    g(x; T, M) = sum_k w_k(x) mu_k,
+    tau ~ Exponential(rate),  rate 10 by default,
+
+with d_k^2 the squared distance of the active metrics to centre k (the
+hard rule's own key) and tau a per-tessellation bandwidth on the scaled
+covariate space, so the prior mean bandwidth is a tenth of a column's
+range (the SoftBart `tau_rate` default). As tau falls to 0 the weights
+recover the hard assignment; the difference from SBART is that the
+kernel acts on the distance to each centre rather than on a chain of
+split gates. The cell update draws the mu vector jointly from the
+b-dimensional conjugate normal with W'DW + I / sigma_mu^2 the
+precision, and the structural moves integrate it out:
+-ln det(I + sigma_mu^2 W'DW) / 2 + b' (Sigma_0^-1 + W'DW)^-1 b / 2, one
+block for the whole tessellation, W the n x b weight matrix, D the
+observation precisions and b = W'Dr. tau is updated by a random-walk
+Metropolis step on ln tau against that integrated likelihood. The
+empty-cell rule still counts nearest-centre members. Constant cell
+basis and constant spread only: the linear basis has no derived
+weighted update, and the variance ensemble's inverse-gamma cells have
+no closed-form weighted conditional; the probit model composes.
+Validation: known-answer tests of the marginal and the joint draw, SBC
+and Geweke at both sizes, and a broken-sampler fixture dropping the
+determinant term.
+
 ## References
 
 - Albert, J. H. and Chib, S. (1993). Bayesian analysis of binary and
@@ -307,6 +340,9 @@ broken-sampler fixture dropping the determinant term.
 - Linero, A. R. (2018). Bayesian regression trees for high-dimensional
   prediction and variable selection. Journal of the American Statistical
   Association 113(522), 626-636.
+- Linero, A. R. and Yang, Y. (2018). Bayesian regression tree ensembles
+  that adapt to smoothness and sparsity. Journal of the Royal
+  Statistical Society Series B 80(5), 1087-1110.
 - Polson, N. G., Scott, J. G. and Windle, J. (2013). Bayesian inference
   for logistic models using Polya-Gamma latent variables. Journal of the
   American Statistical Association 108(504), 1339-1349.

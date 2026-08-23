@@ -161,6 +161,11 @@ pub struct GeometryParams {
     /// Centre-coordinate prior and proposal standard deviation sigma_c
     /// (scaled space). Default 0.8.
     pub sigma_c: f64,
+    /// How an observation belongs to a tessellation's cells. Default
+    /// hard, the published rule. Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    #[serde(skip_serializing_if = "Membership::is_hard")]
+    pub membership: Membership,
     /// The precision matrix of the Mahalanobis metric, row-major p x p
     /// over the encoded design; required exactly when a column's metric
     /// is [`Metric::Mahalanobis`]. Checked at fit: symmetric, positive
@@ -178,7 +183,65 @@ impl Default for GeometryParams {
             metric: Vec::new(),
             sigma_c: 0.8,
             #[cfg(feature = "experimental")]
+            membership: Membership::Hard,
+            #[cfg(feature = "experimental")]
             precision: None,
+        }
+    }
+}
+
+/// How an observation belongs to a tessellation's cells,
+/// [`GeometryParams::membership`].
+#[cfg(feature = "experimental")]
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum Membership {
+    /// Every observation belongs wholly to its nearest centre, the
+    /// published rule. The default.
+    #[default]
+    Hard,
+    /// Kernel-weighted membership (SBART's softening of the tree split,
+    /// Linero and Yang 2018, carried to the Voronoi assignment):
+    /// observation i takes weight w_ik proportional to
+    /// exp(-d_ik^2 / (2 tau^2)) in cell k, normalised over the
+    /// tessellation's centres, with d_ik^2 the squared distance of the
+    /// active metrics and tau a per-tessellation bandwidth,
+    /// tau ~ Exponential(`rate`), updated by a Metropolis step on
+    /// ln tau. The tessellation's value at x is the weighted sum of its
+    /// cell values; the cell values are drawn jointly from the
+    /// b-dimensional conjugate normal, and the structural moves
+    /// integrate them out jointly. The empty-cell rule still counts
+    /// nearest-centre members. Constant cell basis and constant spread
+    /// only: the linear basis has no derived weighted update, and the
+    /// variance ensemble's inverse-gamma cells have no closed-form
+    /// weighted conditional. Experimental (`docs/experimental.md`).
+    Soft {
+        /// Rate of the exponential bandwidth prior, on the scaled
+        /// covariate space. Default 10, so the prior mean bandwidth is
+        /// a tenth of a column's range (the SoftBart `tau_rate`
+        /// default).
+        #[serde(default = "default_soft_rate")]
+        rate: f64,
+    },
+}
+
+#[cfg(feature = "experimental")]
+fn default_soft_rate() -> f64 {
+    10.0
+}
+
+#[cfg(feature = "experimental")]
+impl Membership {
+    /// Whether this is the default, for compact serialisation.
+    fn is_hard(&self) -> bool {
+        matches!(self, Membership::Hard)
+    }
+
+    /// The soft membership with the default bandwidth prior.
+    pub fn soft() -> Self {
+        Membership::Soft {
+            rate: default_soft_rate(),
         }
     }
 }
@@ -478,6 +541,15 @@ impl Config {
         self
     }
 
+    /// The membership rule, both slots. Experimental.
+    #[cfg(feature = "experimental")]
+    #[must_use]
+    pub fn with_membership(mut self, membership: Membership) -> Self {
+        self.mean_params.geometry.membership = membership;
+        self.variance_params.geometry.membership = membership;
+        self
+    }
+
     /// The covariate-inclusion prior, both slots. Experimental.
     #[cfg(feature = "experimental")]
     #[must_use]
@@ -610,6 +682,18 @@ impl Config {
             return Err(invalid("mean_params.tessellations", "must be at least 1"));
         }
         validate_term("mean_params", &self.mean_params)?;
+        #[cfg(feature = "experimental")]
+        if matches!(
+            self.mean_params.geometry.membership,
+            Membership::Soft { .. }
+        ) && self.mean_params.cell.basis != Basis::Constant
+        {
+            return Err(invalid(
+                "mean_params.cell.basis",
+                "soft membership takes the constant basis; the weighted linear \
+                 update is not derived",
+            ));
+        }
         match &self.outcome {
             Outcome::Gaussian(params) => {
                 positive("nu", params.nu)?;
@@ -642,6 +726,18 @@ impl Config {
                 return Err(invalid(
                     "nu",
                     format!("must exceed 2 under a variance ensemble, got {nu}"),
+                ));
+            }
+            #[cfg(feature = "experimental")]
+            if matches!(
+                self.mean_params.geometry.membership,
+                Membership::Soft { .. }
+            ) {
+                return Err(invalid(
+                    "mean_params.geometry.membership",
+                    "soft membership needs a constant spread; the inverse-gamma \
+                     cells of a variance ensemble have no closed-form weighted \
+                     conditional",
                 ));
             }
             validate_term("variance_params", &self.variance_params)?;
@@ -769,6 +865,10 @@ fn validate_term(slot: &str, params: &TermParams) -> Result<()> {
     positive(&format!("{slot}.k"), params.k)?;
     positive(&format!("{slot}.lambda_c"), params.lambda_c)?;
     positive(&format!("{slot}.geometry.sigma_c"), params.geometry.sigma_c)?;
+    #[cfg(feature = "experimental")]
+    if let Membership::Soft { rate } = params.geometry.membership {
+        positive(&format!("{slot}.geometry.membership.rate"), rate)?;
+    }
     #[cfg(feature = "experimental")]
     match &params.structure.inclusion {
         Inclusion::Uniform => {}

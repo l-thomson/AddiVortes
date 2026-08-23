@@ -25,6 +25,9 @@ pub(crate) enum Breakage {
     /// The determinant term dropped from the linear-basis integrated
     /// likelihood, mispricing every structural move.
     DroppedTiltDeterminant,
+    /// The determinant term dropped from the soft-membership integrated
+    /// likelihood, mispricing the structural and bandwidth moves.
+    DroppedSoftDeterminant,
 }
 
 /// The shift the defect adds to ln alpha for move `m`; `normaliser` is
@@ -63,6 +66,8 @@ pub(crate) fn log_alpha_shift(
         Breakage::DroppedSubsetNormaliser => 0.0,
         // Acts inside the linear-basis marginal, not here.
         Breakage::DroppedTiltDeterminant => 0.0,
+        // Acts inside the soft-membership marginal, not here.
+        Breakage::DroppedSoftDeterminant => 0.0,
     }
 }
 
@@ -384,6 +389,7 @@ mod tests {
             dims: vec![0],
             mus: vec![0.0; b],
             betas: Vec::new(),
+            tau: None,
         };
         let shift = |m: Move, from: usize, to: usize| {
             super::log_alpha_shift(
@@ -600,6 +606,154 @@ mod tests {
         #[test]
         fn dropped_subset_normaliser_is_rejected() {
             let statistics = sbc_statistics(Breakage::DroppedSubsetNormaliser);
+            let max = statistics.iter().cloned().fold(0.0, f64::max);
+            assert!(max > CRITICAL, "{statistics:?}");
+        }
+    }
+
+    #[cfg(feature = "experimental")]
+    mod soft {
+        use super::*;
+        use crate::config::Membership;
+
+        /// The rate of `Membership::soft()`.
+        const RATE: f64 = 10.0;
+        /// The bandwidth walks on ln tau, so its ranks need heavier
+        /// thinning than the structural quantities.
+        const SOFT_THIN: usize = 25;
+
+        /// Rows spanning each column's exact scaled range, so the
+        /// harness's raw coordinates equal the engine's scaled ones; the
+        /// kernel weights would otherwise disagree by the range ratio.
+        fn exact_rows() -> Vec<[f64; 3]> {
+            (0..N)
+                .map(|i| {
+                    [
+                        i as f64 / (N - 1) as f64 - 0.5,
+                        ((i * 13) % N) as f64 / (N - 1) as f64 - 0.5,
+                        ((i * 29) % N) as f64 / (N - 1) as f64 - 0.5,
+                    ]
+                })
+                .collect()
+        }
+
+        /// One prior tessellation with a bandwidth, truncated to full
+        /// hard occupancy (the sampler's empty-cell rule).
+        fn prior_tessellation(
+            rows: &[[f64; 3]],
+            rng: &mut SimRng,
+        ) -> (Vec<usize>, Vec<f64>, Vec<f64>, f64) {
+            let (dims, centres, mus) = super::prior_tessellation(rows, rng);
+            let tau = -(1.0 - rng.uniform()).ln() / RATE;
+            (dims, centres, mus, tau)
+        }
+
+        /// The kernel-weighted value, computed from the smallest key so
+        /// the nearest centre's factor is 1, as the engine does.
+        fn value_at(
+            row: &[f64; 3],
+            (dims, centres, mus, tau): &(Vec<usize>, Vec<f64>, Vec<f64>, f64),
+        ) -> f64 {
+            let d = dims.len();
+            let keys: Vec<f64> = centres
+                .chunks_exact(d)
+                .map(|centre| {
+                    dims.iter()
+                        .zip(centre)
+                        .map(|(&dim, c)| (row[dim] - c) * (row[dim] - c))
+                        .sum()
+                })
+                .collect();
+            let min = keys.iter().cloned().fold(f64::INFINITY, f64::min);
+            let scale = 1.0 / (2.0 * tau * tau);
+            let mut total = 0.0;
+            let mut value = 0.0;
+            for (key, &mu) in keys.iter().zip(mus) {
+                let g = (-(key - min) * scale).exp();
+                total += g;
+                value += g * mu;
+            }
+            value / total
+        }
+
+        /// SBC rank statistics for (cells, f at the first row, tau) with
+        /// the breakage in force.
+        fn sbc_statistics(breakage: Breakage) -> [f64; 3] {
+            let rows = exact_rows();
+            let x = Data::from_rows(&rows).unwrap();
+            let config = config(Model::Gaussian).with_membership(Membership::soft());
+            let mut ranks = [[0.0_f64; 20]; 3];
+            for sim in 0..SIMS {
+                let mut rng = SimRng(16_800 + sim as u64);
+                let ensemble: Vec<_> = (0..M)
+                    .map(|_| prior_tessellation(&rows, &mut rng))
+                    .collect();
+                let sigma_sq = prior_variance(&mut rng);
+                let truth = [
+                    ensemble.iter().map(|(_, _, m, _)| m.len()).sum::<usize>() as f64,
+                    ensemble.iter().map(|t| value_at(&rows[0], t)).sum::<f64>(),
+                    ensemble[0].3,
+                ];
+                let y: Vec<f64> = rows
+                    .iter()
+                    .map(|row| {
+                        let f: f64 = ensemble.iter().map(|t| value_at(row, t)).sum();
+                        f + sigma_sq.sqrt() * rng.normal()
+                    })
+                    .collect();
+
+                let mut sampler =
+                    Sampler::pinned_prior(&config, &x, &y, LAMBDA, sim as u64).unwrap();
+                sampler.breakage = breakage;
+                for _ in 0..BURN {
+                    sampler.step();
+                }
+                let mut draws = [[0.0_f64; KEPT]; 3];
+                for kept in 0..KEPT {
+                    for _ in 0..SOFT_THIN {
+                        sampler.step();
+                    }
+                    let fit = sampler.fitted_values();
+                    let state = [
+                        sampler
+                            .tessellations()
+                            .iter()
+                            .map(|t| t.n_cells())
+                            .sum::<usize>() as f64,
+                        fit[0],
+                        sampler.tessellations()[0].bandwidth().unwrap(),
+                    ];
+                    for (series, value) in draws.iter_mut().zip(state) {
+                        series[kept] = value;
+                    }
+                }
+                for q in 0..3 {
+                    let below = draws[q].iter().filter(|v| **v < truth[q]).count();
+                    let equal = draws[q].iter().filter(|v| **v == truth[q]).count();
+                    let rank = below + (rng.uniform() * (equal + 1) as f64) as usize;
+                    ranks[q][rank.min(below + equal)] += 1.0;
+                }
+            }
+            let expected = SIMS as f64 / 20.0;
+            ranks.map(|counts| {
+                counts
+                    .iter()
+                    .map(|c| (c - expected) * (c - expected) / expected)
+                    .sum()
+            })
+        }
+
+        #[test]
+        fn unbroken_soft_passes_the_small_sbc() {
+            let statistics = sbc_statistics(Breakage::None);
+            for (q, statistic) in statistics.iter().enumerate() {
+                assert!(*statistic < CRITICAL, "quantity {q}: {statistic}");
+            }
+        }
+
+        #[test]
+        fn dropped_soft_determinant_is_rejected() {
+            let statistics = sbc_statistics(Breakage::DroppedSoftDeterminant);
             let max = statistics.iter().cloned().fold(0.0, f64::max);
             assert!(max > CRITICAL, "{statistics:?}");
         }

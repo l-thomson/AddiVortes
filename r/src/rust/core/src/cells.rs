@@ -86,7 +86,9 @@ pub(crate) trait CellFamily: sealed::Sealed {
 
     /// Statistics of the tessellation's `b` cells from the assignment
     /// and the partials; `x` and the tessellation supply the offsets of
-    /// the linear basis and are unused otherwise.
+    /// the linear basis and are unused otherwise. Under soft membership
+    /// `weights` holds the row-major n x b membership weights; occupancy
+    /// still counts the hard assignment.
     fn accumulate(
         &self,
         x: &Data,
@@ -94,6 +96,7 @@ pub(crate) trait CellFamily: sealed::Sealed {
         cells: &[usize],
         partials: &[Partial],
         b: usize,
+        weights: Option<&[f64]>,
     ) -> Self::Stats;
 
     /// The T-dependent part of the integrated log-likelihood.
@@ -129,12 +132,16 @@ pub(crate) struct GaussianCells {
 /// Per-cell (n_k, W_k, S_k) accumulated in ascending observation order;
 /// under the linear basis also the normal-equation blocks, per cell the
 /// row-major q x q matrix A_k = sum w u u' and the q-vector
-/// b_k = sum w r u with q = d + 1.
+/// b_k = sum w r u with q = d + 1. Under soft membership one block for
+/// the whole tessellation, q = b, A = W' D W and b = W' D r with W the
+/// n x b membership weights and D the observation precisions; `count`
+/// still holds the hard assignment for the occupancy rule.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct GaussianStats {
     pub count: Vec<usize>,
     pub weight: Vec<f64>,
     pub sum: Vec<f64>,
+    soft: bool,
     q: usize,
     a: Vec<f64>,
     bvec: Vec<f64>,
@@ -168,7 +175,32 @@ impl CellFamily for GaussianCells {
         cells: &[usize],
         partials: &[Partial],
         b: usize,
+        weights: Option<&[f64]>,
     ) -> GaussianStats {
+        if let Some(w) = weights {
+            let mut count = vec![0_usize; b];
+            let mut a = vec![0.0; b * b];
+            let mut bvec = vec![0.0; b];
+            for (i, (&cell, p)) in cells.iter().zip(partials).enumerate() {
+                count[cell] += 1;
+                let row = &w[i * b..(i + 1) * b];
+                for r in 0..b {
+                    bvec[r] += p.weight * p.value * row[r];
+                    for c in 0..b {
+                        a[r * b + c] += p.weight * row[r] * row[c];
+                    }
+                }
+            }
+            return GaussianStats {
+                count,
+                weight: Vec::new(),
+                sum: Vec::new(),
+                soft: true,
+                q: b,
+                a,
+                bvec,
+            };
+        }
         let mut count = vec![0_usize; b];
         let mut weight = vec![0.0; b];
         let mut sum = vec![0.0; b];
@@ -202,6 +234,7 @@ impl CellFamily for GaussianCells {
             count,
             weight,
             sum,
+            soft: false,
             q,
             a,
             bvec,
@@ -213,6 +246,27 @@ impl CellFamily for GaussianCells {
         stats: &GaussianStats,
         #[cfg(test)] breakage: crate::broken::Breakage,
     ) -> f64 {
+        if stats.soft {
+            // -ln det(I + sigma_mu^2 A) / 2 + b' (Sigma0^-1 + A)^-1 b / 2
+            // with one b x b block for the whole tessellation.
+            let q = stats.q;
+            let mut p_mat = stats.a.clone();
+            for r in 0..q {
+                p_mat[r * q + r] += 1.0 / self.sigma_mu_sq;
+            }
+            let log_det_p = cholesky_in_place(&mut p_mat, q);
+            let mut m = stats.bvec.clone();
+            cholesky_solve(&p_mat, q, &mut m);
+            let fit: f64 = stats.bvec.iter().zip(&m).map(|(&b, &m)| b * m).sum();
+            let det_term = q as f64 * maths::ln(self.sigma_mu_sq) + log_det_p;
+            #[cfg(test)]
+            let det_term = if breakage == crate::broken::Breakage::DroppedSoftDeterminant {
+                0.0
+            } else {
+                det_term
+            };
+            return -0.5 * det_term + 0.5 * fit;
+        }
         if !self.linear {
             let mut total = 0.0;
             for (&w, &s) in stats.weight.iter().zip(&stats.sum) {
@@ -251,8 +305,30 @@ impl CellFamily for GaussianCells {
     }
 
     /// One standard normal per cell; under the linear basis q = d + 1
-    /// standard normals per cell, coefficient order.
+    /// standard normals per cell, coefficient order. Under soft
+    /// membership one joint b-dimensional draw, b standard normals in
+    /// cell order.
     fn draw(&self, stats: &GaussianStats, rng: &mut Rng) -> (Vec<f64>, Vec<f64>) {
+        if stats.soft {
+            let q = stats.q;
+            let mut p_mat = stats.a.clone();
+            for r in 0..q {
+                p_mat[r * q + r] += 1.0 / self.sigma_mu_sq;
+            }
+            cholesky_in_place(&mut p_mat, q);
+            let mut theta = stats.bvec.clone();
+            cholesky_solve(&p_mat, q, &mut theta);
+            // theta = m + L^-T z: the upper-triangular solve of L' y = z.
+            let mut z: Vec<f64> = (0..q).map(|_| standard_normal(rng)).collect();
+            for r in (0..q).rev() {
+                for c in r + 1..q {
+                    z[r] -= p_mat[c * q + r] * z[c];
+                }
+                z[r] /= p_mat[r * q + r];
+            }
+            let values = theta.iter().zip(&z).map(|(&m, &e)| m + e).collect();
+            return (values, Vec::new());
+        }
         if !self.linear {
             let values = stats
                 .weight
@@ -406,6 +482,7 @@ impl CellFamily for InverseGammaCells {
         cells: &[usize],
         partials: &[Partial],
         b: usize,
+        _weights: Option<&[f64]>,
     ) -> InverseGammaStats {
         let mut count = vec![0_usize; b];
         let mut sum = vec![0.0; b];
@@ -468,6 +545,7 @@ mod tests {
             dims: vec![0],
             mus: vec![0.0],
             betas: Vec::new(),
+            tau: None,
         };
         (Data::from_rows(&rows).unwrap(), t)
     }
@@ -497,6 +575,7 @@ mod tests {
             &[0, 1, 1],
             &gaussian_partials(&[1.0, 2.0, 3.0], &[2.0, 2.0, 2.0]),
             3,
+            None,
         );
         assert_eq!(stats.weight, vec![2.0, 4.0, 0.0]);
         assert_eq!(stats.sum, vec![2.0, 10.0, 0.0]);
@@ -507,7 +586,8 @@ mod tests {
                 &ctx.1,
                 &[0, 1],
                 &gaussian_partials(&[1.0, 1.0], &[1.0, 1.0]),
-                2
+                2,
+                None
             )
             .all_occupied());
     }
@@ -542,6 +622,7 @@ mod tests {
             &[0; 4],
             &gaussian_partials(&[0.5; 4], &[1.0 / sigma_sq; 4]),
             1,
+            None,
         );
         let expected = 0.5 * (sigma_sq / (4.0 * 0.25 + sigma_sq)).ln()
             + 0.25 * 4.0 / (2.0 * sigma_sq * (4.0 * 0.25 + sigma_sq));
@@ -618,10 +699,10 @@ mod tests {
             let cells_b: Vec<usize> = (0..n).map(|_| uniform_index(b, &mut rng)).collect();
             let partials = gaussian_partials(&r, &w);
             let delta = family.log_marginal(
-                &family.accumulate(&ctx.0, &ctx.1, &cells_a, &partials, b),
+                &family.accumulate(&ctx.0, &ctx.1, &cells_a, &partials, b, None),
                 crate::broken::Breakage::None,
             ) - family.log_marginal(
-                &family.accumulate(&ctx.0, &ctx.1, &cells_b, &partials, b),
+                &family.accumulate(&ctx.0, &ctx.1, &cells_b, &partials, b, None),
                 crate::broken::Breakage::None,
             );
             let dense = dense_log_density(&r, &w, &cells_a, family.sigma_mu_sq)
@@ -644,6 +725,7 @@ mod tests {
             &[0; 4],
             &gaussian_partials(&[0.5; 4], &[2.0; 4]),
             1,
+            None,
         );
         let mut rng = chain_rng(1);
         let n = 40_000;
@@ -693,7 +775,7 @@ mod tests {
                 rest: 1.0,
             },
         ];
-        let stats = family.accumulate(&ctx.0, &ctx.1, &[0, 1, 1], &partials, 3);
+        let stats = family.accumulate(&ctx.0, &ctx.1, &[0, 1, 1], &partials, 3, None);
         assert_eq!(stats.count, vec![1, 2, 0]);
         assert_eq!(stats.sum, vec![2.0, 2.0 + 9.0, 0.0]);
         assert!(!stats.all_occupied());
@@ -765,10 +847,10 @@ mod tests {
             let cells_a: Vec<usize> = (0..n).map(|_| uniform_index(b, &mut rng)).collect();
             let cells_b: Vec<usize> = (0..n).map(|_| uniform_index(b, &mut rng)).collect();
             let delta = family.log_marginal(
-                &family.accumulate(&ctx.0, &ctx.1, &cells_a, &partials, b),
+                &family.accumulate(&ctx.0, &ctx.1, &cells_a, &partials, b, None),
                 crate::broken::Breakage::None,
             ) - family.log_marginal(
-                &family.accumulate(&ctx.0, &ctx.1, &cells_b, &partials, b),
+                &family.accumulate(&ctx.0, &ctx.1, &cells_b, &partials, b, None),
                 crate::broken::Breakage::None,
             );
             let reference = quadrature_log_density(&e, &s, &cells_a, b, family.nu, family.lambda)
@@ -789,7 +871,7 @@ mod tests {
             rest: 2.0,
         };
         let partials = [partial(2.0), partial(1.0), partial(1.0)];
-        let stats = family.accumulate(&ctx.0, &ctx.1, &[0, 1, 1], &partials, 2);
+        let stats = family.accumulate(&ctx.0, &ctx.1, &[0, 1, 1], &partials, 2, None);
         assert_eq!(stats.sum, vec![2.0, 1.0]);
         let normaliser = 1.5 * 0.6_f64.ln() - libm::lgamma(1.5);
         let cell = |n: f64, e: f64| {
@@ -823,7 +905,7 @@ mod tests {
             weight: 0.5,
             rest: 2.0,
         }; 4];
-        let stats = family.accumulate(&ctx.0, &ctx.1, &[0; 4], &partials, 1);
+        let stats = family.accumulate(&ctx.0, &ctx.1, &[0; 4], &partials, 1, None);
         assert_eq!(stats.sum, vec![2.0]);
         let mut rng = chain_rng(2);
         let n = 100_000;
@@ -845,6 +927,213 @@ mod tests {
         close(mean, 2.5, 0.05);
     }
 
+    mod soft {
+        use super::*;
+
+        fn family() -> GaussianCells {
+            GaussianCells {
+                sigma_mu_sq: 0.25,
+                linear: false,
+            }
+        }
+
+        /// The hard indicator as a weight matrix.
+        fn indicator(cells: &[usize], b: usize) -> Vec<f64> {
+            let mut w = vec![0.0; cells.len() * b];
+            for (i, &cell) in cells.iter().enumerate() {
+                w[i * b + cell] = 1.0;
+            }
+            w
+        }
+
+        /// A normalised random weight row per observation.
+        fn random_weights(n: usize, b: usize, rng: &mut Rng) -> Vec<f64> {
+            let mut w: Vec<f64> = (0..n * b)
+                .map(|_| maths::exp(standard_normal(rng)))
+                .collect();
+            for row in w.chunks_exact_mut(b) {
+                let total: f64 = row.iter().sum();
+                row.iter_mut().for_each(|v| *v /= total);
+            }
+            w
+        }
+
+        #[test]
+        fn indicator_weights_match_the_constant_marginal() {
+            let ctx = any_ctx(8);
+            let mut rng = chain_rng(29);
+            for _ in 0..40 {
+                let n = 4 + uniform_index(9, &mut rng);
+                let b = 1 + uniform_index(4, &mut rng);
+                let family = family();
+                let r: Vec<f64> = (0..n).map(|_| standard_normal(&mut rng)).collect();
+                let w: Vec<f64> = (0..n)
+                    .map(|_| maths::exp(0.6 * standard_normal(&mut rng)))
+                    .collect();
+                let cells: Vec<usize> = (0..n).map(|_| uniform_index(b, &mut rng)).collect();
+                let partials = gaussian_partials(&r, &w);
+                let soft = family.accumulate(
+                    &ctx.0,
+                    &ctx.1,
+                    &cells,
+                    &partials,
+                    b,
+                    Some(&indicator(&cells, b)),
+                );
+                let hard = family.accumulate(&ctx.0, &ctx.1, &cells, &partials, b, None);
+                assert_eq!(soft.all_occupied(), hard.all_occupied());
+                close(
+                    family.log_marginal(&soft, crate::broken::Breakage::None),
+                    family.log_marginal(&hard, crate::broken::Breakage::None),
+                    1e-10,
+                );
+            }
+        }
+
+        /// ln N(r; 0, D^-1 + sigma_mu^2 W W^T) by dense Cholesky. Shares
+        /// no code with `log_marginal`.
+        fn dense_log_density(
+            r: &[f64],
+            prec: &[f64],
+            w: &[f64],
+            b: usize,
+            sigma_mu_sq: f64,
+        ) -> f64 {
+            let n = r.len();
+            let mut sigma = vec![0.0_f64; n * n];
+            for i in 0..n {
+                for j in 0..n {
+                    let mut v =
+                        sigma_mu_sq * (0..b).map(|k| w[i * b + k] * w[j * b + k]).sum::<f64>();
+                    if i == j {
+                        v += 1.0 / prec[i];
+                    }
+                    sigma[i * n + j] = v;
+                }
+            }
+            let mut l = vec![0.0_f64; n * n];
+            for i in 0..n {
+                for j in 0..=i {
+                    let mut sum = sigma[i * n + j];
+                    for k in 0..j {
+                        sum -= l[i * n + k] * l[j * n + k];
+                    }
+                    if i == j {
+                        l[i * n + i] = sum.sqrt();
+                    } else {
+                        l[i * n + j] = sum / l[j * n + j];
+                    }
+                }
+            }
+            let mut u = r.to_vec();
+            for i in 0..n {
+                for k in 0..i {
+                    u[i] -= l[i * n + k] * u[k];
+                }
+                u[i] /= l[i * n + i];
+            }
+            let log_det: f64 = (0..n).map(|i| 2.0 * l[i * n + i].ln()).sum();
+            let quad: f64 = u.iter().map(|v| v * v).sum();
+            -0.5 * (n as f64 * (2.0 * std::f64::consts::PI).ln() + log_det + quad)
+        }
+
+        #[test]
+        fn the_soft_marginal_difference_matches_a_dense_recomputation() {
+            let ctx = any_ctx(8);
+            // log_marginal drops terms that do not depend on the weights,
+            // so differences between weight matrices equal the dense
+            // evaluation.
+            let mut rng = chain_rng(31);
+            for case in 0..60 {
+                let n = 4 + uniform_index(9, &mut rng);
+                let b = 1 + uniform_index(4, &mut rng);
+                let family = GaussianCells {
+                    sigma_mu_sq: 0.05 + 0.4 * (case as f64 / 60.0),
+                    linear: false,
+                };
+                let r: Vec<f64> = (0..n).map(|_| standard_normal(&mut rng)).collect();
+                let prec: Vec<f64> = (0..n)
+                    .map(|_| maths::exp(0.6 * standard_normal(&mut rng)))
+                    .collect();
+                let cells: Vec<usize> = (0..n).map(|_| uniform_index(b, &mut rng)).collect();
+                let partials = gaussian_partials(&r, &prec);
+                let w_a = random_weights(n, b, &mut rng);
+                let w_b = random_weights(n, b, &mut rng);
+                let delta = family.log_marginal(
+                    &family.accumulate(&ctx.0, &ctx.1, &cells, &partials, b, Some(&w_a)),
+                    crate::broken::Breakage::None,
+                ) - family.log_marginal(
+                    &family.accumulate(&ctx.0, &ctx.1, &cells, &partials, b, Some(&w_b)),
+                    crate::broken::Breakage::None,
+                );
+                let dense = dense_log_density(&r, &prec, &w_a, b, family.sigma_mu_sq)
+                    - dense_log_density(&r, &prec, &w_b, b, family.sigma_mu_sq);
+                close(delta, dense, 1e-9);
+            }
+        }
+
+        #[test]
+        fn the_joint_draw_matches_the_conjugate_posterior() {
+            let ctx = any_ctx(4);
+            // Two cells, four observations, hand-picked weights: the
+            // posterior is N(P^-1 W'Dr, P^-1) with P = W'DW + I / sigma_mu^2.
+            let family = family();
+            let values = [1.0, 0.2, 0.4, 0.9];
+            let prec = [1.0, 2.0, 1.0, 1.0];
+            let w = [0.9, 0.1, 0.3, 0.7, 0.5, 0.5, 0.8, 0.2];
+            let cells = [0, 1, 0, 0];
+            let partials = gaussian_partials(&values, &prec);
+            let stats = family.accumulate(&ctx.0, &ctx.1, &cells, &partials, 2, Some(&w));
+            let (mut a11, mut a12, mut a22, mut b1, mut b2) = (0.0, 0.0, 0.0, 0.0, 0.0);
+            for i in 0..4 {
+                a11 += prec[i] * w[i * 2] * w[i * 2];
+                a12 += prec[i] * w[i * 2] * w[i * 2 + 1];
+                a22 += prec[i] * w[i * 2 + 1] * w[i * 2 + 1];
+                b1 += prec[i] * values[i] * w[i * 2];
+                b2 += prec[i] * values[i] * w[i * 2 + 1];
+            }
+            let (p11, p12, p22) = (a11 + 4.0, a12, a22 + 4.0);
+            let det = p11 * p22 - p12 * p12;
+            let mean = [(p22 * b1 - p12 * b2) / det, (p11 * b2 - p12 * b1) / det];
+            let cov = [p22 / det, -p12 / det, p11 / det];
+
+            let mut rng = rng::chain_rng(13);
+            let n = 200_000;
+            let (mut m0, mut m1) = (0.0, 0.0);
+            let (mut v0, mut v1, mut c01) = (0.0, 0.0, 0.0);
+            for _ in 0..n {
+                let (values, slopes) = family.draw(&stats, &mut rng);
+                assert!(slopes.is_empty());
+                m0 += values[0];
+                m1 += values[1];
+                v0 += values[0] * values[0];
+                v1 += values[1] * values[1];
+                c01 += values[0] * values[1];
+            }
+            let n = n as f64;
+            let (m0, m1) = (m0 / n, m1 / n);
+            close(m0, mean[0], 5e-3);
+            close(m1, mean[1], 5e-3);
+            close(v0 / n - m0 * m0, cov[0], 5e-3);
+            close(c01 / n - m0 * m1, cov[1], 5e-3);
+            close(v1 / n - m1 * m1, cov[2], 5e-3);
+        }
+
+        #[test]
+        fn the_dropped_determinant_shifts_the_marginal() {
+            let ctx = any_ctx(4);
+            let family = family();
+            let cells = [0, 1, 0, 0];
+            let partials = gaussian_partials(&[1.0, 0.2, 0.4, 0.9], &[1.0; 4]);
+            let w = indicator(&cells, 2);
+            let stats = family.accumulate(&ctx.0, &ctx.1, &cells, &partials, 2, Some(&w));
+            let whole = family.log_marginal(&stats, crate::broken::Breakage::None);
+            let broken =
+                family.log_marginal(&stats, crate::broken::Breakage::DroppedSoftDeterminant);
+            assert!(broken > whole, "{broken} vs {whole}");
+        }
+    }
+
     mod linear {
         use super::*;
 
@@ -862,6 +1151,7 @@ mod tests {
                 dims: vec![0],
                 mus: vec![0.0],
                 betas: vec![0.0],
+                tau: None,
             }
         }
 
@@ -879,11 +1169,11 @@ mod tests {
                 linear: false,
             };
             let a = linear.log_marginal(
-                &linear.accumulate(&x, &t, &cells, &partials, 1),
+                &linear.accumulate(&x, &t, &cells, &partials, 1, None),
                 crate::broken::Breakage::None,
             );
             let b = constant.log_marginal(
-                &constant.accumulate(&x, &t, &cells, &partials, 1),
+                &constant.accumulate(&x, &t, &cells, &partials, 1, None),
                 crate::broken::Breakage::None,
             );
             close(a, b, 1e-12);
@@ -897,7 +1187,7 @@ mod tests {
             let partials = gaussian_partials(&[1.0, 0.2], &[1.0, 1.0]);
             let cells = [0, 0];
             let family = linear_family();
-            let stats = family.accumulate(&x, &t, &cells, &partials, 1);
+            let stats = family.accumulate(&x, &t, &cells, &partials, 1, None);
             // A = [[2, 0], [0, 0.5]], b = (1.2, 0.4).
             let sigma = 0.25_f64;
             let p11 = 2.0 + 1.0 / sigma;
@@ -918,7 +1208,7 @@ mod tests {
             let partials = gaussian_partials(&[1.0, 0.2, 0.4, 0.9], &[1.0, 2.0, 1.0, 1.0]);
             let cells = [0, 0, 0, 0];
             let family = linear_family();
-            let stats = family.accumulate(&x, &t, &cells, &partials, 1);
+            let stats = family.accumulate(&x, &t, &cells, &partials, 1, None);
             // The closed-form posterior mean, from the normal equations.
             let offsets = [0.5, -0.5, -0.25, 0.25];
             let values = [1.0, 0.2, 0.4, 0.9];

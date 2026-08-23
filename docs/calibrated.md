@@ -87,3 +87,9 @@ separately verified (`docs/models.md`, Validation).
 ```json
 {"outcome":{"gaussian":{"nu":6.0,"q":0.85}},"mean_params":{"tessellations":3,"k":3.0,"lambda_c":2.0,"geometry":{"metric":[],"sigma_c":0.8},"structure":{"omega":0.8},"cell":{"basis":"linear"}},"variance_params":{"tessellations":null,"k":3.0,"lambda_c":2.0,"geometry":{"metric":[],"sigma_c":0.8},"structure":{"omega":0.8},"cell":{}},"general_params":{"burn_in":200,"draws":1000,"thinning":1,"prior_only":false}}
 ```
+
+## soft membership (experimental)
+
+```json
+{"outcome":{"gaussian":{"nu":6.0,"q":0.85}},"mean_params":{"tessellations":3,"k":3.0,"lambda_c":2.0,"geometry":{"metric":[],"sigma_c":0.8,"membership":{"soft":{"rate":10.0}}},"structure":{"omega":0.8},"cell":{}},"variance_params":{"tessellations":null,"k":3.0,"lambda_c":2.0,"geometry":{"metric":[],"sigma_c":0.8,"membership":{"soft":{"rate":10.0}}},"structure":{"omega":0.8},"cell":{}},"general_params":{"burn_in":200,"draws":1000,"thinning":1,"prior_only":false}}
+```

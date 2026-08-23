@@ -294,6 +294,13 @@ impl Sampler {
         #[cfg(not(feature = "experimental"))]
         let linear = false;
         #[cfg(feature = "experimental")]
+        let soft_rate = match config.mean_params.geometry.membership {
+            crate::config::Membership::Soft { rate } => Some(rate),
+            crate::config::Membership::Hard => None,
+        };
+        #[cfg(not(feature = "experimental"))]
+        let soft_rate = None;
+        #[cfg(feature = "experimental")]
         if linear {
             if let Some(col) = (0..p).find(|&col| !geometry.scaled(col)) {
                 return Err(crate::error::invalid(
@@ -402,6 +409,7 @@ impl Sampler {
                 linear,
             },
             prior.clone(),
+            soft_rate,
             &x_scaled,
             m,
             cell_value,
@@ -440,6 +448,7 @@ impl Sampler {
                     prior_only: config.general_params.prior_only,
                 },
                 variance_prior,
+                None,
                 &x_scaled,
                 m_var,
                 libm::pow(sigma_sq, 1.0 / m_var as f64),
@@ -1241,6 +1250,7 @@ mod tests {
                 dims: vec![0],
                 mus: vec![0.0; b],
                 betas: Vec::new(),
+                tau: None,
             };
             sampler.fix_mean_tessellation(0, fixed);
 

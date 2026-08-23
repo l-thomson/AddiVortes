@@ -241,6 +241,7 @@ mod tests {
                     dims: vec![0],
                     mus: vec![0.0; b],
                     betas: Vec::new(),
+                    tau: None,
                 },
             );
             let cells = sampler.mean_cells(0).to_vec();
