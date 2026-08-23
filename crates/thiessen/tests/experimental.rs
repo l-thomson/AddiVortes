@@ -19,6 +19,14 @@ fn unknown_outcome_is_rejected() {
 }
 
 #[test]
+fn the_tobit_outcome_is_rejected_naming_the_feature() {
+    let json = r#"{"outcome": {"tobit": {"lower": 0.0}}}"#;
+    let err = serde_json::from_str::<Config>(json).unwrap_err();
+    assert!(err.to_string().contains("experimental"), "{err}");
+    assert!(err.to_string().contains("tobit"), "{err}");
+}
+
+#[test]
 fn minkowski_metric_is_rejected() {
     let json = r#"{"mean_params": {"geometry": {"metric": [{"minkowski": {"p": 1.5}}]}}}"#;
     let err = serde_json::from_str::<Config>(json).unwrap_err();

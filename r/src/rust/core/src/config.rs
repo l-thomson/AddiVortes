@@ -17,6 +17,7 @@ use crate::outcome::{RequiredData, Sigma2Mode};
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(not(feature = "experimental"), serde(try_from = "StableOutcome"))]
 pub enum Outcome {
     /// y = f(x) + e, e ~ N(0, sigma^2) (Stone and Gosling 2025). With
     /// `variance_params.tessellations` above 0 the spread is the
@@ -27,6 +28,40 @@ pub enum Outcome {
     /// and Chib (1993) augmentation with unit latent variance (Binary
     /// AddiVortes).
     Probit(ProbitParams),
+    /// y = max(lower, min(upper, y*)) with y* = f(x) + e, e ~ N(0,
+    /// sigma^2), the type-I tobit model: a response that takes a known
+    /// limit's value whenever the latent value lies beyond it, fitted by
+    /// Chib (1992) augmentation. Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    Tobit(TobitParams),
+}
+
+/// The stable variants plus the gated names, so a build without the
+/// feature rejects a gated outcome by naming the feature rather than
+/// with an unknown-variant error.
+#[cfg(not(feature = "experimental"))]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum StableOutcome {
+    Gaussian(GaussianParams),
+    Probit(ProbitParams),
+    Tobit(serde::de::IgnoredAny),
+}
+
+#[cfg(not(feature = "experimental"))]
+impl TryFrom<StableOutcome> for Outcome {
+    type Error = crate::error::Error;
+
+    fn try_from(outcome: StableOutcome) -> Result<Self> {
+        match outcome {
+            StableOutcome::Gaussian(params) => Ok(Outcome::Gaussian(params)),
+            StableOutcome::Probit(params) => Ok(Outcome::Probit(params)),
+            StableOutcome::Tobit(_) => Err(crate::error::Error::RequiresFeature {
+                item: "the `tobit` outcome".into(),
+                feature: "experimental",
+            }),
+        }
+    }
 }
 
 impl Default for Outcome {
@@ -46,12 +81,26 @@ impl Outcome {
         Outcome::Probit(ProbitParams::default())
     }
 
+    /// The tobit outcome with the given censoring limits and the default
+    /// sigma^2 prior; at least one limit is required at validation.
+    /// Experimental.
+    #[cfg(feature = "experimental")]
+    pub fn tobit(lower: Option<f64>, upper: Option<f64>) -> Self {
+        Outcome::Tobit(TobitParams {
+            lower,
+            upper,
+            ..TobitParams::default()
+        })
+    }
+
     /// What the outcome does with sigma^2; scale validity derives from
     /// this value, never from a per-outcome table.
     pub(crate) fn sigma2_mode(&self) -> Sigma2Mode {
         match self {
             Outcome::Gaussian(_) => Sigma2Mode::Sampled,
             Outcome::Probit(_) => Sigma2Mode::Fixed(1.0),
+            #[cfg(feature = "experimental")]
+            Outcome::Tobit(_) => Sigma2Mode::Sampled,
         }
     }
 
@@ -60,6 +109,8 @@ impl Outcome {
         match self {
             Outcome::Gaussian(_) => RequiredData::Continuous,
             Outcome::Probit(_) => RequiredData::Binary,
+            #[cfg(feature = "experimental")]
+            Outcome::Tobit(_) => RequiredData::Continuous,
         }
     }
 }
@@ -93,6 +144,42 @@ pub struct ProbitParams {
     /// Phi^-1(ybar) at fit (the BART package's `binaryOffset`); the
     /// resolved value is stored on the fitted model. Default `None`.
     pub offset: Option<f64>,
+}
+
+/// The tobit outcome's parameters: the censoring limits and the sigma^2
+/// prior, folded onto the outcome because they are facts about the
+/// observation model. Experimental (`docs/experimental.md`).
+#[cfg(feature = "experimental")]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct TobitParams {
+    /// The lower censoring limit: a response value equal to it is read
+    /// as censored below. `None` is no lower limit. At least one limit
+    /// is required at validation.
+    pub lower: Option<f64>,
+    /// The upper censoring limit: a response value equal to it is read
+    /// as censored above. `None` is no upper limit.
+    pub upper: Option<f64>,
+    /// sigma^2 prior degrees of freedom nu, as the Gaussian outcome's.
+    /// Default 6. A variance ensemble requires nu > 2.
+    pub nu: f64,
+    /// sigma^2 prior calibration quantile q, Pr(sigma < sigma_hat) = q.
+    /// Default 0.85.
+    pub q: f64,
+}
+
+#[cfg(feature = "experimental")]
+impl Default for TobitParams {
+    fn default() -> Self {
+        let defaults = GaussianParams::default();
+        Self {
+            lower: None,
+            upper: None,
+            nu: defaults.nu,
+            q: defaults.q,
+        }
+    }
 }
 
 /// One term group: the ensemble describing the average (`mean_params`) or
@@ -470,22 +557,28 @@ impl Config {
         self
     }
 
-    /// sigma^2 prior degrees of freedom nu of the Gaussian outcome; no
-    /// effect under another outcome.
+    /// sigma^2 prior degrees of freedom nu of an outcome with a sampled
+    /// sigma^2; no effect under another outcome.
     #[must_use]
     pub fn with_nu(mut self, nu: f64) -> Self {
-        if let Outcome::Gaussian(params) = &mut self.outcome {
-            params.nu = nu;
+        match &mut self.outcome {
+            Outcome::Gaussian(params) => params.nu = nu,
+            #[cfg(feature = "experimental")]
+            Outcome::Tobit(params) => params.nu = nu,
+            _ => {}
         }
         self
     }
 
-    /// sigma^2 prior calibration quantile q of the Gaussian outcome; no
-    /// effect under another outcome.
+    /// sigma^2 prior calibration quantile q of an outcome with a sampled
+    /// sigma^2; no effect under another outcome.
     #[must_use]
     pub fn with_q(mut self, q: f64) -> Self {
-        if let Outcome::Gaussian(params) = &mut self.outcome {
-            params.q = q;
+        match &mut self.outcome {
+            Outcome::Gaussian(params) => params.q = q,
+            #[cfg(feature = "experimental")]
+            Outcome::Tobit(params) => params.q = q,
+            _ => {}
         }
         self
     }
@@ -606,12 +699,15 @@ impl Config {
 
     /// The fitted model's name: the outcome's, or "heteroscedastic" for
     /// the Gaussian outcome with a variance ensemble attached (the paper
-    /// names of the shipped models).
+    /// names of the shipped models). A gated outcome keeps its own name
+    /// whether or not a variance ensemble is attached.
     pub fn model_name(&self) -> &'static str {
         match (&self.outcome, self.variance_tessellations()) {
             (Outcome::Probit(_), _) => "probit",
             (Outcome::Gaussian(_), 0) => "gaussian",
             (Outcome::Gaussian(_), _) => "heteroscedastic",
+            #[cfg(feature = "experimental")]
+            (Outcome::Tobit(_), _) => "tobit",
         }
     }
 
@@ -629,7 +725,7 @@ impl Config {
     pub fn offset(&self) -> Option<f64> {
         match &self.outcome {
             Outcome::Probit(params) => params.offset,
-            Outcome::Gaussian(_) => None,
+            _ => None,
         }
     }
 
@@ -640,12 +736,14 @@ impl Config {
         }
     }
 
-    /// The Gaussian outcome's sigma^2 prior (nu, q); the defaults where
-    /// the outcome carries no sigma^2 prior, on paths that never read
-    /// them.
+    /// The sigma^2 prior (nu, q) of an outcome that samples one; the
+    /// defaults where the outcome carries no sigma^2 prior, on paths
+    /// that never read them.
     pub(crate) fn sigma2_prior(&self) -> (f64, f64) {
         match &self.outcome {
             Outcome::Gaussian(params) => (params.nu, params.q),
+            #[cfg(feature = "experimental")]
+            Outcome::Tobit(params) => (params.nu, params.q),
             Outcome::Probit(_) => {
                 let defaults = GaussianParams::default();
                 (defaults.nu, defaults.q)
@@ -708,6 +806,42 @@ impl Config {
                 if let Some(c) = params.offset {
                     if !c.is_finite() {
                         return Err(invalid("offset", format!("must be finite, got {c}")));
+                    }
+                }
+            }
+            #[cfg(feature = "experimental")]
+            Outcome::Tobit(params) => {
+                positive("nu", params.nu)?;
+                if !(params.q.is_finite() && params.q > 0.0 && params.q < 1.0) {
+                    return Err(invalid(
+                        "q",
+                        format!("must be in the open interval (0, 1), got {}", params.q),
+                    ));
+                }
+                match (params.lower, params.upper) {
+                    (None, None) => {
+                        return Err(invalid(
+                            "lower",
+                            "the tobit outcome needs at least one censoring limit; \
+                             the gaussian outcome is the uncensored model",
+                        ));
+                    }
+                    (lower, upper) => {
+                        for (name, limit) in [("lower", lower), ("upper", upper)] {
+                            if let Some(v) = limit {
+                                if !v.is_finite() {
+                                    return Err(invalid(name, format!("must be finite, got {v}")));
+                                }
+                            }
+                        }
+                        if let (Some(lo), Some(hi)) = (lower, upper) {
+                            if lo >= hi {
+                                return Err(invalid(
+                                    "lower",
+                                    format!("must lie below upper, got {lo} and {hi}"),
+                                ));
+                            }
+                        }
                     }
                 }
             }

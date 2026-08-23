@@ -129,7 +129,7 @@ mod tessellation;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg(feature = "experimental")]
-pub use config::{Basis, Inclusion, Membership};
+pub use config::{Basis, Inclusion, Membership, TobitParams};
 pub use config::{
     CellParams, Config, GaussianParams, GeneralParams, GeometryParams, Outcome, ProbitParams,
     StructureParams, TermParams,

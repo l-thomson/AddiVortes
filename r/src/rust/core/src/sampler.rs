@@ -24,6 +24,8 @@ use crate::geometry::Geometry;
 use crate::maths;
 use crate::models::gaussian::GaussianOutcome;
 use crate::models::probit::ProbitOutcome;
+#[cfg(feature = "experimental")]
+use crate::models::tobit::TobitOutcome;
 use crate::moves::Prior;
 use crate::outcome::{OutcomeModel, RequiredData, Sigma2Mode};
 use crate::rng::{self, Rng};
@@ -37,19 +39,45 @@ use crate::tessellation::Tessellation;
 enum Outcome {
     Gaussian(GaussianOutcome),
     Probit(ProbitOutcome),
+    #[cfg(feature = "experimental")]
+    Tobit(TobitOutcome),
+}
+
+/// Dispatch one method over every variant.
+macro_rules! each_outcome {
+    ($self:expr, $outcome:ident => $body:expr) => {
+        match $self {
+            Outcome::Gaussian($outcome) => $body,
+            Outcome::Probit($outcome) => $body,
+            #[cfg(feature = "experimental")]
+            Outcome::Tobit($outcome) => $body,
+        }
+    };
 }
 
 impl Outcome {
     fn as_probit(&self) -> Option<&ProbitOutcome> {
         match self {
             Outcome::Probit(outcome) => Some(outcome),
-            Outcome::Gaussian(_) => None,
+            _ => None,
         }
     }
 
     fn as_probit_mut(&mut self) -> Option<&mut ProbitOutcome> {
         match self {
             Outcome::Probit(outcome) => Some(outcome),
+            _ => None,
+        }
+    }
+
+    /// The response the in-sample fit is measured against, where the
+    /// working response has been replaced by latents; `None` where the
+    /// working response is the observed one.
+    fn observed_response(&self) -> Option<&[f64]> {
+        match self {
+            Outcome::Probit(outcome) => Some(outcome.labels()),
+            #[cfg(feature = "experimental")]
+            Outcome::Tobit(outcome) => Some(outcome.observed()),
             Outcome::Gaussian(_) => None,
         }
     }
@@ -57,52 +85,31 @@ impl Outcome {
 
 impl OutcomeModel for Outcome {
     fn required_data(&self) -> RequiredData {
-        match self {
-            Outcome::Gaussian(outcome) => outcome.required_data(),
-            Outcome::Probit(outcome) => outcome.required_data(),
-        }
+        each_outcome!(self, outcome => outcome.required_data())
     }
 
     fn init(&mut self, y: &[f64]) {
-        match self {
-            Outcome::Gaussian(outcome) => outcome.init(y),
-            Outcome::Probit(outcome) => outcome.init(y),
-        }
+        each_outcome!(self, outcome => outcome.init(y))
     }
 
     fn draw_extra(&mut self, rng: &mut Rng) {
-        match self {
-            Outcome::Gaussian(outcome) => outcome.draw_extra(rng),
-            Outcome::Probit(outcome) => outcome.draw_extra(rng),
-        }
+        each_outcome!(self, outcome => outcome.draw_extra(rng))
     }
 
-    fn working_response(&mut self, total: &[f64], y: &mut [f64], rng: &mut Rng) {
-        match self {
-            Outcome::Gaussian(outcome) => outcome.working_response(total, y, rng),
-            Outcome::Probit(outcome) => outcome.working_response(total, y, rng),
-        }
+    fn working_response(&mut self, total: &[f64], precision: &[f64], y: &mut [f64], rng: &mut Rng) {
+        each_outcome!(self, outcome => outcome.working_response(total, precision, y, rng))
     }
 
     fn weights(&self) -> Option<&[f64]> {
-        match self {
-            Outcome::Gaussian(outcome) => outcome.weights(),
-            Outcome::Probit(outcome) => outcome.weights(),
-        }
+        each_outcome!(self, outcome => outcome.weights())
     }
 
     fn sigma2_mode(&self) -> Sigma2Mode {
-        match self {
-            Outcome::Gaussian(outcome) => outcome.sigma2_mode(),
-            Outcome::Probit(outcome) => outcome.sigma2_mode(),
-        }
+        each_outcome!(self, outcome => outcome.sigma2_mode())
     }
 
     fn predictive_quantile(&self, mean: f64, sd: f64, p: f64) -> Option<f64> {
-        match self {
-            Outcome::Gaussian(outcome) => outcome.predictive_quantile(mean, sd, p),
-            Outcome::Probit(outcome) => outcome.predictive_quantile(mean, sd, p),
-        }
+        each_outcome!(self, outcome => outcome.predictive_quantile(mean, sd, p))
     }
 }
 
@@ -315,6 +322,16 @@ impl Sampler {
                 return Err(Error::InvalidLabel { row });
             }
         }
+        #[cfg(feature = "experimental")]
+        if let OutcomeConfig::Tobit(params) = &config.outcome {
+            let beyond = |v: f64| {
+                params.lower.is_some_and(|limit| v < limit)
+                    || params.upper.is_some_and(|limit| v > limit)
+            };
+            if let Some(row) = y.iter().position(|&v| beyond(v)) {
+                return Err(Error::ResponseBeyondLimit { row });
+            }
+        }
         let mut config = config.clone();
         config.resolve(omega);
         let warnings = data::fit_warnings(x);
@@ -341,6 +358,16 @@ impl Sampler {
                 let (scaler, x_scaled) = Scaler::fit_x(x, &geometry);
                 (scaler, x_scaled, y.to_vec(), 1.0, fixed_scale)
             }
+            // The censoring flags compare response values with the
+            // limits after the map, so the response crosses by the same
+            // map as the limits even where it is the identity in exact
+            // arithmetic.
+            #[cfg(feature = "experimental")]
+            (OutcomeConfig::Tobit(_), Some(lambda)) => {
+                let scaler = Scaler::identity(p);
+                let y_scaled = y.iter().map(|&v| scaler.scale_y(v)).collect();
+                (scaler, x.clone(), y_scaled, lambda, lambda)
+            }
             (_, Some(lambda)) => (Scaler::identity(p), x.clone(), y.to_vec(), lambda, lambda),
             (_, None) => {
                 let (scaler, x_scaled, y_scaled) = Scaler::fit(x, y, &geometry);
@@ -353,6 +380,8 @@ impl Sampler {
         let half_width = match &config.outcome {
             OutcomeConfig::Probit(_) => ProbitOutcome::CELL_PRIOR_HALF_WIDTH,
             OutcomeConfig::Gaussian(_) => GaussianOutcome::CELL_PRIOR_HALF_WIDTH,
+            #[cfg(feature = "experimental")]
+            OutcomeConfig::Tobit(_) => TobitOutcome::CELL_PRIOR_HALF_WIDTH,
         };
         let sigma_mu_sq = scaler::sigma_mu_sq(half_width, config.mean_params.k, m);
         // Both slots declare identical geometry and structure, so the
@@ -401,7 +430,7 @@ impl Sampler {
         // the probit model f starts at 0 and the offset carries the mean.
         let (cell_value, total) = match &config.outcome {
             OutcomeConfig::Probit(_) => (0.0, 0.0),
-            OutcomeConfig::Gaussian(_) => (mean_y / m as f64, mean_y),
+            _ => (mean_y / m as f64, mean_y),
         };
         let mean = Ensemble::new(
             GaussianCells {
@@ -427,6 +456,18 @@ impl Sampler {
                 config.set_offset(outcome.offset());
                 outcome.init(&y_scaled);
                 Outcome::Probit(outcome)
+            }
+            // The limits cross to the scaled response space by the same
+            // frozen affine map as the response, so a value at a limit
+            // stays exactly at it.
+            #[cfg(feature = "experimental")]
+            OutcomeConfig::Tobit(params) => {
+                let mut outcome = TobitOutcome::new(
+                    params.lower.map(|v| scaler.scale_y(v)),
+                    params.upper.map(|v| scaler.scale_y(v)),
+                );
+                outcome.init(&y_scaled);
+                Outcome::Tobit(outcome)
             }
         };
         // H-AddiVortes: the variance ensemble carries the scale in place
@@ -464,9 +505,12 @@ impl Sampler {
         } else {
             vec![1.0 / sigma_sq; n]
         };
+        // Under the tobit model the vector starts at the observed
+        // response, censored rows at their limits, a valid latent
+        // initialisation.
         let y = match &config.outcome {
             OutcomeConfig::Probit(_) => vec![0.0; n],
-            OutcomeConfig::Gaussian(_) => y_scaled,
+            _ => y_scaled,
         };
 
         Ok(Self {
@@ -587,6 +631,20 @@ impl Sampler {
         // residuals e = y - F, replaces the global sigma^2 draw
         // (H-AddiVortes has no global sigma^2).
         if let Some(variance) = &mut self.variance {
+            if !prior_only {
+                // The latent refresh runs before the ensemble update,
+                // with the standing precisions, so everything after it
+                // conditions on latents drawn from their conditional; a
+                // response replacement is thereby repaired before it is
+                // conditioned on.
+                self.outcome.draw_extra(&mut self.rng);
+                self.outcome.working_response(
+                    self.mean.total(),
+                    &self.precision,
+                    &mut self.y,
+                    &mut self.rng,
+                );
+            }
             let residuals: Vec<f64> = self
                 .y
                 .iter()
@@ -619,9 +677,21 @@ impl Sampler {
             // sigma^2 | y, F ~ Inv-Gamma((nu + n) / 2,
             // (nu lambda + sum r_i^2) / 2) with r = y - F, drawn by the
             // kernel; under prior-only sampling the prior
-            // Inv-Gamma(nu / 2, nu lambda / 2).
+            // Inv-Gamma(nu / 2, nu lambda / 2). The latent refresh runs
+            // first, with the standing precisions, so sigma^2 and the
+            // ensemble condition on latents drawn from their
+            // conditional; a response replacement is thereby repaired
+            // before it is conditioned on.
             Sigma2Mode::Sampled => {
                 self.outcome.draw_extra(&mut self.rng);
+                if !prior_only {
+                    self.outcome.working_response(
+                        self.mean.total(),
+                        &self.precision,
+                        &mut self.y,
+                        &mut self.rng,
+                    );
+                }
                 let (nu, _) = self.config.sigma2_prior();
                 let (shape, scale) = if prior_only {
                     (0.5 * nu, 2.0 / (nu * self.lambda))
@@ -636,8 +706,6 @@ impl Sampler {
                     (0.5 * (nu + n as f64), 2.0 / (nu * self.lambda + rss))
                 };
                 self.sigma_sq = 1.0 / rng::gamma(shape, scale, &mut self.rng);
-                self.outcome
-                    .working_response(self.mean.total(), &mut self.y, &mut self.rng);
                 if !prior_only {
                     let scale_precision = 1.0 / self.sigma_sq;
                     match self.outcome.weights() {
@@ -657,8 +725,12 @@ impl Sampler {
                     return;
                 }
                 self.outcome.draw_extra(&mut self.rng);
-                self.outcome
-                    .working_response(self.mean.total(), &mut self.y, &mut self.rng);
+                self.outcome.working_response(
+                    self.mean.total(),
+                    &self.precision,
+                    &mut self.y,
+                    &mut self.rng,
+                );
             }
             Sigma2Mode::Absent => {}
         }
@@ -703,9 +775,22 @@ impl Sampler {
             outcome.set_labels(y);
             return Ok(());
         }
+        #[cfg(feature = "experimental")]
+        if let OutcomeConfig::Tobit(params) = &self.config.outcome {
+            let beyond = |v: f64| {
+                params.lower.is_some_and(|limit| v < limit)
+                    || params.upper.is_some_and(|limit| v > limit)
+            };
+            if let Some(row) = y.iter().position(|&v| beyond(v)) {
+                return Err(Error::ResponseBeyondLimit { row });
+            }
+        }
         for (slot, &v) in self.y.iter_mut().zip(y) {
             *slot = self.scaler.scale_y(v);
         }
+        // A latent-response outcome rereads censoring from the new
+        // response; a no-op elsewhere.
+        self.outcome.init(&self.y);
         Ok(())
     }
 
@@ -818,10 +903,7 @@ impl Sampler {
         }
         let n_draws = self.kept.n_draws() as f64;
         let range = self.scaler.y_range();
-        let target: &[f64] = match self.outcome.as_probit() {
-            Some(outcome) => outcome.labels(),
-            None => &self.y,
-        };
+        let target: &[f64] = self.outcome.observed_response().unwrap_or(&self.y);
         let in_sample_rmse = (mean_prediction
             .iter()
             .zip(target)

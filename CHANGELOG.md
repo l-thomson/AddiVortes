@@ -81,6 +81,17 @@ says "Sampled values changed" with the reason.
   empty-cell rule still counts nearest-centre members. Constant cell
   basis and constant spread only; the probit model composes. Outside
   the semver promise (docs/experimental.md).
+- (experimental) `Outcome::Tobit` with `TobitParams`: the type-I tobit
+  model for a response censored at known limits (Tobin 1958), fitted by
+  Chib (1992) data augmentation, each censored row's latent refreshed
+  from a truncated normal before the sweep and the completed response
+  running the Gaussian sweep unchanged. A response value equal to a
+  limit is read as censored; a value beyond one is
+  `Error::ResponseBeyondLimit`. sigma^2 is sampled, so a variance
+  ensemble composes; uncensored data reproduces the Gaussian chain
+  draw for draw at the same seed. Validated by a censored-likelihood
+  quadrature known-answer test and SBC and Geweke at both sizes.
+  Outside the semver promise (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled

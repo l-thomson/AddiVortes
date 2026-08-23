@@ -60,7 +60,14 @@ impl OutcomeModel for GaussianOutcome {
 
     fn draw_extra(&mut self, _rng: &mut Rng) {}
 
-    fn working_response(&mut self, _total: &[f64], _y: &mut [f64], _rng: &mut Rng) {}
+    fn working_response(
+        &mut self,
+        _total: &[f64],
+        _precision: &[f64],
+        _y: &mut [f64],
+        _rng: &mut Rng,
+    ) {
+    }
 
     fn weights(&self) -> Option<&[f64]> {
         None
@@ -86,7 +93,7 @@ mod tests {
         outcome.init(&[0.1, -0.1]);
         outcome.draw_extra(&mut rng);
         let mut y = vec![0.1, -0.1];
-        outcome.working_response(&[0.4, 0.4], &mut y, &mut rng);
+        outcome.working_response(&[0.4, 0.4], &[1.0, 1.0], &mut y, &mut rng);
         assert_eq!(y, vec![0.1, -0.1]);
         assert_eq!(outcome.weights(), None);
         assert_eq!(outcome.sigma2_mode(), Sigma2Mode::Sampled);

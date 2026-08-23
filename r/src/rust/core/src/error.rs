@@ -105,6 +105,13 @@ pub enum Error {
         /// The Cargo feature.
         feature: &'static str,
     },
+    /// A response value lies beyond a declared censoring limit.
+    #[cfg(feature = "experimental")]
+    #[error("response value at row {row} lies beyond the censoring limit")]
+    ResponseBeyondLimit {
+        /// Zero-based row.
+        row: usize,
+    },
     /// A value in a categorical column is not an integer level code.
     #[error("design value at row {row}, column {col} is not an integer level code")]
     InvalidCategoryCode {

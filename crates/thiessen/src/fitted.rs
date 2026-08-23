@@ -362,7 +362,8 @@ impl Fitted {
     }
 
     /// Posterior mean at each row of `x`, caller scale: of f(x), or of
-    /// P(y = 1 | x) = Phi(c + f(x)) under the probit model.
+    /// P(y = 1 | x) = Phi(c + f(x)) under the probit model. Under the
+    /// tobit model the quantity is the uncensored f(x), the latent mean.
     ///
     /// # Errors
     ///
@@ -447,36 +448,36 @@ impl Fitted {
         data::validate_predict(x, self.scaler.n_cols())?;
         let n = x.n_rows();
         let range_sq = self.scaler.y_range() * self.scaler.y_range();
-        match (&self.config.outcome, self.has_variance_ensemble()) {
-            (Outcome::Gaussian(_), false) => Ok(self
-                .posterior
-                .sigma_sq()
-                .iter()
-                .map(|s| vec![s * range_sq; n])
-                .collect()),
-            (Outcome::Gaussian(_), true) => {
-                let geometry = self.geometry()?;
-                geometry.check_codes(x)?;
-                let x_scaled = self.scaler.scale_x(x);
-                Ok(self
-                    .posterior
-                    .variance_tessellations()
-                    .iter()
-                    .map(|draw| {
-                        (0..n)
-                            .map(|i| {
-                                let row = x_scaled.row(i);
-                                draw.iter()
-                                    .map(|t| t.value_at(row, &geometry))
-                                    .product::<f64>()
-                                    * range_sq
-                            })
-                            .collect()
-                    })
-                    .collect())
-            }
-            (Outcome::Probit(_), _) => Err(self.not_applicable("predict_variance")),
+        if matches!(self.config.outcome, Outcome::Probit(_)) {
+            return Err(self.not_applicable("predict_variance"));
         }
+        if self.has_variance_ensemble() {
+            let geometry = self.geometry()?;
+            geometry.check_codes(x)?;
+            let x_scaled = self.scaler.scale_x(x);
+            return Ok(self
+                .posterior
+                .variance_tessellations()
+                .iter()
+                .map(|draw| {
+                    (0..n)
+                        .map(|i| {
+                            let row = x_scaled.row(i);
+                            draw.iter()
+                                .map(|t| t.value_at(row, &geometry))
+                                .product::<f64>()
+                                * range_sq
+                        })
+                        .collect()
+                })
+                .collect());
+        }
+        Ok(self
+            .posterior
+            .sigma_sq()
+            .iter()
+            .map(|s| vec![s * range_sq; n])
+            .collect())
     }
 
     /// Posterior quantiles of the quantity of [`predict`](Self::predict) at
@@ -532,7 +533,9 @@ impl Fitted {
     /// Central posterior predictive interval for a new observation at each
     /// row of `x` at `level`: the quantiles of the equal-weight mixture over
     /// kept draws of N(f_d(x), s_d^2(x)), found by bisection on the mixture
-    /// CDF.
+    /// CDF. Under the tobit model the predictive is censored, so the ends
+    /// are clamped to the limits (censoring is monotone, which makes the
+    /// clamp the exact quantile).
     ///
     /// # Errors
     ///
@@ -565,18 +568,30 @@ impl Fitted {
                 upper: mixture_quantile(&fits, &sigmas, 1.0 - tail),
             });
         }
+        #[cfg(feature = "experimental")]
+        if let Outcome::Tobit(params) = &self.config.outcome {
+            let lo = params.lower.unwrap_or(f64::NEG_INFINITY);
+            let hi = params.upper.unwrap_or(f64::INFINITY);
+            for interval in &mut out {
+                interval.lower = interval.lower.clamp(lo, hi);
+                interval.upper = interval.upper.clamp(lo, hi);
+            }
+        }
         Ok(out)
     }
 
     /// Pointwise log-likelihood per draw, draw-major (`n_draws` by
     /// `n_rows`): ln N(y_i | f_d(x_i), s_d^2(x_i)), or under the probit
     /// model y_i ln p_d(x_i) + (1 - y_i) ln(1 - p_d(x_i)) with p_d the
-    /// draw's P(y = 1 | x).
+    /// draw's P(y = 1 | x). Under the tobit model a row at a limit takes
+    /// its censored term, ln Phi((lower - f_d) / s_d) or
+    /// ln Phi((f_d - upper) / s_d), and the Normal log density otherwise.
     ///
     /// # Errors
     ///
     /// `RowCountMismatch`, `NonFiniteResponse`, `InvalidLabel` under the
-    /// probit model; the predict errors.
+    /// probit model, `ResponseBeyondLimit` under the tobit model; the
+    /// predict errors.
     pub fn log_likelihood(&self, x: &Data, y: &[f64]) -> Result<Vec<Vec<f64>>> {
         if y.len() != x.n_rows() {
             return Err(Error::RowCountMismatch {
@@ -611,6 +626,36 @@ impl Fitted {
         let per_draw = self.predict_draws(x)?;
         let variances = self.predict_variance(x)?;
         let ln_2pi = maths::ln(2.0 * std::f64::consts::PI);
+        #[cfg(feature = "experimental")]
+        if let Outcome::Tobit(params) = &self.config.outcome {
+            let (lower, upper) = (params.lower, params.upper);
+            let beyond = |v: f64| {
+                lower.is_some_and(|limit| v < limit) || upper.is_some_and(|limit| v > limit)
+            };
+            if let Some(row) = y.iter().position(|&v| beyond(v)) {
+                return Err(Error::ResponseBeyondLimit { row });
+            }
+            return Ok(per_draw
+                .iter()
+                .zip(&variances)
+                .map(|(fits, variance)| {
+                    y.iter()
+                        .zip(fits.iter().zip(variance))
+                        .map(|(&yi, (&fit, &var))| {
+                            let sd = var.sqrt();
+                            if lower == Some(yi) {
+                                maths::ln(maths::normal_cdf((yi - fit) / sd))
+                            } else if upper == Some(yi) {
+                                maths::ln(maths::normal_cdf((fit - yi) / sd))
+                            } else {
+                                let z = (yi - fit) * (yi - fit) / var;
+                                -0.5 * (ln_2pi + maths::ln(var) + z)
+                            }
+                        })
+                        .collect()
+                })
+                .collect());
+        }
         Ok(per_draw
             .iter()
             .zip(&variances)
@@ -626,10 +671,11 @@ impl Fitted {
             .collect())
     }
 
-    /// sigma per kept draw under the Gaussian model, caller scale:
-    /// sqrt(sigma^2) times the training range of the response. Empty under
-    /// the probit model (unit latent variance) and the heteroscedastic
-    /// model ([`predict_variance`](Self::predict_variance) gives s^2(x)).
+    /// sigma per kept draw under a model with a global sampled sigma^2
+    /// (the Gaussian and tobit models), caller scale: sqrt(sigma^2) times
+    /// the training range of the response. Empty under the probit model
+    /// (unit latent variance) and under a variance ensemble
+    /// ([`predict_variance`](Self::predict_variance) gives s^2(x)).
     pub fn sigma(&self) -> Vec<f64> {
         let range = self.scaler.y_range();
         self.posterior
@@ -711,7 +757,9 @@ impl Fitted {
 
     /// Root mean square of the posterior-mean prediction against the
     /// training response, caller scale; under the probit model the root
-    /// Brier score of the predicted probabilities against the labels.
+    /// Brier score of the predicted probabilities against the labels;
+    /// under the tobit model the target is the observed response,
+    /// censored rows at their limits.
     pub fn in_sample_rmse(&self) -> f64 {
         self.in_sample_rmse
     }
