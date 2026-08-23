@@ -589,11 +589,10 @@ impl Fitted {
     /// its censored term, ln Phi((lower - f_d) / s_d) or
     /// ln Phi((f_d - upper) / s_d), and the Normal log density otherwise.
     /// `NotApplicable` under the AFT model, whose pointwise likelihood
-    /// needs the event indicator
-    /// ([`log_likelihood_survival`](Self::log_likelihood_survival)), and
-    /// under the interval-censored model, whose pointwise likelihood
-    /// needs the bounds
-    /// ([`log_likelihood_interval_censored`](Self::log_likelihood_interval_censored)).
+    /// needs the event indicator (`log_likelihood_survival`), and under
+    /// the interval-censored model, whose pointwise likelihood needs
+    /// the bounds (`log_likelihood_interval_censored`); both methods
+    /// are compiled with the `experimental` feature.
     ///
     /// # Errors
     ///
