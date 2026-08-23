@@ -27,6 +27,13 @@ const GAUSSIAN_QUANTITIES: [&str; 7] = ["sigma_sq", "cells", "dims", "f_a", "f_b
 /// Quantities of the probit model: no sigma^2; f is the latent mean
 /// c + f(x); y_mean is the share of ones.
 const PROBIT_QUANTITIES: [&str; 6] = ["cells", "dims", "f_a", "f_b", "f_c", "y_mean"];
+
+/// Quantities of the ordinal model: the probit model's plus the two
+/// interior cutpoints of K = 4.
+#[cfg(feature = "experimental")]
+const ORDINAL_QUANTITIES: [&str; 8] = [
+    "cells", "dims", "f_a", "f_b", "f_c", "gamma_2", "gamma_3", "y_mean",
+];
 /// Quantities of the heteroscedastic model: those of the mean ensemble,
 /// the total cells over the variance ensemble, and s^2 at the three rows.
 const HETEROSCEDASTIC_QUANTITIES: [&str; 10] = [
@@ -111,6 +118,10 @@ enum Kind {
     /// [`interval_bounds`], the outer bins one-sided.
     #[cfg(feature = "experimental")]
     IntervalCensored,
+    /// Ordinal probit with four categories: the interior cutpoints are
+    /// sampled parameters of the test.
+    #[cfg(feature = "experimental")]
+    Ordinal,
 }
 
 /// The fixed inspection scheme of the interval-censored model, a
@@ -237,6 +248,9 @@ struct PriorDraw {
     variance: Vec<DrawnTessellation>,
     /// The DART weights and concentration; None under a fixed prior.
     dart: Option<([f64; 2], f64)>,
+    /// The interior cutpoints of the ordinal model; empty otherwise.
+    #[cfg_attr(not(feature = "experimental"), allow(dead_code))]
+    cutpoints: Vec<f64>,
 }
 
 /// The Gaussian model at the calibration size: n = 50, p = 2, m = 3,
@@ -579,6 +593,26 @@ fn interval_censored_model() -> Model {
     }
 }
 
+/// The ordinal model at the calibration size: the Gaussian model's rows
+/// and structural prior, four categories, offset c = -0.1 fixed, the
+/// default cutpoint prior, no sigma^2.
+#[cfg(feature = "experimental")]
+fn ordinal_model() -> Model {
+    let gaussian = gaussian_model();
+    Model {
+        kind: Kind::Ordinal,
+        config: gaussian
+            .config
+            .with_outcome(thiessen::Outcome::ordinal(4))
+            .with_offset(-0.1),
+        lambda: 1.0,
+        quantities: &ORDINAL_QUANTITIES,
+        n_sbc: 7,
+        gates: HETEROSCEDASTIC_GATES,
+        ..gaussian
+    }
+}
+
 /// The heteroscedastic model at the calibration size: the Gaussian
 /// model's rows, structural prior and lambda, with m' = 2 variance
 /// tessellations (nu' = 2 / (1 - (2 / 3)^(1 / 2)), lambda' = 0.2).
@@ -609,6 +643,8 @@ impl Model {
             Kind::Aft { .. } => 0.5,
             #[cfg(feature = "experimental")]
             Kind::IntervalCensored => 0.5,
+            #[cfg(feature = "experimental")]
+            Kind::Ordinal => 3.0,
         };
         scale / (self.config.mean_params.k * (self.config.mean_tessellations() as f64).sqrt())
     }
@@ -747,6 +783,8 @@ impl Model {
             .collect();
         let sigma_sq = match self.kind {
             Kind::Probit | Kind::Heteroscedastic => 1.0,
+            #[cfg(feature = "experimental")]
+            Kind::Ordinal => 1.0,
             _ => {
                 let chi_sq = -2.0 * (rng.uniform().ln() + rng.uniform().ln() + rng.uniform().ln());
                 gaussian_prior(&self.config).0 * self.lambda / chi_sq
@@ -765,11 +803,31 @@ impl Model {
             }
             _ => Vec::new(),
         };
+        #[cfg(feature = "experimental")]
+        let cutpoints = if self.kind == Kind::Ordinal {
+            // Log-gaps delta_k ~ N(0, cutpoint_sd^2), gamma cumulative.
+            let sd = match &self.config.outcome {
+                thiessen::Outcome::Ordinal(params) => params.cutpoint_sd,
+                _ => unreachable!("the ordinal kind carries the ordinal outcome"),
+            };
+            let mut gamma = Vec::with_capacity(2);
+            let mut previous = 0.0;
+            for _ in 0..2 {
+                previous += (sd * rng.normal()).exp();
+                gamma.push(previous);
+            }
+            gamma
+        } else {
+            Vec::new()
+        };
+        #[cfg(not(feature = "experimental"))]
+        let cutpoints = Vec::new();
         PriorDraw {
             tessellations,
             sigma_sq,
             variance,
             dart,
+            cutpoints,
         }
     }
 
@@ -976,6 +1034,20 @@ impl Model {
                     // its bounds.
                     #[cfg(feature = "experimental")]
                     Kind::IntervalCensored => f + self.variance_at(draw, i).sqrt() * rng.normal(),
+                    #[cfg(feature = "experimental")]
+                    Kind::Ordinal => {
+                        let z = self.offset() + f + rng.normal();
+                        let mut k = 0.0;
+                        if z > 0.0 {
+                            k = 1.0;
+                            for &g in &draw.cutpoints {
+                                if z > g {
+                                    k += 1.0;
+                                }
+                            }
+                        }
+                        k
+                    }
                 }
             })
             .collect()
@@ -1000,6 +1072,10 @@ impl Model {
         out.push(cells as f64);
         out.push(dims as f64);
         out.extend(F_ROWS.iter().map(|&r| self.offset() + self.f_at(draw, r)));
+        #[cfg(feature = "experimental")]
+        if self.kind == Kind::Ordinal {
+            out.extend(draw.cutpoints.iter().copied());
+        }
         if self.soft.is_some() {
             out.push(draw.tessellations[0].4.expect("soft bandwidth"));
         }
@@ -1029,6 +1105,10 @@ impl Model {
         out.push(cells as f64);
         out.push(dims as f64);
         out.extend(F_ROWS.iter().map(|&r| fit[r]));
+        #[cfg(feature = "experimental")]
+        if self.kind == Kind::Ordinal {
+            out.extend(sampler.cutpoints().iter().copied());
+        }
         #[cfg(feature = "experimental")]
         if self.soft.is_some() {
             out.push(
@@ -1072,6 +1152,20 @@ impl Model {
                 Kind::Aft { threshold } => (f + v.sqrt() * rng.normal()).min(threshold),
                 #[cfg(feature = "experimental")]
                 Kind::IntervalCensored => f + v.sqrt() * rng.normal(),
+                #[cfg(feature = "experimental")]
+                Kind::Ordinal => {
+                    let z = f + rng.normal();
+                    let mut k = 0.0;
+                    if z > 0.0 {
+                        k = 1.0;
+                        for &g in sampler.cutpoints() {
+                            if z > g {
+                                k += 1.0;
+                            }
+                        }
+                    }
+                    k
+                }
             };
         }
     }
@@ -1087,6 +1181,8 @@ impl Model {
             Kind::Aft { .. } => true,
             #[cfg(feature = "experimental")]
             Kind::IntervalCensored => true,
+            #[cfg(feature = "experimental")]
+            Kind::Ordinal => false,
         }
     }
 
@@ -1349,6 +1445,14 @@ fn sbc_small_ranks_are_uniform_interval_censored() {
     assert_uniform(&model, &ranks, 19);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+fn sbc_small_ranks_are_uniform_ordinal() {
+    let model = ordinal_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 418);
+    assert_uniform(&model, &ranks, 19);
+}
+
 /// The bandwidth walks on ln tau and needs heavier thinning than the
 /// structural quantities, here and in the full run.
 #[cfg(feature = "experimental")]
@@ -1438,6 +1542,13 @@ fn sbc_full_ranks_are_uniform_interval_censored() {
         "sbc_ranks_interval_censored.csv",
         417,
     );
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "full size, nightly"]
+fn sbc_full_ranks_are_uniform_ordinal() {
+    sbc_full(&ordinal_model(), "sbc_ranks_ordinal.csv", 418);
 }
 
 #[cfg(feature = "experimental")]
@@ -1699,6 +1810,14 @@ fn geweke_small_simulators_agree_interval_censored() {
     assert_simulators_agree(&model, &mc, &sc);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+fn geweke_small_simulators_agree_ordinal() {
+    let model = ordinal_model();
+    let (mc, sc) = geweke_samples(&model, 2000, 800, 45, 200, 918);
+    assert_simulators_agree(&model, &mc, &sc);
+}
+
 /// Files first, so a failed gate still leaves the R evaluation its input.
 fn geweke_full(model: &Model, file: &str, seed: u64) {
     let (mc, sc) = geweke_samples(model, 20_000, 5000, 45, 500, seed);
@@ -1793,6 +1912,13 @@ fn geweke_full_simulators_agree_interval_censored() {
         "geweke_samples_interval_censored.csv",
         917,
     );
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "full size, nightly"]
+fn geweke_full_simulators_agree_ordinal() {
+    geweke_full(&ordinal_model(), "geweke_samples_ordinal.csv", 918);
 }
 
 fn write_csv(name: &str, lines: &[String]) {

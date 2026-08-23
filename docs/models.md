@@ -496,11 +496,90 @@ Validation: fixed-tessellation quadrature known-answer test against
 numerical integration of the model's own interval likelihood, SBC and
 Geweke at both sizes.
 
+### Ordinal (`Outcome::Ordinal`, experimental)
+
+    y_i in {0, ..., K - 1},   z_i = c + f(x_i) + e_i,   e_i ~ N(0, 1),
+    y_i = k  iff  gamma_k < z_i <= gamma_{k+1},
+    -inf = gamma_0 < gamma_1 = 0 < gamma_2 < ... < gamma_{K-1} < gamma_K = inf
+
+The ordinal probit model of Albert and Chib (1993, s. 5): ordered
+categories with no scale behind them, observed as integer codes 0 to
+K - 1. The latent variance is fixed at 1
+and the first cutpoint at 0, the standard identification; the offset c
+is fixed at Phi^-1(share of y >= 1) by default (the probit rule at
+K = 2), and the K - 2 interior cutpoints are sampled.
+
+Sampler: three blocks per sweep.
+
+    gamma | f, y   blocked MH with the latents integrated out,
+    z | gamma, f, y   truncated-normal refresh of every row,
+    f | z   the Gaussian sweep with unit variance.
+
+The first two together are one joint draw from p(gamma, z | f, y), so
+the scan needs no further correction. The cutpoint move follows Cowles
+(1996): one-at-a-time Gibbs cutpoint updates mix impractically slowly
+as n grows, so all interior cutpoints move jointly against the
+collapsed likelihood
+
+    prod_i [Phi(gamma_{y_i + 1} - c - f(x_i)) - Phi(gamma_{y_i} - c - f(x_i))],
+
+a Gaussian random walk on the log-gap transformation
+delta_k = ln(gamma_k - gamma_{k-1}) of Albert and Chib (2001), which is
+unconstrained, so the proposal is symmetric and the acceptance ratio is
+the collapsed likelihood ratio times the prior ratio in delta. The walk
+scale is 2.38 / sqrt(n (K - 2)), the optimal-scaling rate of Roberts,
+Gelman and Gilks (1997) against a per-observation information of order
+one; it is a constant of the fit, so no adaptation disturbs detailed
+balance. The latent refresh reuses the censoring machinery: category 0
+is the probit draw below 0, category K - 1 the one-sided draw above
+gamma_{K-1}, an interior category the two-sided draw (Robert 1995).
+
+Priors: cell means as the probit model's, sigma_mu = 3 / (k sqrt m) on
+the latent scale; log-gaps delta_k ~ N(0, cutpoint_sd^2) independent,
+`cutpoint_sd` default 1. The response is not scaled. Initial cutpoints
+come from the marginal category shares, gamma_k = c + Phi^-1(share of
+y < k), which puts gamma_1 at 0 exactly; an empty category is
+permitted (the shares are clamped away from 0 and 1) and its cutpoint
+gap follows the prior.
+
+Fixed rather than estimated: the latent variance (1, not identified;
+no sigma^2 is drawn and a variance ensemble is rejected, derived from
+the scale mode as for the probit model), gamma_1 = 0 and the offset c.
+
+Correspondence: MCMCpack `MCMCoprobit` fits the linear-model analogue
+with the Cowles (1996) and Albert-Chib (2001) cutpoint updates; the
+BART family has no ordinal model. Two-category data reproduces the
+probit model draw for draw at the same seed: with K = 2 there is no
+interior cutpoint, the MH step consumes no randomness and the refresh
+is the probit draw.
+
+Fitted model: `predict` is the posterior mean of the expected category
+E[y | x] = sum_{k >= 1} Phi(c + f(x) - gamma_k) and `predict_draws`
+its per-draw values; `predict_latent` is c + f(x) per draw;
+`predict_category_probabilities` is the posterior mean of
+P(y = k | x), one row per observation; `log_likelihood` is the ordinal
+likelihood ln(Phi(gamma_{y+1} - c - f_d) - Phi(gamma_y - c - f_d));
+`cutpoint_draws` holds the interior cutpoints per kept draw;
+`prediction_interval` and `predict_variance` are `Error::NotApplicable`;
+`sigma` is empty; `in_sample_rmse` is against the observed codes.
+Validation: fixed-tessellation quadrature known-answer test against
+numerical integration over the cutpoint and the cell means, SBC and
+Geweke at both sizes covering the cutpoints as sampled parameters, a
+broken-sampler fixture dropping the prior ratio from the cutpoint
+acceptance, and a full-size cutpoint effective-sample-size check.
+Input: integer codes 0 to K - 1 (`Error::InvalidOrdinalLabel`); a
+constant response is `Error::DegenerateResponse`.
+
 ## References
 
 - Albert, J. H. and Chib, S. (1993). Bayesian analysis of binary and
   polychotomous response data. Journal of the American Statistical
   Association 88(422), 669-679.
+- Albert, J. H. and Chib, S. (2001). Sequential ordinal modeling with
+  applications to survival data. Biometrics 57(3), 829-836.
+- Cowles, M. K. (1996). Accelerating Monte Carlo Markov chain
+  convergence for cumulative-link generalized linear models. Statistics
+  and Computing 6, 101-111.
 - Eskin, E., Arnold, A., Prerau, M., Portnoy, L. and Stolfo, S. (2002).
   A geometric framework for unsupervised anomaly detection. In
   Applications of Data Mining in Computer Security, 77-101. Springer.
@@ -531,6 +610,9 @@ Geweke at both sizes.
   31, 20.
 - Robert, C. P. (1995). Simulation of truncated normal variables.
   Statistics and Computing 5, 121-125.
+- Roberts, G. O., Gelman, A. and Gilks, W. R. (1997). Weak convergence
+  and optimal scaling of random walk Metropolis algorithms. Annals of
+  Applied Probability 7(1), 110-120.
 - Sparapani, R., Spanbauer, C. and McCulloch, R. (2021). Nonparametric
   machine learning and efficient computation with Bayesian additive
   regression trees: the BART R package. Journal of Statistical Software

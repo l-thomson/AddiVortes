@@ -46,12 +46,15 @@ impl Sigma2Mode {
 
 /// The response contract an outcome model imposes, checked at fit. A
 /// `Continuous` response is min-max scaled to [-0.5, 0.5] over its
-/// training range; a `Binary` response holds labels in {0, 1} and is not
-/// scaled, the model working on its latent scale.
+/// training range; a `Binary` response holds labels in {0, 1} and an
+/// `Ordinal` response integer category codes, neither scaled, the model
+/// working on its latent scale.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RequiredData {
     Continuous,
     Binary,
+    #[cfg(feature = "experimental")]
+    Ordinal,
 }
 
 /// An observation model behind the mean ensemble.
@@ -74,9 +77,15 @@ pub(crate) trait OutcomeModel: std::fmt::Debug {
     fn init(&mut self, y: &[f64]);
 
     /// Draw the model's own parameters beyond the cells and the scale
-    /// (cutpoints, degrees of freedom, a contamination weight); a no-op
-    /// for a model without any.
-    fn draw_extra(&mut self, rng: &mut Rng);
+    /// (cutpoints, scale-mixture weights, a contamination weight); a
+    /// no-op for a model without any. `y` is the current working
+    /// response, `total` the mean ensemble's total at the training rows
+    /// and `precision` the standing per-observation precisions, the
+    /// state such a conditional may read; the draw runs before the
+    /// working-response refresh, so a parameter drawn with the latents
+    /// integrated out composes with the refresh into one joint draw of
+    /// the parameter and the latents.
+    fn draw_extra(&mut self, y: &[f64], total: &[f64], precision: &[f64], rng: &mut Rng);
 
     /// Write this sweep's working response into `y`, given the mean
     /// ensemble's current total at the training rows and this sweep's
@@ -133,7 +142,7 @@ mod tests {
             self.initialised = true;
         }
 
-        fn draw_extra(&mut self, _rng: &mut Rng) {}
+        fn draw_extra(&mut self, _y: &[f64], _total: &[f64], _precision: &[f64], _rng: &mut Rng) {}
 
         fn working_response(
             &mut self,
@@ -164,7 +173,7 @@ mod tests {
         let mut y = vec![0.25, -0.25];
         model.init(&y);
         assert!(model.initialised);
-        model.draw_extra(&mut rng);
+        model.draw_extra(&y, &[0.0, 0.0], &[1.0, 1.0], &mut rng);
         model.working_response(&[0.0, 0.0], &[1.0, 1.0], &mut y, &mut rng);
         assert_eq!(y, vec![0.25, -0.25]);
         assert_eq!(model.weights(), None);

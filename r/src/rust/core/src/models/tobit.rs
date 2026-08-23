@@ -162,7 +162,7 @@ impl OutcomeModel for TobitOutcome {
             .collect();
     }
 
-    fn draw_extra(&mut self, _rng: &mut Rng) {}
+    fn draw_extra(&mut self, _y: &[f64], _total: &[f64], _precision: &[f64], _rng: &mut Rng) {}
 
     /// The shared censored refresh over the per-row bounds; no randomness
     /// is consumed for a response with no censored rows.

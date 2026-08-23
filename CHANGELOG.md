@@ -118,6 +118,25 @@ says "Sampled values changed" with the reason.
   Gaussian chain draw for draw at the same seed. Validated by an
   interval-likelihood quadrature known-answer test and SBC and Geweke
   at both sizes. Outside the semver promise (docs/experimental.md).
+- (experimental) `Outcome::Ordinal` with `OrdinalParams`,
+  `Fitted::predict_category_probabilities`, `Fitted::cutpoint_draws`
+  and `Sampler::cutpoints`: the ordinal probit model over K ordered
+  categories (Albert and Chib 1993, s. 5), latent variance 1 and first
+  cutpoint 0 for identification, the offset resolved from the marginal
+  shares. The K - 2 interior cutpoints are sampled by a blocked MH move
+  with the latents integrated out (Cowles 1996) on the log-gap
+  transformation (Albert and Chib 2001), walk scale
+  2.38 / sqrt(n (K - 2)) (Roberts, Gelman and Gilks 1997), against
+  independent N(0, cutpoint_sd^2) log-gap priors; the cutpoint draws
+  are stored on the fitted model. `predict` is the expected category;
+  `log_likelihood` the ordinal likelihood; a variance ensemble is
+  rejected for identification. Two-category data reproduces the probit
+  chain draw for draw at the same seed. Validated by a cutpoint and
+  cell-mean quadrature known-answer test, SBC and Geweke at both sizes
+  covering the cutpoints, a broken-sampler fixture dropping the prior
+  ratio from the cutpoint acceptance, and a full-size cutpoint
+  effective-sample-size check. Outside the semver promise
+  (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled

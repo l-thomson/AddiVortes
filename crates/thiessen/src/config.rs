@@ -53,6 +53,14 @@ pub enum Outcome {
     /// Experimental (`docs/experimental.md`).
     #[cfg(feature = "experimental")]
     IntervalCensored(IntervalCensoredParams),
+    /// y in {0, ..., K - 1} ordered, with P(y <= k | x) =
+    /// Phi(gamma_{k+1} - c - f(x)): the ordinal probit model of Albert
+    /// and Chib (1993, s. 5), fitted by latent augmentation with the
+    /// interior cutpoints sampled by the Cowles (1996) blocked collapsed
+    /// move. The latent variance is 1 and the first cutpoint 0 for
+    /// identification. Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    Ordinal(OrdinalParams),
 }
 
 /// The stable variants plus the gated names, so a build without the
@@ -67,6 +75,7 @@ enum StableOutcome {
     Tobit(serde::de::IgnoredAny),
     Aft(serde::de::IgnoredAny),
     IntervalCensored(serde::de::IgnoredAny),
+    Ordinal(serde::de::IgnoredAny),
 }
 
 #[cfg(not(feature = "experimental"))]
@@ -87,6 +96,10 @@ impl TryFrom<StableOutcome> for Outcome {
             }),
             StableOutcome::IntervalCensored(_) => Err(crate::error::Error::RequiresFeature {
                 item: "the `interval_censored` outcome".into(),
+                feature: "experimental",
+            }),
+            StableOutcome::Ordinal(_) => Err(crate::error::Error::RequiresFeature {
+                item: "the `ordinal` outcome".into(),
                 feature: "experimental",
             }),
         }
@@ -136,6 +149,17 @@ impl Outcome {
         Outcome::IntervalCensored(IntervalCensoredParams::default())
     }
 
+    /// The ordinal outcome over `categories` ordered categories, with
+    /// the offset resolved from the data at fit and the default
+    /// cutpoint prior. Experimental.
+    #[cfg(feature = "experimental")]
+    pub fn ordinal(categories: usize) -> Self {
+        Outcome::Ordinal(OrdinalParams {
+            categories,
+            ..OrdinalParams::default()
+        })
+    }
+
     /// What the outcome does with sigma^2; scale validity derives from
     /// this value, never from a per-outcome table.
     pub(crate) fn sigma2_mode(&self) -> Sigma2Mode {
@@ -148,6 +172,8 @@ impl Outcome {
             Outcome::Aft(_) => Sigma2Mode::Sampled,
             #[cfg(feature = "experimental")]
             Outcome::IntervalCensored(_) => Sigma2Mode::Sampled,
+            #[cfg(feature = "experimental")]
+            Outcome::Ordinal(_) => Sigma2Mode::Fixed(1.0),
         }
     }
 
@@ -162,6 +188,8 @@ impl Outcome {
             Outcome::Aft(_) => RequiredData::Continuous,
             #[cfg(feature = "experimental")]
             Outcome::IntervalCensored(_) => RequiredData::Continuous,
+            #[cfg(feature = "experimental")]
+            Outcome::Ordinal(_) => RequiredData::Ordinal,
         }
     }
 }
@@ -285,6 +313,40 @@ impl Default for IntervalCensoredParams {
         Self {
             nu: defaults.nu,
             q: defaults.q,
+        }
+    }
+}
+
+/// The ordinal outcome's parameters: the category count, the offset and
+/// the cutpoint prior. The latent variance is fixed at 1 and the first
+/// cutpoint at 0 for identification. Experimental
+/// (`docs/experimental.md`).
+#[cfg(feature = "experimental")]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct OrdinalParams {
+    /// Number of ordered categories K, at least 2; the response holds
+    /// integer codes 0 to K - 1.
+    pub categories: usize,
+    /// The offset c in P(y <= k | x) = Phi(gamma_{k+1} - c - f(x)).
+    /// `None` resolves to Phi^-1(share of y >= 1) at fit, the probit
+    /// rule at K = 2; the resolved value is stored on the fitted model.
+    /// Default `None`.
+    pub offset: Option<f64>,
+    /// Standard deviation of the independent N(0, cutpoint_sd^2) prior
+    /// on the log-gaps ln(gamma_k - gamma_{k-1}) of the interior
+    /// cutpoints (Albert and Chib 2001). Default 1.
+    pub cutpoint_sd: f64,
+}
+
+#[cfg(feature = "experimental")]
+impl Default for OrdinalParams {
+    fn default() -> Self {
+        Self {
+            categories: 2,
+            offset: None,
+            cutpoint_sd: 1.0,
         }
     }
 }
@@ -698,11 +760,26 @@ impl Config {
         self
     }
 
-    /// Probit offset c; no effect under another outcome.
+    /// The offset c of an outcome with one (the probit and ordinal
+    /// models); no effect under another outcome.
     #[must_use]
     pub fn with_offset(mut self, offset: f64) -> Self {
-        if let Outcome::Probit(params) = &mut self.outcome {
-            params.offset = Some(offset);
+        match &mut self.outcome {
+            Outcome::Probit(params) => params.offset = Some(offset),
+            #[cfg(feature = "experimental")]
+            Outcome::Ordinal(params) => params.offset = Some(offset),
+            _ => {}
+        }
+        self
+    }
+
+    /// Cutpoint prior standard deviation of the ordinal outcome; no
+    /// effect under another outcome. Experimental.
+    #[cfg(feature = "experimental")]
+    #[must_use]
+    pub fn with_cutpoint_sd(mut self, cutpoint_sd: f64) -> Self {
+        if let Outcome::Ordinal(params) = &mut self.outcome {
+            params.cutpoint_sd = cutpoint_sd;
         }
         self
     }
@@ -827,6 +904,8 @@ impl Config {
             (Outcome::Aft(_), _) => "aft",
             #[cfg(feature = "experimental")]
             (Outcome::IntervalCensored(_), _) => "interval_censored",
+            #[cfg(feature = "experimental")]
+            (Outcome::Ordinal(_), _) => "ordinal",
         }
     }
 
@@ -840,18 +919,24 @@ impl Config {
         self.variance_params.variance_tessellations()
     }
 
-    /// The probit offset, where the outcome has one.
+    /// The offset c, where the outcome has one (the probit and ordinal
+    /// models).
     pub fn offset(&self) -> Option<f64> {
         match &self.outcome {
             Outcome::Probit(params) => params.offset,
+            #[cfg(feature = "experimental")]
+            Outcome::Ordinal(params) => params.offset,
             _ => None,
         }
     }
 
-    /// The resolved probit offset, written back at fit.
+    /// The resolved offset, written back at fit.
     pub(crate) fn set_offset(&mut self, offset: f64) {
-        if let Outcome::Probit(params) = &mut self.outcome {
-            params.offset = Some(offset);
+        match &mut self.outcome {
+            Outcome::Probit(params) => params.offset = Some(offset),
+            #[cfg(feature = "experimental")]
+            Outcome::Ordinal(params) => params.offset = Some(offset),
+            _ => {}
         }
     }
 
@@ -867,6 +952,11 @@ impl Config {
             Outcome::Aft(params) => (params.nu, params.q),
             #[cfg(feature = "experimental")]
             Outcome::IntervalCensored(params) => (params.nu, params.q),
+            #[cfg(feature = "experimental")]
+            Outcome::Ordinal(_) => {
+                let defaults = GaussianParams::default();
+                (defaults.nu, defaults.q)
+            }
             Outcome::Probit(_) => {
                 let defaults = GaussianParams::default();
                 (defaults.nu, defaults.q)
@@ -953,6 +1043,26 @@ impl Config {
                 }
             }
             #[cfg(feature = "experimental")]
+            Outcome::Ordinal(params) => {
+                if params.categories < 2 {
+                    return Err(invalid(
+                        "categories",
+                        format!("must be at least 2, got {}", params.categories),
+                    ));
+                }
+                if let Some(c) = params.offset {
+                    if !c.is_finite() {
+                        return Err(invalid("offset", format!("must be finite, got {c}")));
+                    }
+                }
+                if !(params.cutpoint_sd.is_finite() && params.cutpoint_sd > 0.0) {
+                    return Err(invalid(
+                        "cutpoint_sd",
+                        format!("must be finite and positive, got {}", params.cutpoint_sd),
+                    ));
+                }
+            }
+            #[cfg(feature = "experimental")]
             Outcome::Tobit(params) => {
                 positive("nu", params.nu)?;
                 if !(params.q.is_finite() && params.q > 0.0 && params.q < 1.0) {
@@ -995,7 +1105,7 @@ impl Config {
                 return Err(invalid(
                     "variance_params.tessellations",
                     "a variance ensemble needs a sampled sigma^2 to carry, and the \
-                     probit latent scale is fixed at 1 for identification",
+                     probit and ordinal latent scales are fixed at 1 for identification",
                 ));
             }
             let (nu, _) = self.sigma2_prior();

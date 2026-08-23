@@ -13,13 +13,16 @@ use crate::tessellation::Tessellation;
 
 /// The kept posterior draws, scaled space: the m mean tessellations per
 /// draw; sigma^2 per draw under the Gaussian model; the m' variance
-/// tessellations per draw under the heteroscedastic model.
+/// tessellations per draw under the heteroscedastic model; the interior
+/// cutpoints per draw under the ordinal model above two categories.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "PosteriorParts")]
 pub struct Posterior {
     sigma_sq: Vec<f64>,
     tessellations: Vec<Vec<Tessellation>>,
     variance_tessellations: Vec<Vec<Tessellation>>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    cutpoints: Vec<Vec<f64>>,
 }
 
 impl Posterior {
@@ -28,6 +31,7 @@ impl Posterior {
             sigma_sq: Vec::new(),
             tessellations: Vec::new(),
             variance_tessellations: Vec::new(),
+            cutpoints: Vec::new(),
         }
     }
 
@@ -36,10 +40,12 @@ impl Posterior {
         sigma_sq: Option<f64>,
         tessellations: Vec<Tessellation>,
         variance_tessellations: Option<Vec<Tessellation>>,
+        cutpoints: Option<Vec<f64>>,
     ) {
         self.sigma_sq.extend(sigma_sq);
         self.tessellations.push(tessellations);
         self.variance_tessellations.extend(variance_tessellations);
+        self.cutpoints.extend(cutpoints);
     }
 
     /// Number of kept draws.
@@ -63,11 +69,18 @@ impl Posterior {
         &self.variance_tessellations
     }
 
+    /// The interior cutpoints of each draw, increasing; empty outside
+    /// the ordinal model and at two categories, where none is sampled.
+    pub fn cutpoints(&self) -> &[Vec<f64>] {
+        &self.cutpoints
+    }
+
     pub(crate) fn extend(&mut self, other: &Self) {
         self.sigma_sq.extend_from_slice(&other.sigma_sq);
         self.tessellations.extend_from_slice(&other.tessellations);
         self.variance_tessellations
             .extend_from_slice(&other.variance_tessellations);
+        self.cutpoints.extend_from_slice(&other.cutpoints);
     }
 }
 
@@ -77,6 +90,8 @@ struct PosteriorParts {
     tessellations: Vec<Vec<Tessellation>>,
     #[serde(default)]
     variance_tessellations: Vec<Vec<Tessellation>>,
+    #[serde(default)]
+    cutpoints: Vec<Vec<f64>>,
 }
 
 impl TryFrom<PosteriorParts> for Posterior {
@@ -130,10 +145,31 @@ impl TryFrom<PosteriorParts> for Posterior {
                 return Err(bad("variance cell values must be positive"));
             }
         }
+        if !(parts.cutpoints.is_empty() || parts.cutpoints.len() == n_draws) {
+            return Err(bad("cutpoints must be absent or one set per draw"));
+        }
+        if let Some(first) = parts.cutpoints.first() {
+            let width = first.len();
+            if width == 0 || parts.cutpoints.iter().any(|c| c.len() != width) {
+                return Err(bad(
+                    "every draw must hold the same positive number of cutpoints",
+                ));
+            }
+            for draw in &parts.cutpoints {
+                let mut previous = 0.0;
+                for &g in draw {
+                    if !(g.is_finite() && g > previous) {
+                        return Err(bad("cutpoints must be finite, positive and increasing"));
+                    }
+                    previous = g;
+                }
+            }
+        }
         Ok(Self {
             sigma_sq: parts.sigma_sq,
             tessellations: parts.tessellations,
             variance_tessellations: parts.variance_tessellations,
+            cutpoints: parts.cutpoints,
         })
     }
 }
@@ -211,6 +247,30 @@ impl TryFrom<FittedParts> for Fitted {
             return Err(bad(
                 "sigma^2 draws are present exactly where the scale is sampled globally",
             ));
+        }
+        #[cfg(feature = "experimental")]
+        let expects_cutpoints = matches!(
+            &parts.config.outcome,
+            Outcome::Ordinal(params) if params.categories > 2
+        );
+        #[cfg(not(feature = "experimental"))]
+        let expects_cutpoints = false;
+        if (parts.posterior.cutpoints().len() == n_draws) != expects_cutpoints {
+            return Err(bad(
+                "cutpoint draws are present exactly under the ordinal model above two categories",
+            ));
+        }
+        #[cfg(feature = "experimental")]
+        if let Outcome::Ordinal(params) = &parts.config.outcome {
+            if params.categories > 2
+                && parts
+                    .posterior
+                    .cutpoints()
+                    .iter()
+                    .any(|draw| draw.len() != params.categories - 2)
+            {
+                return Err(bad("each draw holds the K - 2 interior cutpoints"));
+            }
         }
         if (parts.posterior.variance_tessellations().len() == n_draws) != has_ensemble {
             return Err(bad(
@@ -365,7 +425,9 @@ impl Fitted {
     /// P(y = 1 | x) = Phi(c + f(x)) under the probit model. Under the
     /// tobit and interval-censored models the quantity is the uncensored
     /// f(x), the latent mean; under the AFT model it is f(x) on the
-    /// log-time scale (the BART package's `yhat` convention for `abart`).
+    /// log-time scale (the BART package's `yhat` convention for `abart`);
+    /// under the ordinal model it is the expected category
+    /// E[y | x] = sum_{k >= 1} Phi(c + f(x) - gamma_k).
     ///
     /// # Errors
     ///
@@ -386,6 +448,23 @@ impl Fitted {
             for draw in &mut latent {
                 for v in draw {
                     *v = maths::normal_cdf(*v);
+                }
+            }
+        }
+        // The expected category sum_{k >= 1} Phi(c + f - gamma_k) with
+        // the draw's own cutpoints, gamma_1 = 0.
+        #[cfg(feature = "experimental")]
+        if matches!(self.config.outcome, Outcome::Ordinal(_)) {
+            for (d, draw) in latent.iter_mut().enumerate() {
+                let free = self
+                    .posterior
+                    .cutpoints()
+                    .get(d)
+                    .map_or(&[][..], Vec::as_slice);
+                for v in draw {
+                    let l = *v;
+                    *v = maths::normal_cdf(l)
+                        + free.iter().map(|&g| maths::normal_cdf(l - g)).sum::<f64>();
                 }
             }
         }
@@ -451,6 +530,10 @@ impl Fitted {
         let n = x.n_rows();
         let range_sq = self.scaler.y_range() * self.scaler.y_range();
         if matches!(self.config.outcome, Outcome::Probit(_)) {
+            return Err(self.not_applicable("predict_variance"));
+        }
+        #[cfg(feature = "experimental")]
+        if matches!(self.config.outcome, Outcome::Ordinal(_)) {
             return Err(self.not_applicable("predict_variance"));
         }
         if self.has_variance_ensemble() {
@@ -549,6 +632,10 @@ impl Fitted {
         if matches!(self.config.outcome, Outcome::Probit(_)) {
             return Err(self.not_applicable("prediction_interval"));
         }
+        #[cfg(feature = "experimental")]
+        if matches!(self.config.outcome, Outcome::Ordinal(_)) {
+            return Err(self.not_applicable("prediction_interval"));
+        }
         let per_draw = self.predict_draws(x)?;
         let variances = self.predict_variance(x)?;
         let tail = 0.5 * (1.0 - level);
@@ -588,17 +675,21 @@ impl Fitted {
     /// draw's P(y = 1 | x). Under the tobit model a row at a limit takes
     /// its censored term, ln Phi((lower - f_d) / s_d) or
     /// ln Phi((f_d - upper) / s_d), and the Normal log density otherwise.
-    /// `NotApplicable` under the AFT model, whose pointwise likelihood
-    /// needs the event indicator (`log_likelihood_survival`), and under
-    /// the interval-censored model, whose pointwise likelihood needs
-    /// the bounds (`log_likelihood_interval_censored`); both methods
-    /// are compiled with the `experimental` feature.
+    /// Under the ordinal model the term is the ordinal likelihood,
+    /// ln(Phi(gamma_{y+1} - c - f_d) - Phi(gamma_y - c - f_d)) with the
+    /// draw's own cutpoints. `NotApplicable` under the AFT model, whose
+    /// pointwise likelihood needs the event indicator
+    /// (`log_likelihood_survival`), and under the interval-censored
+    /// model, whose pointwise likelihood needs the bounds
+    /// (`log_likelihood_interval_censored`); both methods are compiled
+    /// with the `experimental` feature.
     ///
     /// # Errors
     ///
     /// `RowCountMismatch`, `NonFiniteResponse`, `InvalidLabel` under the
-    /// probit model, `ResponseBeyondLimit` under the tobit model; the
-    /// predict errors.
+    /// probit model, `ResponseBeyondLimit` under the tobit model,
+    /// `InvalidOrdinalLabel` under the ordinal model; the predict
+    /// errors.
     pub fn log_likelihood(&self, x: &Data, y: &[f64]) -> Result<Vec<Vec<f64>>> {
         #[cfg(feature = "experimental")]
         if matches!(
@@ -615,6 +706,46 @@ impl Fitted {
         }
         if let Some(row) = y.iter().position(|v| !v.is_finite()) {
             return Err(Error::NonFiniteResponse { row });
+        }
+        #[cfg(feature = "experimental")]
+        if let Outcome::Ordinal(params) = &self.config.outcome {
+            let categories = params.categories;
+            if let Some(row) = y
+                .iter()
+                .position(|&v| !(v.fract() == 0.0 && v >= 0.0 && v < categories as f64))
+            {
+                return Err(Error::InvalidOrdinalLabel { row, categories });
+            }
+            let latent = self.predict_latent(x)?;
+            return Ok(latent
+                .iter()
+                .enumerate()
+                .map(|(d, fits)| {
+                    let free = self
+                        .posterior
+                        .cutpoints()
+                        .get(d)
+                        .map_or(&[][..], Vec::as_slice);
+                    let gamma = |k: usize| if k == 1 { 0.0 } else { free[k - 2] };
+                    y.iter()
+                        .zip(fits)
+                        .map(|(&yi, &l)| {
+                            let k = yi as usize;
+                            let above = if k == categories - 1 {
+                                1.0
+                            } else {
+                                maths::normal_cdf(gamma(k + 1) - l)
+                            };
+                            let below = if k == 0 {
+                                0.0
+                            } else {
+                                maths::normal_cdf(gamma(k) - l)
+                            };
+                            maths::ln(above - below)
+                        })
+                        .collect()
+                })
+                .collect());
         }
         if matches!(self.config.outcome, Outcome::Probit(_)) {
             if let Some(row) = y.iter().position(|&v| v != 0.0 && v != 1.0) {
@@ -823,6 +954,63 @@ impl Fitted {
                     .collect()
             })
             .collect())
+    }
+
+    /// Posterior-mean category probabilities under the ordinal model,
+    /// row-major (`n_rows` by `categories`): the average over kept draws
+    /// of P(y = k | x) = Phi(gamma_{k+1} - c - f_d(x)) -
+    /// Phi(gamma_k - c - f_d(x)) with the draw's own cutpoints.
+    /// Experimental (`docs/experimental.md`).
+    ///
+    /// # Errors
+    ///
+    /// `NotApplicable` under another model; the predict errors.
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn predict_category_probabilities(&self, x: &Data) -> Result<Vec<Vec<f64>>> {
+        let Outcome::Ordinal(params) = &self.config.outcome else {
+            return Err(self.not_applicable("predict_category_probabilities"));
+        };
+        let categories = params.categories;
+        let latent = self.predict_latent(x)?;
+        let mut out = vec![vec![0.0; categories]; x.n_rows()];
+        for (d, fits) in latent.iter().enumerate() {
+            let free = self
+                .posterior
+                .cutpoints()
+                .get(d)
+                .map_or(&[][..], Vec::as_slice);
+            for (row, &l) in fits.iter().enumerate() {
+                let mut previous = 0.0;
+                for (k, slot) in out[row].iter_mut().enumerate() {
+                    let cumulative = if k == categories - 1 {
+                        1.0
+                    } else {
+                        let g = if k == 0 { 0.0 } else { free[k - 1] };
+                        maths::normal_cdf(g - l)
+                    };
+                    *slot += cumulative - previous;
+                    previous = cumulative;
+                }
+            }
+        }
+        let n_draws = latent.len() as f64;
+        for row in &mut out {
+            for p in row {
+                *p /= n_draws;
+            }
+        }
+        Ok(out)
+    }
+
+    /// The interior cutpoints of each kept draw under the ordinal model,
+    /// increasing, latent scale; empty under another model and at two
+    /// categories, where none is sampled. Experimental
+    /// (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn cutpoint_draws(&self) -> &[Vec<f64>] {
+        self.posterior.cutpoints()
     }
 
     /// sigma per kept draw under a model with a global sampled sigma^2
