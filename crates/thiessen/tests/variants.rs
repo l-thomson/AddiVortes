@@ -9,8 +9,13 @@
 //! ```text
 //! (cd benchmarks/upstream && Rscript binary_variant.R)
 //! (cd benchmarks/upstream && Rscript heteroscedastic_variant.R)
-//! cargo test --release --test variants -- --ignored --nocapture
+//! (cd benchmarks/upstream && Rscript aft_abart.R)
+//! cargo test --release --features experimental --test variants -- --ignored --nocapture
 //! ```
+//!
+//! The AFT comparison is against BART `abart`, a different prior (trees
+//! against tessellations), so its posteriors are close but not equal;
+//! the report is the record.
 
 use thiessen::{fit, Config, Data, Outcome};
 
@@ -49,6 +54,27 @@ fn parse_summary(path: &str) -> Vec<(String, f64, f64)> {
             )
         })
         .collect()
+}
+
+/// Covariate columns, then time and delta, one header line.
+#[cfg(feature = "experimental")]
+fn parse_survival_data(path: &str) -> (Data, Vec<f64>, Vec<bool>) {
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut lines = text.lines();
+    let p = lines.next().unwrap().split(',').count() - 2;
+    let mut values = Vec::new();
+    let mut times = Vec::new();
+    let mut events = Vec::new();
+    for line in lines {
+        let mut fields = line.split(',').map(|v| v.parse::<f64>().unwrap());
+        for _ in 0..p {
+            values.push(fields.next().unwrap());
+        }
+        times.push(fields.next().unwrap());
+        events.push(fields.next().unwrap() == 1.0);
+    }
+    let n = times.len();
+    (Data::new(values, n, p).unwrap(), times, events)
 }
 
 fn mean(series: &[f64]) -> f64 {
@@ -156,4 +182,40 @@ fn heteroscedastic_friedman_against_the_script() {
     assert_eq!(script.len(), ours.len());
     assert!(ours.iter().all(|(_, v, _)| v.is_finite()));
     report("heteroscedastic_friedman", &script, &ours);
+}
+
+/// Both sides: m = 50, 200 burn-in sweeps, 1000 kept draws, k = 3,
+/// sigma_c = 0.8, omega = 3, lambda_c = 5; the script sets abart to the
+/// same tree count and k. The sigma^2 priors differ where the surfaces
+/// do (sigdf = 3, sigquant = 0.90 against nu = 6, q = 0.85).
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "informational; needs the output of benchmarks/upstream/aft_abart.R"]
+fn aft_friedman_against_abart() {
+    let (x, times, events) = parse_survival_data(&format!("{DIR}/aft_friedman_data.csv"));
+    let script = parse_summary(&format!("{DIR}/aft_friedman_script_summary.csv"));
+    let config = Config::new()
+        .with_outcome(Outcome::aft())
+        .with_m(50)
+        .with_burn_in(200)
+        .with_draws(1000);
+    let fitted = thiessen::fit_aft(&config, &x, &times, &events, 11).unwrap();
+    let points = [0usize, 49, 99, 149, 199];
+    let rows: Vec<&[f64]> = points.iter().map(|&r| x.row(r)).collect();
+    let draws = fitted
+        .predict_draws(&Data::from_rows(&rows).unwrap())
+        .unwrap();
+    let mut ours: Vec<(String, f64, f64)> = points
+        .iter()
+        .enumerate()
+        .map(|(i, &row)| {
+            let series: Vec<f64> = draws.iter().map(|d| d[i]).collect();
+            (format!("f_mean_r{row}"), mean(&series), mcse_mean(&series))
+        })
+        .collect();
+    let sigma = fitted.sigma();
+    ours.push(("sigma_mean".into(), mean(&sigma), mcse_mean(&sigma)));
+    assert_eq!(script.len(), ours.len());
+    assert!(ours.iter().all(|(_, v, _)| v.is_finite()));
+    report("aft_friedman", &script, &ours);
 }

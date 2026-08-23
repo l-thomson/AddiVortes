@@ -11,6 +11,11 @@ use crate::error::Result;
 use crate::fitted::Fitted;
 use crate::sampler::Sampler;
 
+#[cfg(feature = "experimental")]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+pub mod aft;
+#[cfg(feature = "experimental")]
+pub(crate) mod censoring;
 pub mod gaussian;
 pub mod heteroscedastic;
 pub mod probit;
@@ -53,6 +58,35 @@ pub fn fit_with_progress(
     run(config, x, y, seed, &mut progress)
 }
 
+/// Fit the AFT model: as [`fit`], with the times and the event
+/// indicator in place of a plain response ([`Outcome::Aft`](crate::Outcome::Aft)).
+/// Experimental (`docs/experimental.md`).
+///
+/// # Arguments
+///
+/// `x` is n by p; `times` has n positive event or censoring times and
+/// `events` one flag per row (true is an event, false right-censoring);
+/// `seed` keys the chain RNG.
+///
+/// # Errors
+///
+/// [`Sampler::aft`].
+#[cfg(feature = "experimental")]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+pub fn fit_aft(
+    config: &Config,
+    x: &Data,
+    times: &[f64],
+    events: &[bool],
+    seed: u64,
+) -> Result<Fitted> {
+    run_schedule(
+        Sampler::aft(config, x, times, events, seed)?,
+        config,
+        &mut |_, _| {},
+    )
+}
+
 /// The sweep schedule shared by every model.
 pub(crate) fn run(
     config: &Config,
@@ -61,9 +95,17 @@ pub(crate) fn run(
     seed: u64,
     progress: &mut dyn FnMut(usize, usize),
 ) -> Result<Fitted> {
+    run_schedule(Sampler::new(config, x, y, seed)?, config, progress)
+}
+
+/// Advance a constructed sampler through the configured schedule.
+fn run_schedule(
+    mut sampler: Sampler,
+    config: &Config,
+    progress: &mut dyn FnMut(usize, usize),
+) -> Result<Fitted> {
     let schedule = config.general_params.clone();
     let total = schedule.burn_in + schedule.draws * schedule.thinning;
-    let mut sampler = Sampler::new(config, x, y, seed)?;
     let mut completed = 0;
     for _ in 0..schedule.burn_in {
         sampler.step();

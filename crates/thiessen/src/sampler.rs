@@ -22,6 +22,8 @@ use crate::error::{Error, Result};
 use crate::fitted::{Fitted, Posterior};
 use crate::geometry::Geometry;
 use crate::maths;
+#[cfg(feature = "experimental")]
+use crate::models::aft::AftOutcome;
 use crate::models::gaussian::GaussianOutcome;
 use crate::models::probit::ProbitOutcome;
 #[cfg(feature = "experimental")]
@@ -41,6 +43,8 @@ enum Outcome {
     Probit(ProbitOutcome),
     #[cfg(feature = "experimental")]
     Tobit(TobitOutcome),
+    #[cfg(feature = "experimental")]
+    Aft(AftOutcome),
 }
 
 /// Dispatch one method over every variant.
@@ -51,6 +55,8 @@ macro_rules! each_outcome {
             Outcome::Probit($outcome) => $body,
             #[cfg(feature = "experimental")]
             Outcome::Tobit($outcome) => $body,
+            #[cfg(feature = "experimental")]
+            Outcome::Aft($outcome) => $body,
         }
     };
 }
@@ -78,7 +84,17 @@ impl Outcome {
             Outcome::Probit(outcome) => Some(outcome.labels()),
             #[cfg(feature = "experimental")]
             Outcome::Tobit(outcome) => Some(outcome.observed()),
+            #[cfg(feature = "experimental")]
+            Outcome::Aft(outcome) => Some(outcome.observed()),
             Outcome::Gaussian(_) => None,
+        }
+    }
+
+    #[cfg(feature = "experimental")]
+    fn as_aft_mut(&mut self) -> Option<&mut AftOutcome> {
+        match self {
+            Outcome::Aft(outcome) => Some(outcome),
+            _ => None,
         }
     }
 }
@@ -231,6 +247,36 @@ fn draw_dirichlet(shapes: &[f64], rng: &mut rng::Rng) -> Vec<f64> {
     draws.iter().map(|&g| g / total).collect()
 }
 
+/// The configuration names the AFT outcome, which the survival entry
+/// points require.
+#[cfg(feature = "experimental")]
+fn require_aft(config: &Config) -> Result<()> {
+    if matches!(config.outcome, OutcomeConfig::Aft(_)) {
+        Ok(())
+    } else {
+        Err(crate::error::invalid(
+            "outcome",
+            "the survival entry points need the aft outcome",
+        ))
+    }
+}
+
+/// Validated log times: one event flag per time, every time finite and
+/// positive.
+#[cfg(feature = "experimental")]
+fn log_times(times: &[f64], events: &[bool]) -> Result<Vec<f64>> {
+    if events.len() != times.len() {
+        return Err(Error::EventCountMismatch {
+            events: events.len(),
+            times: times.len(),
+        });
+    }
+    if let Some(row) = times.iter().position(|&t| !(t.is_finite() && t > 0.0)) {
+        return Err(Error::InvalidSurvivalTime { row });
+    }
+    Ok(times.iter().map(|&t| maths::ln(t)).collect())
+}
+
 impl Sampler {
     /// A sampler over raw data, its RNG seeded from `seed`.
     ///
@@ -243,7 +289,69 @@ impl Sampler {
     /// categorical column, and under the probit model `InvalidLabel` for
     /// a response value outside {0, 1}.
     pub fn new(config: &Config, x: &Data, y: &[f64], seed: u64) -> Result<Self> {
-        Self::build(config, x, y, seed, None)
+        Self::build(
+            config,
+            x,
+            y,
+            seed,
+            None,
+            #[cfg(feature = "experimental")]
+            None,
+        )
+    }
+
+    /// A sampler for the AFT model over raw data: `times` holds n
+    /// positive event or censoring times and `events` one flag per row
+    /// (true is an event, false right-censoring); the response the chain
+    /// runs on is ln t. Experimental (`docs/experimental.md`).
+    ///
+    /// # Errors
+    ///
+    /// [`Sampler::new`]; `InvalidHyperparameter` for an outcome other
+    /// than [`Outcome::Aft`](crate::Outcome::Aft),
+    /// `EventCountMismatch`, `InvalidSurvivalTime`.
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn aft(
+        config: &Config,
+        x: &Data,
+        times: &[f64],
+        events: &[bool],
+        seed: u64,
+    ) -> Result<Self> {
+        require_aft(config)?;
+        let y = log_times(times, events)?;
+        Self::build(config, x, &y, seed, None, Some(events))
+    }
+
+    /// The AFT model under the pinned prior, as
+    /// [`pinned_prior`](Sampler::pinned_prior): `times` are taken as
+    /// exp of the already scaled log-time response. Experimental
+    /// (`docs/experimental.md`).
+    ///
+    /// # Errors
+    ///
+    /// [`Sampler::aft`], `InvalidHyperparameter` for a non-positive
+    /// `lambda`.
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn pinned_prior_aft(
+        config: &Config,
+        x: &Data,
+        times: &[f64],
+        events: &[bool],
+        lambda: f64,
+        seed: u64,
+    ) -> Result<Self> {
+        if !(lambda.is_finite() && lambda > 0.0) {
+            return Err(crate::error::invalid(
+                "lambda",
+                format!("must be finite and positive, got {lambda}"),
+            ));
+        }
+        require_aft(config)?;
+        let y = log_times(times, events)?;
+        Self::build(config, x, &y, seed, Some(lambda), Some(events))
     }
 
     /// A sampler whose prior is fixed by the caller: `x` and `y` are taken
@@ -279,7 +387,15 @@ impl Sampler {
                 "must be set under the pinned prior of the probit model",
             ));
         }
-        Self::build(config, x, y, seed, Some(lambda))
+        Self::build(
+            config,
+            x,
+            y,
+            seed,
+            Some(lambda),
+            #[cfg(feature = "experimental")]
+            None,
+        )
     }
 
     fn build(
@@ -288,6 +404,7 @@ impl Sampler {
         y: &[f64],
         seed: u64,
         pinned_lambda: Option<f64>,
+        #[cfg(feature = "experimental")] events: Option<&[bool]>,
     ) -> Result<Self> {
         config.validate()?;
         let p = x.n_cols();
@@ -321,6 +438,14 @@ impl Sampler {
             if let Some(row) = y.iter().position(|&v| v != 0.0 && v != 1.0) {
                 return Err(Error::InvalidLabel { row });
             }
+        }
+        #[cfg(feature = "experimental")]
+        if matches!(config.outcome, OutcomeConfig::Aft(_)) && events.is_none() {
+            return Err(crate::error::invalid(
+                "outcome",
+                "the aft outcome takes times and an event indicator; fit through \
+                 fit_aft or Sampler::aft",
+            ));
         }
         #[cfg(feature = "experimental")]
         if let OutcomeConfig::Tobit(params) = &config.outcome {
@@ -382,6 +507,8 @@ impl Sampler {
             OutcomeConfig::Gaussian(_) => GaussianOutcome::CELL_PRIOR_HALF_WIDTH,
             #[cfg(feature = "experimental")]
             OutcomeConfig::Tobit(_) => TobitOutcome::CELL_PRIOR_HALF_WIDTH,
+            #[cfg(feature = "experimental")]
+            OutcomeConfig::Aft(_) => AftOutcome::CELL_PRIOR_HALF_WIDTH,
         };
         let sigma_mu_sq = scaler::sigma_mu_sq(half_width, config.mean_params.k, m);
         // Both slots declare identical geometry and structure, so the
@@ -468,6 +595,14 @@ impl Sampler {
                 );
                 outcome.init(&y_scaled);
                 Outcome::Tobit(outcome)
+            }
+            // A censored row's truncation point is its own scaled log
+            // time, so nothing beyond the response crosses the map.
+            #[cfg(feature = "experimental")]
+            OutcomeConfig::Aft(_) => {
+                let mut outcome = AftOutcome::new(events.expect("validated above").to_vec());
+                outcome.init(&y_scaled);
+                Outcome::Aft(outcome)
             }
         };
         // H-AddiVortes: the variance ensemble carries the scale in place
@@ -776,6 +911,13 @@ impl Sampler {
             return Ok(());
         }
         #[cfg(feature = "experimental")]
+        if matches!(self.config.outcome, OutcomeConfig::Aft(_)) {
+            return Err(crate::error::invalid(
+                "outcome",
+                "the aft outcome replaces its response through set_aft_response",
+            ));
+        }
+        #[cfg(feature = "experimental")]
         if let OutcomeConfig::Tobit(params) = &self.config.outcome {
             let beyond = |v: f64| {
                 params.lower.is_some_and(|limit| v < limit)
@@ -790,6 +932,38 @@ impl Sampler {
         }
         // A latent-response outcome rereads censoring from the new
         // response; a no-op elsewhere.
+        self.outcome.init(&self.y);
+        Ok(())
+    }
+
+    /// Replace the AFT model's times and event indicator, keeping the
+    /// tessellations, the cell values and sigma^2; the latents reset to
+    /// the observed log times and the next sweep's refresh redraws the
+    /// censored ones from their conditional. Experimental
+    /// (`docs/experimental.md`).
+    ///
+    /// # Errors
+    ///
+    /// `InvalidHyperparameter` for an outcome other than
+    /// [`Outcome::Aft`](crate::Outcome::Aft); `RowCountMismatch`,
+    /// `EventCountMismatch`, `InvalidSurvivalTime`.
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn set_aft_response(&mut self, times: &[f64], events: &[bool]) -> Result<()> {
+        require_aft(&self.config)?;
+        if times.len() != self.y.len() {
+            return Err(Error::RowCountMismatch {
+                y_len: times.len(),
+                x_rows: self.y.len(),
+            });
+        }
+        let y = log_times(times, events)?;
+        for (slot, v) in self.y.iter_mut().zip(y) {
+            *slot = self.scaler.scale_y(v);
+        }
+        if let Some(outcome) = self.outcome.as_aft_mut() {
+            outcome.set_events(events);
+        }
         self.outcome.init(&self.y);
         Ok(())
     }

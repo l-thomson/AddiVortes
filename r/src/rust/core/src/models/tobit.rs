@@ -91,17 +91,9 @@
 //! [`Error::ResponseBeyondLimit`](crate::Error::ResponseBeyondLimit).
 
 use crate::maths;
+use crate::models::censoring::{self, Bound};
 use crate::outcome::{OutcomeModel, RequiredData, Sigma2Mode};
-use crate::rng::{self, Rng};
-
-/// Censoring status of one training row, derived from equality of the
-/// response with a limit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Status {
-    Observed,
-    Below,
-    Above,
-}
+use crate::rng::Rng;
 
 /// The tobit outcome behind the [`OutcomeModel`] contract: known limits
 /// on the scaled response and the Chib (1992) latent refresh of the
@@ -112,7 +104,7 @@ pub(crate) struct TobitOutcome {
     lower: Option<f64>,
     upper: Option<f64>,
     observed: Vec<f64>,
-    status: Vec<Status>,
+    bounds: Vec<Bound>,
 }
 
 impl TobitOutcome {
@@ -126,7 +118,7 @@ impl TobitOutcome {
             lower,
             upper,
             observed: Vec::new(),
-            status: Vec::new(),
+            bounds: Vec::new(),
         }
     }
 
@@ -139,9 +131,9 @@ impl TobitOutcome {
     /// Number of censored training rows.
     #[cfg(test)]
     pub(crate) fn n_censored(&self) -> usize {
-        self.status
+        self.bounds
             .iter()
-            .filter(|&&s| s != Status::Observed)
+            .filter(|&&b| b != Bound::Observed)
             .count()
     }
 }
@@ -151,20 +143,20 @@ impl OutcomeModel for TobitOutcome {
         RequiredData::Continuous
     }
 
-    /// Store the observed response and read each row's censoring status
+    /// Store the observed response and read each row's truncation bound
     /// from equality with a limit; the affine response map preserves
     /// exact equality, so the scaled comparison is the caller-scale one.
     fn init(&mut self, y: &[f64]) {
         self.observed = y.to_vec();
-        self.status = y
+        self.bounds = y
             .iter()
             .map(|&v| {
                 if self.lower == Some(v) {
-                    Status::Below
+                    Bound::Below(v)
                 } else if self.upper == Some(v) {
-                    Status::Above
+                    Bound::Above(v)
                 } else {
-                    Status::Observed
+                    Bound::Observed
                 }
             })
             .collect();
@@ -172,27 +164,10 @@ impl OutcomeModel for TobitOutcome {
 
     fn draw_extra(&mut self, _rng: &mut Rng) {}
 
-    /// Refresh the latent of each censored row from N(f_i, 1 / w_i)
-    /// truncated to its censored side, w_i the row's precision; an
-    /// observed row keeps its response. No randomness is consumed for a
-    /// response with no censored rows.
+    /// The shared censored refresh over the per-row bounds; no randomness
+    /// is consumed for a response with no censored rows.
     fn working_response(&mut self, total: &[f64], precision: &[f64], y: &mut [f64], rng: &mut Rng) {
-        for (((slot, &status), &f), &w) in y.iter_mut().zip(&self.status).zip(total).zip(precision)
-        {
-            match status {
-                Status::Observed => {}
-                Status::Below => {
-                    let limit = self.lower.expect("a row censored below has a lower limit");
-                    let sd = 1.0 / w.sqrt();
-                    *slot = f - sd * rng::truncated_standard_normal_above((f - limit) / sd, rng);
-                }
-                Status::Above => {
-                    let limit = self.upper.expect("a row censored above has an upper limit");
-                    let sd = 1.0 / w.sqrt();
-                    *slot = f + sd * rng::truncated_standard_normal_above((limit - f) / sd, rng);
-                }
-            }
-        }
+        censoring::refresh(&self.bounds, total, precision, y, rng);
     }
 
     fn weights(&self) -> Option<&[f64]> {

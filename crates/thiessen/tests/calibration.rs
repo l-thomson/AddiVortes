@@ -52,6 +52,8 @@ fn gaussian_prior(config: &Config) -> (f64, f64) {
         thiessen::Outcome::Gaussian(params) => (params.nu, params.q),
         #[cfg(feature = "experimental")]
         thiessen::Outcome::Tobit(params) => (params.nu, params.q),
+        #[cfg(feature = "experimental")]
+        thiessen::Outcome::Aft(params) => (params.nu, params.q),
         _ => unreachable!("the tests read nu and q under a sampled sigma^2"),
     }
 }
@@ -95,6 +97,12 @@ enum Kind {
     Tobit {
         lower: f64,
         upper: f64,
+    },
+    /// Lognormal AFT with fixed type-I censoring at the log-scale
+    /// `threshold`: every row's log time is censored above it.
+    #[cfg(feature = "experimental")]
+    Aft {
+        threshold: f64,
     },
 }
 
@@ -507,6 +515,20 @@ fn tobit_model() -> Model {
     }
 }
 
+/// The AFT model at the calibration size: the Gaussian model's rows,
+/// structural prior and lambda, log times censored at the fixed type-I
+/// threshold 0.15, which censors a material share of the generated
+/// responses.
+#[cfg(feature = "experimental")]
+fn aft_model() -> Model {
+    let gaussian = gaussian_model();
+    Model {
+        kind: Kind::Aft { threshold: 0.15 },
+        config: gaussian.config.with_outcome(thiessen::Outcome::aft()),
+        ..gaussian
+    }
+}
+
 /// The heteroscedastic model at the calibration size: the Gaussian
 /// model's rows, structural prior and lambda, with m' = 2 variance
 /// tessellations (nu' = 2 / (1 - (2 / 3)^(1 / 2)), lambda' = 0.2).
@@ -533,6 +555,8 @@ impl Model {
             Kind::Probit => 3.0,
             #[cfg(feature = "experimental")]
             Kind::Tobit { .. } => 0.5,
+            #[cfg(feature = "experimental")]
+            Kind::Aft { .. } => 0.5,
         };
         scale / (self.config.mean_params.k * (self.config.mean_tessellations() as f64).sqrt())
     }
@@ -891,6 +915,10 @@ impl Model {
                     Kind::Tobit { lower, upper } => {
                         (f + self.variance_at(draw, i).sqrt() * rng.normal()).clamp(lower, upper)
                     }
+                    #[cfg(feature = "experimental")]
+                    Kind::Aft { threshold } => {
+                        (f + self.variance_at(draw, i).sqrt() * rng.normal()).min(threshold)
+                    }
                 }
             })
             .collect()
@@ -983,6 +1011,8 @@ impl Model {
                 Kind::Probit => f64::from(rng.uniform() < normal_cdf(*f)),
                 #[cfg(feature = "experimental")]
                 Kind::Tobit { lower, upper } => (f + v.sqrt() * rng.normal()).clamp(lower, upper),
+                #[cfg(feature = "experimental")]
+                Kind::Aft { threshold } => (f + v.sqrt() * rng.normal()).min(threshold),
             };
         }
     }
@@ -994,6 +1024,38 @@ impl Model {
             Kind::Probit | Kind::Heteroscedastic => false,
             #[cfg(feature = "experimental")]
             Kind::Tobit { .. } => true,
+            #[cfg(feature = "experimental")]
+            Kind::Aft { .. } => true,
+        }
+    }
+
+    /// The pinned-prior sampler over the generated response; the AFT
+    /// model receives it as times with the event flags read off the
+    /// fixed censoring threshold.
+    fn sampler(&self, y: &[f64], seed: u64) -> Sampler {
+        match self.kind {
+            #[cfg(feature = "experimental")]
+            Kind::Aft { threshold } => {
+                let times: Vec<f64> = y.iter().map(|&v| v.exp()).collect();
+                let events: Vec<bool> = y.iter().map(|&v| v != threshold).collect();
+                Sampler::pinned_prior_aft(&self.config, &self.x, &times, &events, self.lambda, seed)
+                    .unwrap()
+            }
+            _ => Sampler::pinned_prior(&self.config, &self.x, y, self.lambda, seed).unwrap(),
+        }
+    }
+
+    /// Replace the sampler's response with a regenerated one, through
+    /// the model's own seam.
+    fn replace_response(&self, sampler: &mut Sampler, y: &[f64]) {
+        match self.kind {
+            #[cfg(feature = "experimental")]
+            Kind::Aft { threshold } => {
+                let times: Vec<f64> = y.iter().map(|&v| v.exp()).collect();
+                let events: Vec<bool> = y.iter().map(|&v| v != threshold).collect();
+                sampler.set_aft_response(&times, &events).unwrap();
+            }
+            _ => sampler.set_response(y).unwrap(),
         }
     }
 }
@@ -1028,9 +1090,7 @@ fn sbc_ranks(
             }
         };
         let truth = model.mc_quantities(&draw, &y);
-        let mut sampler =
-            Sampler::pinned_prior(&model.config, &model.x, &y, model.lambda, seed + sim as u64)
-                .unwrap();
+        let mut sampler = model.sampler(&y, seed + sim as u64);
         for _ in 0..burn_in {
             sampler.step();
         }
@@ -1192,6 +1252,14 @@ fn sbc_small_ranks_are_uniform_tobit() {
     assert_uniform(&model, &ranks, 19);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+fn sbc_small_ranks_are_uniform_aft() {
+    let model = aft_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 416);
+    assert_uniform(&model, &ranks, 19);
+}
+
 /// The bandwidth walks on ln tau and needs heavier thinning than the
 /// structural quantities, here and in the full run.
 #[cfg(feature = "experimental")]
@@ -1268,6 +1336,13 @@ fn sbc_full_ranks_are_uniform_tobit() {
 #[cfg(feature = "experimental")]
 #[test]
 #[ignore = "full size, nightly"]
+fn sbc_full_ranks_are_uniform_aft() {
+    sbc_full(&aft_model(), "sbc_ranks_aft.csv", 416);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "full size, nightly"]
 fn sbc_full_ranks_are_uniform_soft() {
     let model = soft_model();
     let ranks = sbc_ranks(&model, 1000, 99, 30, 300, 414);
@@ -1330,12 +1405,11 @@ fn geweke_samples(
 
     let first = model.prior_draw(&mut rng);
     let mut y = model.generate_y(&first, &mut rng);
-    let mut sampler =
-        Sampler::pinned_prior(&model.config, &model.x, &y, model.lambda, seed).unwrap();
+    let mut sampler = model.sampler(&y, seed);
     let mut sc: Vec<Vec<f64>> = (0..n_q).map(|_| Vec::with_capacity(n_sc)).collect();
     let transition = |sampler: &mut Sampler, y: &mut Vec<f64>, rng: &mut TestRng| {
         model.regenerate_y(sampler, y, rng);
-        sampler.set_response(y).unwrap();
+        model.replace_response(sampler, y);
         sampler.step();
     };
     for _ in 0..discard {
@@ -1509,6 +1583,14 @@ fn geweke_small_simulators_agree_tobit() {
     assert_simulators_agree(&model, &mc, &sc);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+fn geweke_small_simulators_agree_aft() {
+    let model = aft_model();
+    let (mc, sc) = geweke_samples(&model, 2000, 800, 45, 200, 916);
+    assert_simulators_agree(&model, &mc, &sc);
+}
+
 /// Files first, so a failed gate still leaves the R evaluation its input.
 fn geweke_full(model: &Model, file: &str, seed: u64) {
     let (mc, sc) = geweke_samples(model, 20_000, 5000, 45, 500, seed);
@@ -1587,6 +1669,13 @@ fn geweke_full_simulators_agree_tobit() {
     geweke_full(&tobit_model(), "geweke_samples_tobit.csv", 915);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "full size, nightly"]
+fn geweke_full_simulators_agree_aft() {
+    geweke_full(&aft_model(), "geweke_samples_aft.csv", 916);
+}
+
 fn write_csv(name: &str, lines: &[String]) {
     // The test binary's working directory is the crate, two levels below
     // the workspace target directory.
@@ -1604,11 +1693,12 @@ fn write_csv(name: &str, lines: &[String]) {
 #[cfg(feature = "experimental")]
 #[test]
 fn calibrated_configuration_list_is_current() {
-    let entries: [(&str, Model); 15] = [
+    let entries: [(&str, Model); 16] = [
         ("gaussian", gaussian_model()),
         ("probit", probit_model()),
         ("heteroscedastic", heteroscedastic_model()),
         ("tobit (experimental)", tobit_model()),
+        ("aft (experimental)", aft_model()),
         ("spherical metric", spherical_model()),
         ("categorical metric", categorical_model()),
         ("minkowski metric (experimental)", minkowski_model()),

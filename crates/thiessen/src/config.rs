@@ -34,6 +34,15 @@ pub enum Outcome {
     /// Chib (1992) augmentation. Experimental (`docs/experimental.md`).
     #[cfg(feature = "experimental")]
     Tobit(TobitParams),
+    /// ln T = f(x) + e, e ~ N(0, sigma^2), the lognormal accelerated
+    /// failure time model for a right-censored time-to-event response
+    /// (Wei 1992; the BART package's `abart`), fitted by censored-data
+    /// augmentation on the log scale. The event times and the event
+    /// indicator are data: the model is fitted through
+    /// [`fit_aft`](crate::fit_aft) or [`Sampler::aft`](crate::Sampler::aft).
+    /// Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    Aft(AftParams),
 }
 
 /// The stable variants plus the gated names, so a build without the
@@ -46,6 +55,7 @@ enum StableOutcome {
     Gaussian(GaussianParams),
     Probit(ProbitParams),
     Tobit(serde::de::IgnoredAny),
+    Aft(serde::de::IgnoredAny),
 }
 
 #[cfg(not(feature = "experimental"))]
@@ -58,6 +68,10 @@ impl TryFrom<StableOutcome> for Outcome {
             StableOutcome::Probit(params) => Ok(Outcome::Probit(params)),
             StableOutcome::Tobit(_) => Err(crate::error::Error::RequiresFeature {
                 item: "the `tobit` outcome".into(),
+                feature: "experimental",
+            }),
+            StableOutcome::Aft(_) => Err(crate::error::Error::RequiresFeature {
+                item: "the `aft` outcome".into(),
                 feature: "experimental",
             }),
         }
@@ -93,6 +107,13 @@ impl Outcome {
         })
     }
 
+    /// The AFT outcome with the default sigma^2 prior on the log scale;
+    /// the times and the event indicator are given at fit. Experimental.
+    #[cfg(feature = "experimental")]
+    pub fn aft() -> Self {
+        Outcome::Aft(AftParams::default())
+    }
+
     /// What the outcome does with sigma^2; scale validity derives from
     /// this value, never from a per-outcome table.
     pub(crate) fn sigma2_mode(&self) -> Sigma2Mode {
@@ -101,6 +122,8 @@ impl Outcome {
             Outcome::Probit(_) => Sigma2Mode::Fixed(1.0),
             #[cfg(feature = "experimental")]
             Outcome::Tobit(_) => Sigma2Mode::Sampled,
+            #[cfg(feature = "experimental")]
+            Outcome::Aft(_) => Sigma2Mode::Sampled,
         }
     }
 
@@ -111,6 +134,8 @@ impl Outcome {
             Outcome::Probit(_) => RequiredData::Binary,
             #[cfg(feature = "experimental")]
             Outcome::Tobit(_) => RequiredData::Continuous,
+            #[cfg(feature = "experimental")]
+            Outcome::Aft(_) => RequiredData::Continuous,
         }
     }
 }
@@ -176,6 +201,34 @@ impl Default for TobitParams {
         Self {
             lower: None,
             upper: None,
+            nu: defaults.nu,
+            q: defaults.q,
+        }
+    }
+}
+
+/// The AFT outcome's parameters: the sigma^2 prior on the log-time
+/// scale, folded onto the outcome because they are facts about the
+/// observation model; the times and the event indicator are data, not
+/// parameters. Experimental (`docs/experimental.md`).
+#[cfg(feature = "experimental")]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AftParams {
+    /// sigma^2 prior degrees of freedom nu on the log scale. Default 6.
+    /// A variance ensemble requires nu > 2.
+    pub nu: f64,
+    /// sigma^2 prior calibration quantile q, Pr(sigma < sigma_hat) = q.
+    /// Default 0.85.
+    pub q: f64,
+}
+
+#[cfg(feature = "experimental")]
+impl Default for AftParams {
+    fn default() -> Self {
+        let defaults = GaussianParams::default();
+        Self {
             nu: defaults.nu,
             q: defaults.q,
         }
@@ -565,6 +618,8 @@ impl Config {
             Outcome::Gaussian(params) => params.nu = nu,
             #[cfg(feature = "experimental")]
             Outcome::Tobit(params) => params.nu = nu,
+            #[cfg(feature = "experimental")]
+            Outcome::Aft(params) => params.nu = nu,
             _ => {}
         }
         self
@@ -578,6 +633,8 @@ impl Config {
             Outcome::Gaussian(params) => params.q = q,
             #[cfg(feature = "experimental")]
             Outcome::Tobit(params) => params.q = q,
+            #[cfg(feature = "experimental")]
+            Outcome::Aft(params) => params.q = q,
             _ => {}
         }
         self
@@ -708,6 +765,8 @@ impl Config {
             (Outcome::Gaussian(_), _) => "heteroscedastic",
             #[cfg(feature = "experimental")]
             (Outcome::Tobit(_), _) => "tobit",
+            #[cfg(feature = "experimental")]
+            (Outcome::Aft(_), _) => "aft",
         }
     }
 
@@ -744,6 +803,8 @@ impl Config {
             Outcome::Gaussian(params) => (params.nu, params.q),
             #[cfg(feature = "experimental")]
             Outcome::Tobit(params) => (params.nu, params.q),
+            #[cfg(feature = "experimental")]
+            Outcome::Aft(params) => (params.nu, params.q),
             Outcome::Probit(_) => {
                 let defaults = GaussianParams::default();
                 (defaults.nu, defaults.q)
@@ -793,6 +854,16 @@ impl Config {
             ));
         }
         match &self.outcome {
+            #[cfg(feature = "experimental")]
+            Outcome::Aft(params) => {
+                positive("nu", params.nu)?;
+                if !(params.q.is_finite() && params.q > 0.0 && params.q < 1.0) {
+                    return Err(invalid(
+                        "q",
+                        format!("must be in the open interval (0, 1), got {}", params.q),
+                    ));
+                }
+            }
             Outcome::Gaussian(params) => {
                 positive("nu", params.nu)?;
                 if !(params.q.is_finite() && params.q > 0.0 && params.q < 1.0) {

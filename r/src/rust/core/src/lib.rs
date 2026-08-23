@@ -129,7 +129,7 @@ mod tessellation;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg(feature = "experimental")]
-pub use config::{Basis, Inclusion, Membership, TobitParams};
+pub use config::{AftParams, Basis, Inclusion, Membership, TobitParams};
 pub use config::{
     CellParams, Config, GaussianParams, GeneralParams, GeometryParams, Outcome, ProbitParams,
     StructureParams, TermParams,
@@ -140,6 +140,8 @@ pub use fitted::{Fitted, Interval, Posterior};
 #[cfg(feature = "experimental")]
 pub use geometry::GowerKind;
 pub use geometry::Metric;
+#[cfg(feature = "experimental")]
+pub use models::fit_aft;
 pub use models::{fit, fit_with_progress};
 pub use rng::chain_seed;
 pub use sampler::Sampler;
