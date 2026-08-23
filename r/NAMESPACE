@@ -7,6 +7,7 @@ S3method(format,structure_params)
 S3method(format,term_params)
 S3method(format,thiessen_outcome)
 S3method(nobs,thiessen)
+S3method(plot,thiessen)
 S3method(posterior::as_draws_array,thiessen)
 S3method(posterior::as_draws_df,thiessen)
 S3method(posterior::nchains,thiessen)
@@ -47,6 +48,7 @@ export(thiessen_control)
 export(thiessen_diagnostics)
 export(thiessen_sampler)
 export(variable_inclusion)
+importFrom(graphics,plot)
 importFrom(rstantools,
   log_lik,
   posterior_epred,

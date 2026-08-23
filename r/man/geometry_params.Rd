@@ -11,7 +11,8 @@ geometry_params(metric = NULL, sigma_c = 0.8)
 list whose entries are \code{"euclidean"}, \code{"categorical"}, or
 \code{list(spherical = list(sphere = i))} for one coordinate of the sphere
 labelled \code{i}, its latitudes first and its longitude last, in radians.
-\code{NULL}, the default, is Euclidean on every column. Non-Euclidean
+\code{NULL}, the default, is Euclidean on every column. Entries are
+matched case-sensitively, so \code{"Euclidean"} is rejected. Non-Euclidean
 columns are not scaled.}
 
 \item{sigma_c}{Prior and proposal standard deviation sigma_c of a

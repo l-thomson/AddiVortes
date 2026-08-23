@@ -137,3 +137,30 @@ test_that("summary reports no sigma where the model has none", {
 
   expect_null(summary(fit)$sigma)
 })
+
+test_that("plot draws the traces and returns the fit invisibly", {
+  fixture <- small_fixture()
+  fit <- suppressWarnings(
+    thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 2)
+  )
+
+  grDevices::pdf(NULL)
+  on.exit(grDevices::dev.off())
+  returned <- withVisible(plot(fit))
+
+  expect_identical(returned$value, fit)
+  expect_false(returned$visible)
+})
+
+test_that("plot covers a model with no sigma", {
+  fixture <- small_fixture()
+  fit <- thiessen(
+    fixture$x, fixture$y,
+    small_control(variance_params = term_params(tessellations = 4)),
+    seed = 1
+  )
+
+  grDevices::pdf(NULL)
+  on.exit(grDevices::dev.off())
+  expect_no_error(plot(fit))
+})
