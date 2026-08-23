@@ -37,6 +37,7 @@ test_that("no constructor exists for a gated outcome", {
 
 test_that("a gated field fails to deserialise in the core", {
   gated_fields <- list(
+    '{"mean_params": {"geometry": {"membership": "soft"}}}',
     '{"mean_params": {"geometry": {"precision": [1.0]}}}',
     '{"mean_params": {"structure": {"inclusion": "uniform"}}}',
     '{"mean_params": {"cell": {"basis": "linear"}}}'

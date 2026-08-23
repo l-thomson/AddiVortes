@@ -62,6 +62,17 @@
 //! names the feature. The table of experimental items and their status is
 //! `docs/experimental.md` in the repository.
 //!
+//! An experimental item is stabilised when it has met its acceptance
+//! criteria (the component conformance tests, or the model-grade battery
+//! where it changes the posterior), has shipped behind the feature for at
+//! least one minor release, has a page under `docs/` stating the model
+//! and its calibration evidence, and has a stabilisation note in the
+//! changelog. The stabilising pull request removes the gate, marks the
+//! item's row in `docs/experimental.md` stabilised with the version, and
+//! is a minor version bump. The method's authors are informed of a
+//! stabilisation; their reply is not a gate. This rule is stated only
+//! here; graduation is a pull request against it.
+//!
 //! The supported-likelihood boundary (which observation models the crate
 //! can carry, and why) and the validation claim over the configuration
 //! surface are the sections of those names in `docs/models.md`, with the
