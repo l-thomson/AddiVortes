@@ -21,6 +21,10 @@ pub struct Tessellation {
     /// Row-major b by d slopes of the linear cell basis (scaled space);
     /// empty under the constant basis.
     pub(crate) betas: Vec<f64>,
+    /// The soft-membership kernel bandwidth (scaled space); `None` under
+    /// hard membership. Experimental (`docs/experimental.md`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) tau: Option<f64>,
 }
 
 impl Tessellation {
@@ -70,10 +74,44 @@ impl Tessellation {
         (best_cell, best)
     }
 
+    /// The soft-membership kernel bandwidth; `None` under hard
+    /// membership.
+    #[cfg(feature = "experimental")]
+    pub fn bandwidth(&self) -> Option<f64> {
+        self.tau
+    }
+
     /// The value of the tessellation at `row`: the mean of the cell `row`
-    /// falls in, tilted by the cell's slopes under the linear basis.
+    /// falls in, tilted by the cell's slopes under the linear basis;
+    /// under soft membership the kernel-weighted sum of the cell means.
     pub(crate) fn value_at(&self, row: &[f64], geometry: &Geometry) -> f64 {
+        if let Some(tau) = self.tau {
+            return self.soft_value_at(row, geometry, tau);
+        }
         self.value_in_cell(self.nearest(row, geometry).0, row)
+    }
+
+    /// The kernel-weighted sum of the cell means at `row`: weights
+    /// proportional to exp(-key / (2 tau^2)) over the centres, computed
+    /// from the smallest key so the nearest centre's factor is 1.
+    fn soft_value_at(&self, row: &[f64], geometry: &Geometry, tau: f64) -> f64 {
+        let b = self.n_cells();
+        let mut keys = Vec::with_capacity(b);
+        let mut min = f64::INFINITY;
+        for k in 0..b {
+            let key = self.key(row, k, geometry);
+            min = min.min(key);
+            keys.push(key);
+        }
+        let scale = 1.0 / (2.0 * tau * tau);
+        let mut total = 0.0;
+        let mut value = 0.0;
+        for (key, &mu) in keys.iter().zip(&self.mus) {
+            let g = crate::maths::exp(-(key - min) * scale);
+            total += g;
+            value += g * mu;
+        }
+        value / total
     }
 
     /// The value cell `cell` contributes at `row`: the cell mean, plus,
@@ -100,6 +138,8 @@ struct TessellationParts {
     mus: Vec<f64>,
     #[serde(default)]
     betas: Vec<f64>,
+    #[serde(default)]
+    tau: Option<f64>,
 }
 
 impl TryFrom<TessellationParts> for Tessellation {
@@ -139,11 +179,27 @@ impl TryFrom<TessellationParts> for Tessellation {
                 return Err(bad("tessellation dimensions must be distinct"));
             }
         }
+        if let Some(tau) = parts.tau {
+            #[cfg(not(feature = "experimental"))]
+            {
+                let _ = tau;
+                return Err(bad(
+                    "the soft-membership bandwidth needs the experimental feature",
+                ));
+            }
+            #[cfg(feature = "experimental")]
+            if !(tau.is_finite() && tau > 0.0) {
+                return Err(bad(
+                    "the soft-membership bandwidth must be finite and positive",
+                ));
+            }
+        }
         Ok(Self {
             centres: parts.centres,
             dims: parts.dims,
             mus: parts.mus,
             betas: parts.betas,
+            tau: parts.tau,
         })
     }
 }
@@ -164,13 +220,17 @@ pub(crate) enum Delta {
 }
 
 /// Cached nearest-centre assignment of every observation, with the winning
-/// key, for one tessellation.
+/// key, for one tessellation; under soft membership also every key.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Assignment {
     /// Cell index per observation.
     pub(crate) cells: Vec<usize>,
     /// Squared distance to the assigned centre per observation.
     keys: Vec<f64>,
+    /// Column-major b by n keys of every observation against every
+    /// centre; `None` under hard membership, whose moves need only the
+    /// winner.
+    soft: Option<Vec<f64>>,
 }
 
 impl Assignment {
@@ -179,12 +239,64 @@ impl Assignment {
         let n = x.n_rows();
         let mut cells = Vec::with_capacity(n);
         let mut keys = Vec::with_capacity(n);
-        for i in 0..n {
-            let (cell, key) = t.nearest(x.row(i), geometry);
-            cells.push(cell);
-            keys.push(key);
+        if t.tau.is_none() {
+            for i in 0..n {
+                let (cell, key) = t.nearest(x.row(i), geometry);
+                cells.push(cell);
+                keys.push(key);
+            }
+            return Self {
+                cells,
+                keys,
+                soft: None,
+            };
         }
-        Self { cells, keys }
+        let b = t.n_cells();
+        let mut soft = vec![0.0; b * n];
+        for i in 0..n {
+            let row = x.row(i);
+            let mut best = f64::INFINITY;
+            let mut best_cell = 0;
+            for k in 0..b {
+                let key = t.key(row, k, geometry);
+                soft[k * n + i] = key;
+                if key < best {
+                    best = key;
+                    best_cell = k;
+                }
+            }
+            cells.push(best_cell);
+            keys.push(best);
+        }
+        Self {
+            cells,
+            keys,
+            soft: Some(soft),
+        }
+    }
+
+    /// Row-major n by b kernel weights at bandwidth `tau`: per
+    /// observation exp(-(key - winning key) / (2 tau^2)) over the
+    /// centres, normalised, so the nearest centre's factor is 1.
+    pub(crate) fn soft_weights(&self, tau: f64) -> Vec<f64> {
+        let keys = self.soft.as_ref().expect("soft keys are cached");
+        let n = self.cells.len();
+        let b = keys.len() / n;
+        let scale = 1.0 / (2.0 * tau * tau);
+        let mut weights = vec![0.0; n * b];
+        for i in 0..n {
+            let min = self.keys[i];
+            let mut total = 0.0;
+            for k in 0..b {
+                let g = crate::maths::exp(-(keys[k * n + i] - min) * scale);
+                weights[i * b + k] = g;
+                total += g;
+            }
+            for w in &mut weights[i * b..(i + 1) * b] {
+                *w /= total;
+            }
+        }
+        weights
     }
 
     /// Assignment under `new`, which differs from the tessellation this
@@ -205,8 +317,14 @@ impl Assignment {
             Delta::CentreAdded => {
                 let added = new.n_cells() - 1;
                 let mut out = self.clone();
+                if let Some(soft) = &mut out.soft {
+                    soft.reserve(n);
+                }
                 for i in 0..n {
                     let key = new.key(x.row(i), added, geometry);
+                    if let Some(soft) = &mut out.soft {
+                        soft.push(key);
+                    }
                     if key < out.keys[i] {
                         out.keys[i] = key;
                         out.cells[i] = added;
@@ -218,12 +336,15 @@ impl Assignment {
                 let mut out = self.clone();
                 for i in 0..n {
                     let row = x.row(i);
+                    let key = new.key(row, moved, geometry);
+                    if let Some(soft) = &mut out.soft {
+                        soft[moved * n + i] = key;
+                    }
                     if self.cells[i] == moved {
                         let (cell, key) = new.nearest(row, geometry);
                         out.cells[i] = cell;
                         out.keys[i] = key;
                     } else {
-                        let key = new.key(row, moved, geometry);
                         // Strict comparison keeps the lowest-index tie rule:
                         // `moved` wins only when nearer than the incumbent
                         // or equal with a lower index.
@@ -237,6 +358,9 @@ impl Assignment {
             }
             Delta::CentreRemoved(removed) => {
                 let mut out = self.clone();
+                if let Some(soft) = &mut out.soft {
+                    soft.drain(removed * n..(removed + 1) * n);
+                }
                 for i in 0..n {
                     if self.cells[i] == removed {
                         let (cell, key) = new.nearest(x.row(i), geometry);
@@ -277,6 +401,7 @@ mod tests {
             dims,
             mus,
             betas: Vec::new(),
+            tau: None,
         }
     }
 
@@ -292,6 +417,7 @@ mod tests {
             dims: vec![0],
             mus: vec![1.0, 2.0, 3.0],
             betas: Vec::new(),
+            tau: None,
         };
         assert_eq!(t.nearest(&[0.0], &g), (0, 0.0));
         assert_eq!(t.nearest(&[0.75], &g), (2, 0.0625));
@@ -355,12 +481,128 @@ mod tests {
     }
 
     #[test]
+    fn soft_incremental_updates_equal_full_recompute() {
+        let mut rng = chain_rng(19);
+        for _ in 0..200 {
+            let p = 1 + uniform_index(4, &mut rng);
+            let d = 1 + uniform_index(p, &mut rng);
+            let b = 1 + uniform_index(5, &mut rng);
+            let x = random_data(2 + uniform_index(30, &mut rng), p, &mut rng);
+            let g = Geometry::euclidean(p);
+            let mut t = random_tessellation(p, b, d, &mut rng);
+            t.tau = Some(0.3);
+            let cache = Assignment::full(&x, &t, &g);
+
+            let mut added = t.clone();
+            added
+                .centres
+                .extend((0..d).map(|_| 0.5 * standard_normal(&mut rng)));
+            added.mus.push(0.0);
+            assert_eq!(
+                cache.updated(&x, &added, Delta::CentreAdded, &g),
+                Assignment::full(&x, &added, &g)
+            );
+
+            let moved_index = uniform_index(b, &mut rng);
+            let mut moved = t.clone();
+            for v in &mut moved.centres[moved_index * d..(moved_index + 1) * d] {
+                *v = 0.5 * standard_normal(&mut rng);
+            }
+            assert_eq!(
+                cache.updated(&x, &moved, Delta::CentreMoved(moved_index), &g),
+                Assignment::full(&x, &moved, &g)
+            );
+
+            if b >= 2 {
+                let removed_index = uniform_index(b, &mut rng);
+                let mut removed = t.clone();
+                removed
+                    .centres
+                    .drain(removed_index * d..(removed_index + 1) * d);
+                removed.mus.remove(removed_index);
+                assert_eq!(
+                    cache.updated(&x, &removed, Delta::CentreRemoved(removed_index), &g),
+                    Assignment::full(&x, &removed, &g)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn soft_weights_reproduce_the_soft_value() {
+        let mut rng = chain_rng(23);
+        for _ in 0..100 {
+            let p = 1 + uniform_index(3, &mut rng);
+            let d = 1 + uniform_index(p, &mut rng);
+            let b = 1 + uniform_index(5, &mut rng);
+            let n = 2 + uniform_index(20, &mut rng);
+            let x = random_data(n, p, &mut rng);
+            let g = Geometry::euclidean(p);
+            let mut t = random_tessellation(p, b, d, &mut rng);
+            let tau = 0.1 + 0.5 * standard_normal(&mut rng).abs();
+            t.tau = Some(tau);
+            let cache = Assignment::full(&x, &t, &g);
+            let weights = cache.soft_weights(tau);
+            for i in 0..n {
+                let row = &weights[i * b..(i + 1) * b];
+                let total: f64 = row.iter().sum();
+                assert!((total - 1.0).abs() < 1e-12, "{total}");
+                // The hard winner carries the largest weight.
+                let winner = cache.cells[i];
+                assert!(row.iter().all(|&w| w <= row[winner] + 1e-15));
+                let value: f64 = row.iter().zip(&t.mus).map(|(&w, &mu)| w * mu).sum();
+                let direct = t.value_at(x.row(i), &g);
+                assert!((value - direct).abs() < 1e-12, "{value} vs {direct}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_tiny_bandwidth_recovers_the_hard_value() {
+        let g = Geometry::euclidean(1);
+        let mut t = Tessellation {
+            centres: vec![0.0, 1.0],
+            dims: vec![0],
+            mus: vec![2.0, -3.0],
+            betas: Vec::new(),
+            tau: Some(1e-3),
+        };
+        assert!((t.value_at(&[0.1], &g) - 2.0).abs() < 1e-9);
+        assert!((t.value_at(&[0.9], &g) + 3.0).abs() < 1e-9);
+        // A large bandwidth approaches the unweighted mean.
+        t.tau = Some(1e3);
+        assert!((t.value_at(&[0.1], &g) + 0.5).abs() < 1e-4);
+    }
+
+    #[cfg(feature = "experimental")]
+    #[test]
+    fn serde_keeps_the_bandwidth() {
+        let t = Tessellation {
+            centres: vec![0.1, 0.2],
+            dims: vec![0],
+            mus: vec![1.0, -1.0],
+            betas: Vec::new(),
+            tau: Some(0.2),
+        };
+        let json = serde_json::to_string(&t).unwrap();
+        assert!(json.contains(r#""tau":0.2"#), "{json}");
+        assert_eq!(serde_json::from_str::<Tessellation>(&json).unwrap(), t);
+        for bad in [
+            r#"{"centres":[0.1],"dims":[0],"mus":[1.0],"tau":0.0}"#,
+            r#"{"centres":[0.1],"dims":[0],"mus":[1.0],"tau":-0.2}"#,
+        ] {
+            assert!(serde_json::from_str::<Tessellation>(bad).is_err());
+        }
+    }
+
+    #[test]
     fn serde_validates() {
         let t = Tessellation {
             centres: vec![0.1, 0.2],
             dims: vec![2],
             mus: vec![1.0, -1.0],
             betas: Vec::new(),
+            tau: None,
         };
         let json = serde_json::to_string(&t).unwrap();
         assert_eq!(serde_json::from_str::<Tessellation>(&json).unwrap(), t);

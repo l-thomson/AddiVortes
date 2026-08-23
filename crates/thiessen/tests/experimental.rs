@@ -68,6 +68,13 @@ fn the_inclusion_field_is_rejected() {
 }
 
 #[test]
+fn a_saved_bandwidth_is_rejected() {
+    let json = r#"{"centres":[0.1],"dims":[0],"mus":[1.0],"tau":0.2}"#;
+    let err = serde_json::from_str::<thiessen::Tessellation>(json).unwrap_err();
+    assert!(err.to_string().contains("experimental"), "{err}");
+}
+
+#[test]
 fn the_basis_field_is_rejected() {
     let json = r#"{"mean_params": {"cell": {"basis": "linear"}}}"#;
     let err = serde_json::from_str::<Config>(json).unwrap_err();

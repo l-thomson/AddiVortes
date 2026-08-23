@@ -71,6 +71,16 @@ says "Sampled values changed" with the reason.
   precedent). Needs min-max scaled columns; the variance ensemble's
   inverse-gamma cells keep the constant basis. Outside the semver
   promise (docs/experimental.md).
+- (experimental) `GeometryParams::membership` with `Membership::Soft` on
+  the mean slot: kernel-weighted membership over the tessellation's
+  centres, exp(-d^2 / (2 tau^2)) normalised, with a per-tessellation
+  bandwidth tau ~ Exponential(rate) updated by a Metropolis step on
+  ln tau (Linero and Yang 2018 and the SoftBart package for the
+  precedent). The cell values are drawn jointly from the b-dimensional
+  conjugate normal and the structural moves integrate them out; the
+  empty-cell rule still counts nearest-centre members. Constant cell
+  basis and constant spread only; the probit model composes. Outside
+  the semver promise (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled
