@@ -114,7 +114,7 @@ impl OutcomeModel for ProbitOutcome {
         self.labels = y.to_vec();
     }
 
-    fn draw_extra(&mut self, _rng: &mut Rng) {}
+    fn draw_extra(&mut self, _y: &[f64], _total: &[f64], _precision: &[f64], _rng: &mut Rng) {}
 
     /// z_i ~ N(c + f(x_i), 1) truncated to z_i > 0 when y_i = 1 and
     /// z_i < 0 when y_i = 0; the working response is z_i - c. The

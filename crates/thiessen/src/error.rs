@@ -144,6 +144,15 @@ pub enum Error {
         /// Zero-based row.
         row: usize,
     },
+    /// An ordinal response value is not one of the category codes.
+    #[cfg(feature = "experimental")]
+    #[error("response value in row {row} is not an integer category code below {categories}")]
+    InvalidOrdinalLabel {
+        /// Zero-based row.
+        row: usize,
+        /// The category count K of the configuration.
+        categories: usize,
+    },
     /// A value in a categorical column is not an integer level code.
     #[error("design value at row {row}, column {col} is not an integer level code")]
     InvalidCategoryCode {

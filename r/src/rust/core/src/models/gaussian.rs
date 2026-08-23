@@ -58,7 +58,7 @@ impl OutcomeModel for GaussianOutcome {
 
     fn init(&mut self, _y: &[f64]) {}
 
-    fn draw_extra(&mut self, _rng: &mut Rng) {}
+    fn draw_extra(&mut self, _y: &[f64], _total: &[f64], _precision: &[f64], _rng: &mut Rng) {}
 
     fn working_response(
         &mut self,
@@ -91,7 +91,7 @@ mod tests {
         let mut outcome = GaussianOutcome;
         let mut rng = crate::rng::chain_rng(3);
         outcome.init(&[0.1, -0.1]);
-        outcome.draw_extra(&mut rng);
+        outcome.draw_extra(&[0.1, -0.1], &[0.4, 0.4], &[1.0, 1.0], &mut rng);
         let mut y = vec![0.1, -0.1];
         outcome.working_response(&[0.4, 0.4], &[1.0, 1.0], &mut y, &mut rng);
         assert_eq!(y, vec![0.1, -0.1]);

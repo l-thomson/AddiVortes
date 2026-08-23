@@ -162,7 +162,7 @@ impl OutcomeModel for AftOutcome {
             .collect();
     }
 
-    fn draw_extra(&mut self, _rng: &mut Rng) {}
+    fn draw_extra(&mut self, _y: &[f64], _total: &[f64], _precision: &[f64], _rng: &mut Rng) {}
 
     /// The shared censored refresh over the per-row bounds; no randomness
     /// is consumed for all-event data.

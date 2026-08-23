@@ -28,6 +28,10 @@ pub(crate) enum Breakage {
     /// The determinant term dropped from the soft-membership integrated
     /// likelihood, mispricing the structural and bandwidth moves.
     DroppedSoftDeterminant,
+    /// The prior ratio dropped from the ordinal cutpoint acceptance, so
+    /// the cutpoint chain targets the collapsed likelihood alone.
+    #[cfg(feature = "experimental")]
+    DroppedCutpointPrior,
 }
 
 /// The shift the defect adds to ln alpha for move `m`; `normaliser` is
@@ -68,6 +72,10 @@ pub(crate) fn log_alpha_shift(
         Breakage::DroppedTiltDeterminant => 0.0,
         // Acts inside the soft-membership marginal, not here.
         Breakage::DroppedSoftDeterminant => 0.0,
+        // The defect sits in the ordinal cutpoint acceptance, not in a
+        // structural move.
+        #[cfg(feature = "experimental")]
+        Breakage::DroppedCutpointPrior => 0.0,
     }
 }
 

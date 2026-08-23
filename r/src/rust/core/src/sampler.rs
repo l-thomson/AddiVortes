@@ -27,6 +27,8 @@ use crate::models::aft::AftOutcome;
 use crate::models::gaussian::GaussianOutcome;
 #[cfg(feature = "experimental")]
 use crate::models::interval_censored::IntervalCensoredOutcome;
+#[cfg(feature = "experimental")]
+use crate::models::ordinal::OrdinalOutcome;
 use crate::models::probit::ProbitOutcome;
 #[cfg(feature = "experimental")]
 use crate::models::tobit::TobitOutcome;
@@ -49,6 +51,8 @@ enum Outcome {
     Aft(AftOutcome),
     #[cfg(feature = "experimental")]
     IntervalCensored(IntervalCensoredOutcome),
+    #[cfg(feature = "experimental")]
+    Ordinal(OrdinalOutcome),
 }
 
 /// Dispatch one method over every variant.
@@ -63,6 +67,8 @@ macro_rules! each_outcome {
             Outcome::Aft($outcome) => $body,
             #[cfg(feature = "experimental")]
             Outcome::IntervalCensored($outcome) => $body,
+            #[cfg(feature = "experimental")]
+            Outcome::Ordinal($outcome) => $body,
         }
     };
 }
@@ -94,7 +100,25 @@ impl Outcome {
             Outcome::Aft(outcome) => Some(outcome.observed()),
             #[cfg(feature = "experimental")]
             Outcome::IntervalCensored(outcome) => Some(outcome.observed()),
+            #[cfg(feature = "experimental")]
+            Outcome::Ordinal(outcome) => Some(outcome.labels()),
             Outcome::Gaussian(_) => None,
+        }
+    }
+
+    #[cfg(feature = "experimental")]
+    fn as_ordinal(&self) -> Option<&OrdinalOutcome> {
+        match self {
+            Outcome::Ordinal(outcome) => Some(outcome),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "experimental")]
+    fn as_ordinal_mut(&mut self) -> Option<&mut OrdinalOutcome> {
+        match self {
+            Outcome::Ordinal(outcome) => Some(outcome),
+            _ => None,
         }
     }
 
@@ -124,8 +148,8 @@ impl OutcomeModel for Outcome {
         each_outcome!(self, outcome => outcome.init(y))
     }
 
-    fn draw_extra(&mut self, rng: &mut Rng) {
-        each_outcome!(self, outcome => outcome.draw_extra(rng))
+    fn draw_extra(&mut self, y: &[f64], total: &[f64], precision: &[f64], rng: &mut Rng) {
+        each_outcome!(self, outcome => outcome.draw_extra(y, total, precision, rng))
     }
 
     fn working_response(&mut self, total: &[f64], precision: &[f64], y: &mut [f64], rng: &mut Rng) {
@@ -320,6 +344,18 @@ fn interval_working(lower: &[f64], upper: &[f64]) -> Result<Vec<f64>> {
             }
         })
         .collect()
+}
+
+/// Validated ordinal codes: integers in 0..categories.
+#[cfg(feature = "experimental")]
+fn validate_ordinal_labels(y: &[f64], categories: usize) -> Result<()> {
+    if let Some(row) = y
+        .iter()
+        .position(|&v| !(v.fract() == 0.0 && v >= 0.0 && v < categories as f64))
+    {
+        return Err(Error::InvalidOrdinalLabel { row, categories });
+    }
+    Ok(())
 }
 
 /// The configuration names the AFT outcome, which the survival entry
@@ -518,10 +554,17 @@ impl Sampler {
                 format!("must be finite and positive, got {lambda}"),
             ));
         }
-        if matches!(config.outcome, OutcomeConfig::Probit(_)) && config.offset().is_none() {
+        #[cfg(feature = "experimental")]
+        let needs_offset = matches!(
+            config.outcome,
+            OutcomeConfig::Probit(_) | OutcomeConfig::Ordinal(_)
+        );
+        #[cfg(not(feature = "experimental"))]
+        let needs_offset = matches!(config.outcome, OutcomeConfig::Probit(_));
+        if needs_offset && config.offset().is_none() {
             return Err(crate::error::invalid(
                 "offset",
-                "must be set under the pinned prior of the probit model",
+                "must be set under the pinned prior of a model with an offset",
             ));
         }
         Self::build(
@@ -577,6 +620,10 @@ impl Sampler {
             }
         }
         #[cfg(feature = "experimental")]
+        if let OutcomeConfig::Ordinal(params) = &config.outcome {
+            validate_ordinal_labels(y, params.categories)?;
+        }
+        #[cfg(feature = "experimental")]
         if matches!(config.outcome, OutcomeConfig::Aft(_)) && !matches!(extra, Extra::Events(_)) {
             return Err(crate::error::invalid(
                 "outcome",
@@ -610,23 +657,32 @@ impl Sampler {
         let n = x.n_rows();
 
         // Response scaling, lambda and the initial sigma^2 at the model
-        // boundary: the probit model keeps the response unscaled and its
-        // initial scale is the mode's fixed value.
+        // boundary: the probit and ordinal models keep the response
+        // unscaled and their initial scale is the mode's fixed value.
         let fixed_scale = match config.outcome.sigma2_mode() {
             Sigma2Mode::Fixed(value) => value,
             Sigma2Mode::Sampled | Sigma2Mode::Absent => 1.0,
         };
+        #[cfg(feature = "experimental")]
+        let latent_label = |outcome: &OutcomeConfig| {
+            matches!(
+                outcome,
+                OutcomeConfig::Probit(_) | OutcomeConfig::Ordinal(_)
+            )
+        };
+        #[cfg(not(feature = "experimental"))]
+        let latent_label = |outcome: &OutcomeConfig| matches!(outcome, OutcomeConfig::Probit(_));
         let (nu, q) = config.sigma2_prior();
         let (scaler, x_scaled, y_scaled, lambda, sigma_sq) = match (&config.outcome, pinned_lambda)
         {
-            (OutcomeConfig::Probit(_), Some(lambda)) => (
+            (outcome, Some(lambda)) if latent_label(outcome) => (
                 Scaler::identity(p),
                 x.clone(),
                 y.to_vec(),
                 lambda,
                 fixed_scale,
             ),
-            (OutcomeConfig::Probit(_), None) => {
+            (outcome, None) if latent_label(outcome) => {
                 let (scaler, x_scaled) = Scaler::fit_x(x, &geometry);
                 (scaler, x_scaled, y.to_vec(), 1.0, fixed_scale)
             }
@@ -658,6 +714,8 @@ impl Sampler {
             OutcomeConfig::Aft(_) => AftOutcome::CELL_PRIOR_HALF_WIDTH,
             #[cfg(feature = "experimental")]
             OutcomeConfig::IntervalCensored(_) => IntervalCensoredOutcome::CELL_PRIOR_HALF_WIDTH,
+            #[cfg(feature = "experimental")]
+            OutcomeConfig::Ordinal(_) => OrdinalOutcome::CELL_PRIOR_HALF_WIDTH,
         };
         let sigma_mu_sq = scaler::sigma_mu_sq(half_width, config.mean_params.k, m);
         // Both slots declare identical geometry and structure, so the
@@ -702,11 +760,13 @@ impl Sampler {
         let mean_y = y_scaled.iter().sum::<f64>() / n as f64;
 
         // Initial state: m single-cell tessellations on one covariate each,
-        // every cell mean ybar / m so the ensemble fit starts at ybar; under
-        // the probit model f starts at 0 and the offset carries the mean.
-        let (cell_value, total) = match &config.outcome {
-            OutcomeConfig::Probit(_) => (0.0, 0.0),
-            _ => (mean_y / m as f64, mean_y),
+        // every cell mean ybar / m so the ensemble fit starts at ybar;
+        // under the probit and ordinal models f starts at 0 and the
+        // offset carries the mean.
+        let (cell_value, total) = if latent_label(&config.outcome) {
+            (0.0, 0.0)
+        } else {
+            (mean_y / m as f64, mean_y)
         };
         let mean = Ensemble::new(
             GaussianCells {
@@ -732,6 +792,16 @@ impl Sampler {
                 config.set_offset(outcome.offset());
                 outcome.init(&y_scaled);
                 Outcome::Probit(outcome)
+            }
+            // The offset and the initial cutpoints resolve from the
+            // marginal category shares inside init.
+            #[cfg(feature = "experimental")]
+            OutcomeConfig::Ordinal(params) => {
+                let mut outcome =
+                    OrdinalOutcome::new(params.categories, config.offset(), params.cutpoint_sd);
+                outcome.init(&y_scaled);
+                config.set_offset(outcome.offset());
+                Outcome::Ordinal(outcome)
             }
             // The limits cross to the scaled response space by the same
             // frozen affine map as the response, so a value at a limit
@@ -810,10 +880,12 @@ impl Sampler {
         };
         // Under a censored outcome the vector starts at the working
         // response, censored rows at a value inside their bounds, a
-        // valid latent initialisation.
-        let y = match &config.outcome {
-            OutcomeConfig::Probit(_) => vec![0.0; n],
-            _ => y_scaled,
+        // valid latent initialisation; under the probit and ordinal
+        // models at 0, refreshed before anything conditions on it.
+        let y = if latent_label(&config.outcome) {
+            vec![0.0; n]
+        } else {
+            y_scaled
         };
 
         Ok(Self {
@@ -940,7 +1012,8 @@ impl Sampler {
                 // conditions on latents drawn from their conditional; a
                 // response replacement is thereby repaired before it is
                 // conditioned on.
-                self.outcome.draw_extra(&mut self.rng);
+                self.outcome
+                    .draw_extra(&self.y, self.mean.total(), &self.precision, &mut self.rng);
                 self.outcome.working_response(
                     self.mean.total(),
                     &self.precision,
@@ -986,7 +1059,8 @@ impl Sampler {
             // conditional; a response replacement is thereby repaired
             // before it is conditioned on.
             Sigma2Mode::Sampled => {
-                self.outcome.draw_extra(&mut self.rng);
+                self.outcome
+                    .draw_extra(&self.y, self.mean.total(), &self.precision, &mut self.rng);
                 if !prior_only {
                     self.outcome.working_response(
                         self.mean.total(),
@@ -1027,7 +1101,13 @@ impl Sampler {
                 if prior_only {
                     return;
                 }
-                self.outcome.draw_extra(&mut self.rng);
+                #[cfg(all(test, feature = "experimental"))]
+                if let Outcome::Ordinal(outcome) = &mut self.outcome {
+                    outcome.drop_cutpoint_prior =
+                        self.breakage == crate::broken::Breakage::DroppedCutpointPrior;
+                }
+                self.outcome
+                    .draw_extra(&self.y, self.mean.total(), &self.precision, &mut self.rng);
                 self.outcome.working_response(
                     self.mean.total(),
                     &self.precision,
@@ -1045,8 +1125,33 @@ impl Sampler {
             && self.variance.is_none())
         .then_some(self.sigma_sq);
         let variance = self.variance.as_ref().map(|v| v.tessellations().to_vec());
-        self.kept
-            .push(sigma_sq, self.mean.tessellations().to_vec(), variance);
+        #[cfg(feature = "experimental")]
+        let cutpoints = self
+            .outcome
+            .as_ordinal()
+            .map(|o| o.free_cutpoints())
+            .filter(|free| !free.is_empty())
+            .map(<[f64]>::to_vec);
+        #[cfg(not(feature = "experimental"))]
+        let cutpoints = None;
+        self.kept.push(
+            sigma_sq,
+            self.mean.tessellations().to_vec(),
+            variance,
+            cutpoints,
+        );
+    }
+
+    /// The current interior cutpoints of the ordinal model, increasing;
+    /// empty at K = 2 and under another outcome. Experimental
+    /// (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn cutpoints(&self) -> &[f64] {
+        self.outcome
+            .as_ordinal()
+            .map(OrdinalOutcome::free_cutpoints)
+            .unwrap_or(&[])
     }
 
     /// Number of draws kept so far.
@@ -1076,6 +1181,17 @@ impl Sampler {
                 return Err(Error::InvalidLabel { row });
             }
             outcome.set_labels(y);
+            return Ok(());
+        }
+        // The offset and the cutpoints stand across a replacement, so
+        // valid codes suffice: an empty category only removes likelihood
+        // terms.
+        #[cfg(feature = "experimental")]
+        if let OutcomeConfig::Ordinal(params) = &self.config.outcome {
+            validate_ordinal_labels(y, params.categories)?;
+            if let Some(outcome) = self.outcome.as_ordinal_mut() {
+                outcome.set_labels(y);
+            }
             return Ok(());
         }
         #[cfg(feature = "experimental")]
@@ -1264,6 +1380,10 @@ impl Sampler {
     }
 
     fn offset(&self) -> f64 {
+        #[cfg(feature = "experimental")]
+        if let Some(outcome) = self.outcome.as_ordinal() {
+            return outcome.offset();
+        }
         self.outcome.as_probit().map_or(0.0, ProbitOutcome::offset)
     }
 
@@ -1277,17 +1397,38 @@ impl Sampler {
             return Err(crate::error::invalid("draws", "no draws were kept"));
         }
         let n = self.y.len();
-        // The posterior-mean prediction on the response scale: f, or
-        // Phi(c + f) under the probit model.
+        // The posterior-mean prediction on the response scale: f,
+        // Phi(c + f) under the probit model, or the expected category
+        // sum_k Phi(c + f - gamma_k) under the ordinal model.
         let offset = self.offset();
         let probit = self.outcome.as_probit().is_some();
+        #[cfg(feature = "experimental")]
+        let ordinal = self.outcome.as_ordinal().is_some();
+        #[cfg(not(feature = "experimental"))]
+        let ordinal = false;
         let mut mean_prediction = vec![0.0; n];
         let geometry = self.mean.geometry();
-        for draw in self.kept.tessellations() {
+        for (d, draw) in self.kept.tessellations().iter().enumerate() {
+            #[cfg(feature = "experimental")]
+            let free_cutpoints: &[f64] = if ordinal {
+                self.kept.cutpoints().get(d).map_or(&[], Vec::as_slice)
+            } else {
+                &[]
+            };
+            #[cfg(not(feature = "experimental"))]
+            let free_cutpoints: &[f64] = &[];
+            let _ = d;
             for (i, slot) in mean_prediction.iter_mut().enumerate() {
                 let row = self.x.row(i);
                 let f: f64 = draw.iter().map(|t| t.value_at(row, geometry)).sum();
-                *slot += if probit {
+                *slot += if ordinal {
+                    let latent = f + offset;
+                    maths::normal_cdf(latent)
+                        + free_cutpoints
+                            .iter()
+                            .map(|&g| maths::normal_cdf(latent - g))
+                            .sum::<f64>()
+                } else if probit {
                     maths::normal_cdf(f + offset)
                 } else {
                     f
