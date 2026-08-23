@@ -128,6 +128,22 @@ pub enum Error {
         /// Zero-based row.
         row: usize,
     },
+    /// The lower and the upper bound vectors differ in length.
+    #[cfg(feature = "experimental")]
+    #[error("lower bounds have {lower} rows but the upper bounds have {upper}")]
+    BoundCountMismatch {
+        /// Length of the lower bounds.
+        lower: usize,
+        /// Length of the upper bounds.
+        upper: usize,
+    },
+    /// A pair of censoring bounds does not form a valid interval.
+    #[cfg(feature = "experimental")]
+    #[error("censoring interval at row {row} is not valid")]
+    InvalidInterval {
+        /// Zero-based row.
+        row: usize,
+    },
     /// A value in a categorical column is not an integer level code.
     #[error("design value at row {row}, column {col} is not an integer level code")]
     InvalidCategoryCode {

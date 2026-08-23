@@ -1,8 +1,9 @@
 //! The shared machinery of the censored latent-normal outcomes: a
 //! truncation bound per training row on the scaled response scale, and
 //! the truncated-normal refresh of the censored rows each sweep. The
-//! tobit model derives its bounds from two shared limits and the AFT
-//! model from each row's own censoring time; the refresh is the same
+//! tobit model derives its bounds from two shared limits, the AFT
+//! model from each row's own censoring time and the interval-censored
+//! model from each row's own pair of bounds; the refresh is the same
 //! draw either way (Robert 1995 rejection for the truncated normal).
 
 use crate::rng::{self, Rng};
@@ -16,6 +17,8 @@ pub(crate) enum Bound {
     Below(f64),
     /// The latent lies at or above the value (censored above).
     Above(f64),
+    /// The latent lies between the two values (interval-censored).
+    Between(f64, f64),
 }
 
 /// Refresh the latent of each censored row from N(f_i, 1 / w_i)
@@ -41,6 +44,15 @@ pub(crate) fn refresh(
                 let sd = 1.0 / w.sqrt();
                 *slot = f + sd * rng::truncated_standard_normal_above((limit - f) / sd, rng);
             }
+            Bound::Between(lower, upper) => {
+                let sd = 1.0 / w.sqrt();
+                *slot = f + sd
+                    * rng::truncated_standard_normal_between(
+                        (lower - f) / sd,
+                        (upper - f) / sd,
+                        rng,
+                    );
+            }
         }
     }
 }
@@ -57,15 +69,17 @@ mod tests {
             Bound::Observed,
             Bound::Below(-0.2),
             Bound::Above(0.3),
+            Bound::Between(-0.1, 0.2),
             Bound::Observed,
         ];
-        let mut y = [0.1, -0.2, 0.3, -0.05];
+        let mut y = [0.1, -0.2, 0.3, 0.05, -0.05];
         let mut rng = chain_rng(17);
-        refresh(&bounds, &[0.0; 4], &[4.0; 4], &mut y, &mut rng);
+        refresh(&bounds, &[0.0; 5], &[4.0; 5], &mut y, &mut rng);
         assert_eq!(y[0], 0.1);
         assert!(y[1] <= -0.2);
         assert!(y[2] >= 0.3);
-        assert_eq!(y[3], -0.05);
+        assert!((-0.1..=0.2).contains(&y[3]));
+        assert_eq!(y[4], -0.05);
     }
 
     #[test]

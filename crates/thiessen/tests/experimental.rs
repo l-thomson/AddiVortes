@@ -34,6 +34,14 @@ fn the_aft_outcome_is_rejected_naming_the_feature() {
 }
 
 #[test]
+fn the_interval_censored_outcome_is_rejected_naming_the_feature() {
+    let err =
+        serde_json::from_str::<Config>(r#"{"outcome": {"interval_censored": {}}}"#).unwrap_err();
+    assert!(err.to_string().contains("experimental"), "{err}");
+    assert!(err.to_string().contains("interval_censored"), "{err}");
+}
+
+#[test]
 fn minkowski_metric_is_rejected() {
     let json = r#"{"mean_params": {"geometry": {"metric": [{"minkowski": {"p": 1.5}}]}}}"#;
     let err = serde_json::from_str::<Config>(json).unwrap_err();

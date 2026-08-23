@@ -25,6 +25,8 @@ use crate::maths;
 #[cfg(feature = "experimental")]
 use crate::models::aft::AftOutcome;
 use crate::models::gaussian::GaussianOutcome;
+#[cfg(feature = "experimental")]
+use crate::models::interval_censored::IntervalCensoredOutcome;
 use crate::models::probit::ProbitOutcome;
 #[cfg(feature = "experimental")]
 use crate::models::tobit::TobitOutcome;
@@ -45,6 +47,8 @@ enum Outcome {
     Tobit(TobitOutcome),
     #[cfg(feature = "experimental")]
     Aft(AftOutcome),
+    #[cfg(feature = "experimental")]
+    IntervalCensored(IntervalCensoredOutcome),
 }
 
 /// Dispatch one method over every variant.
@@ -57,6 +61,8 @@ macro_rules! each_outcome {
             Outcome::Tobit($outcome) => $body,
             #[cfg(feature = "experimental")]
             Outcome::Aft($outcome) => $body,
+            #[cfg(feature = "experimental")]
+            Outcome::IntervalCensored($outcome) => $body,
         }
     };
 }
@@ -86,6 +92,8 @@ impl Outcome {
             Outcome::Tobit(outcome) => Some(outcome.observed()),
             #[cfg(feature = "experimental")]
             Outcome::Aft(outcome) => Some(outcome.observed()),
+            #[cfg(feature = "experimental")]
+            Outcome::IntervalCensored(outcome) => Some(outcome.observed()),
             Outcome::Gaussian(_) => None,
         }
     }
@@ -94,6 +102,14 @@ impl Outcome {
     fn as_aft_mut(&mut self) -> Option<&mut AftOutcome> {
         match self {
             Outcome::Aft(outcome) => Some(outcome),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "experimental")]
+    fn as_interval_censored_mut(&mut self) -> Option<&mut IntervalCensoredOutcome> {
+        match self {
+            Outcome::IntervalCensored(outcome) => Some(outcome),
             _ => None,
         }
     }
@@ -247,6 +263,65 @@ fn draw_dirichlet(shapes: &[f64], rng: &mut rng::Rng) -> Vec<f64> {
     draws.iter().map(|&g| g / total).collect()
 }
 
+/// The extra data channel of a gated outcome, alongside the response.
+#[cfg(feature = "experimental")]
+#[derive(Clone, Copy)]
+enum Extra<'a> {
+    None,
+    Events(&'a [bool]),
+    Bounds { lower: &'a [f64], upper: &'a [f64] },
+}
+
+/// The configuration names the interval-censored outcome, which the
+/// bound entry points require.
+#[cfg(feature = "experimental")]
+fn require_interval_censored(config: &Config) -> Result<()> {
+    if matches!(config.outcome, OutcomeConfig::IntervalCensored(_)) {
+        Ok(())
+    } else {
+        Err(crate::error::invalid(
+            "outcome",
+            "the bound entry points need the interval_censored outcome",
+        ))
+    }
+}
+
+/// Validated working response of the bound pairs: one pair per row, no
+/// NaN endpoint, lower <= upper, at most one infinite endpoint and a
+/// finite value where the pair is equal. The working value completes
+/// each interval: the exact value, the midpoint where both bounds are
+/// finite, the finite endpoint of a one-sided interval.
+#[cfg(feature = "experimental")]
+fn interval_working(lower: &[f64], upper: &[f64]) -> Result<Vec<f64>> {
+    if lower.len() != upper.len() {
+        return Err(Error::BoundCountMismatch {
+            lower: lower.len(),
+            upper: upper.len(),
+        });
+    }
+    lower
+        .iter()
+        .zip(upper)
+        .enumerate()
+        .map(|(row, (&lo, &hi))| {
+            if lo.is_nan()
+                || hi.is_nan()
+                || lo > hi
+                || (lo == hi && !lo.is_finite())
+                || (lo == f64::NEG_INFINITY && hi == f64::INFINITY)
+            {
+                Err(Error::InvalidInterval { row })
+            } else if lo == f64::NEG_INFINITY {
+                Ok(hi)
+            } else if hi == f64::INFINITY {
+                Ok(lo)
+            } else {
+                Ok(0.5 * (lo + hi))
+            }
+        })
+        .collect()
+}
+
 /// The configuration names the AFT outcome, which the survival entry
 /// points require.
 #[cfg(feature = "experimental")]
@@ -296,7 +371,7 @@ impl Sampler {
             seed,
             None,
             #[cfg(feature = "experimental")]
-            None,
+            Extra::None,
         )
     }
 
@@ -321,7 +396,69 @@ impl Sampler {
     ) -> Result<Self> {
         require_aft(config)?;
         let y = log_times(times, events)?;
-        Self::build(config, x, &y, seed, None, Some(events))
+        Self::build(config, x, &y, seed, None, Extra::Events(events))
+    }
+
+    /// A sampler for the interval-censored model over raw data: `lower`
+    /// and `upper` hold one pair of bounds per row on the response
+    /// scale (an equal pair is an exact value, an infinite endpoint
+    /// one-sided censoring); the response the chain runs on is the
+    /// working completion of each interval. Experimental
+    /// (`docs/experimental.md`).
+    ///
+    /// # Errors
+    ///
+    /// [`Sampler::new`]; `InvalidHyperparameter` for an outcome other
+    /// than [`Outcome::IntervalCensored`](crate::Outcome::IntervalCensored),
+    /// `BoundCountMismatch`, `InvalidInterval`.
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn interval_censored(
+        config: &Config,
+        x: &Data,
+        lower: &[f64],
+        upper: &[f64],
+        seed: u64,
+    ) -> Result<Self> {
+        require_interval_censored(config)?;
+        let y = interval_working(lower, upper)?;
+        Self::build(config, x, &y, seed, None, Extra::Bounds { lower, upper })
+    }
+
+    /// The interval-censored model under the pinned prior, as
+    /// [`pinned_prior`](Sampler::pinned_prior): the bounds are taken as
+    /// already scaled. Experimental (`docs/experimental.md`).
+    ///
+    /// # Errors
+    ///
+    /// [`Sampler::interval_censored`], `InvalidHyperparameter` for a
+    /// non-positive `lambda`.
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn pinned_prior_interval_censored(
+        config: &Config,
+        x: &Data,
+        lower: &[f64],
+        upper: &[f64],
+        lambda: f64,
+        seed: u64,
+    ) -> Result<Self> {
+        if !(lambda.is_finite() && lambda > 0.0) {
+            return Err(crate::error::invalid(
+                "lambda",
+                format!("must be finite and positive, got {lambda}"),
+            ));
+        }
+        require_interval_censored(config)?;
+        let y = interval_working(lower, upper)?;
+        Self::build(
+            config,
+            x,
+            &y,
+            seed,
+            Some(lambda),
+            Extra::Bounds { lower, upper },
+        )
     }
 
     /// The AFT model under the pinned prior, as
@@ -351,7 +488,7 @@ impl Sampler {
         }
         require_aft(config)?;
         let y = log_times(times, events)?;
-        Self::build(config, x, &y, seed, Some(lambda), Some(events))
+        Self::build(config, x, &y, seed, Some(lambda), Extra::Events(events))
     }
 
     /// A sampler whose prior is fixed by the caller: `x` and `y` are taken
@@ -394,7 +531,7 @@ impl Sampler {
             seed,
             Some(lambda),
             #[cfg(feature = "experimental")]
-            None,
+            Extra::None,
         )
     }
 
@@ -404,7 +541,7 @@ impl Sampler {
         y: &[f64],
         seed: u64,
         pinned_lambda: Option<f64>,
-        #[cfg(feature = "experimental")] events: Option<&[bool]>,
+        #[cfg(feature = "experimental")] extra: Extra<'_>,
     ) -> Result<Self> {
         config.validate()?;
         let p = x.n_cols();
@@ -440,11 +577,21 @@ impl Sampler {
             }
         }
         #[cfg(feature = "experimental")]
-        if matches!(config.outcome, OutcomeConfig::Aft(_)) && events.is_none() {
+        if matches!(config.outcome, OutcomeConfig::Aft(_)) && !matches!(extra, Extra::Events(_)) {
             return Err(crate::error::invalid(
                 "outcome",
                 "the aft outcome takes times and an event indicator; fit through \
                  fit_aft or Sampler::aft",
+            ));
+        }
+        #[cfg(feature = "experimental")]
+        if matches!(config.outcome, OutcomeConfig::IntervalCensored(_))
+            && !matches!(extra, Extra::Bounds { .. })
+        {
+            return Err(crate::error::invalid(
+                "outcome",
+                "the interval_censored outcome takes bound vectors; fit through \
+                 fit_interval_censored or Sampler::interval_censored",
             ));
         }
         #[cfg(feature = "experimental")]
@@ -483,12 +630,12 @@ impl Sampler {
                 let (scaler, x_scaled) = Scaler::fit_x(x, &geometry);
                 (scaler, x_scaled, y.to_vec(), 1.0, fixed_scale)
             }
-            // The censoring flags compare response values with the
-            // limits after the map, so the response crosses by the same
-            // map as the limits even where it is the identity in exact
-            // arithmetic.
+            // The censored outcomes compare or complete response values
+            // against their bounds after the map, so the response
+            // crosses by the same map as the bounds even where it is
+            // the identity in exact arithmetic.
             #[cfg(feature = "experimental")]
-            (OutcomeConfig::Tobit(_), Some(lambda)) => {
+            (OutcomeConfig::Tobit(_) | OutcomeConfig::IntervalCensored(_), Some(lambda)) => {
                 let scaler = Scaler::identity(p);
                 let y_scaled = y.iter().map(|&v| scaler.scale_y(v)).collect();
                 (scaler, x.clone(), y_scaled, lambda, lambda)
@@ -509,6 +656,8 @@ impl Sampler {
             OutcomeConfig::Tobit(_) => TobitOutcome::CELL_PRIOR_HALF_WIDTH,
             #[cfg(feature = "experimental")]
             OutcomeConfig::Aft(_) => AftOutcome::CELL_PRIOR_HALF_WIDTH,
+            #[cfg(feature = "experimental")]
+            OutcomeConfig::IntervalCensored(_) => IntervalCensoredOutcome::CELL_PRIOR_HALF_WIDTH,
         };
         let sigma_mu_sq = scaler::sigma_mu_sq(half_width, config.mean_params.k, m);
         // Both slots declare identical geometry and structure, so the
@@ -600,9 +749,28 @@ impl Sampler {
             // time, so nothing beyond the response crosses the map.
             #[cfg(feature = "experimental")]
             OutcomeConfig::Aft(_) => {
-                let mut outcome = AftOutcome::new(events.expect("validated above").to_vec());
+                let Extra::Events(events) = extra else {
+                    unreachable!("validated above");
+                };
+                let mut outcome = AftOutcome::new(events.to_vec());
                 outcome.init(&y_scaled);
                 Outcome::Aft(outcome)
+            }
+            // The bounds cross to the scaled response space by the same
+            // frozen affine map as the working response; an infinite
+            // endpoint stays infinite.
+            #[cfg(feature = "experimental")]
+            OutcomeConfig::IntervalCensored(_) => {
+                let Extra::Bounds { lower, upper } = extra else {
+                    unreachable!("validated above");
+                };
+                let map = |&v: &f64| if v.is_finite() { scaler.scale_y(v) } else { v };
+                let mut outcome = IntervalCensoredOutcome::new(
+                    lower.iter().map(map).collect(),
+                    upper.iter().map(map).collect(),
+                );
+                outcome.init(&y_scaled);
+                Outcome::IntervalCensored(outcome)
             }
         };
         // H-AddiVortes: the variance ensemble carries the scale in place
@@ -640,9 +808,9 @@ impl Sampler {
         } else {
             vec![1.0 / sigma_sq; n]
         };
-        // Under the tobit model the vector starts at the observed
-        // response, censored rows at their limits, a valid latent
-        // initialisation.
+        // Under a censored outcome the vector starts at the working
+        // response, censored rows at a value inside their bounds, a
+        // valid latent initialisation.
         let y = match &config.outcome {
             OutcomeConfig::Probit(_) => vec![0.0; n],
             _ => y_scaled,
@@ -918,6 +1086,14 @@ impl Sampler {
             ));
         }
         #[cfg(feature = "experimental")]
+        if matches!(self.config.outcome, OutcomeConfig::IntervalCensored(_)) {
+            return Err(crate::error::invalid(
+                "outcome",
+                "the interval_censored outcome replaces its response through \
+                 set_interval_censored_response",
+            ));
+        }
+        #[cfg(feature = "experimental")]
         if let OutcomeConfig::Tobit(params) = &self.config.outcome {
             let beyond = |v: f64| {
                 params.lower.is_some_and(|limit| v < limit)
@@ -963,6 +1139,49 @@ impl Sampler {
         }
         if let Some(outcome) = self.outcome.as_aft_mut() {
             outcome.set_events(events);
+        }
+        self.outcome.init(&self.y);
+        Ok(())
+    }
+
+    /// Replace the interval-censored model's bound pairs, keeping the
+    /// tessellations, the cell values and sigma^2; the latents reset to
+    /// the working completions and the next sweep's refresh redraws the
+    /// censored ones from their conditional. Experimental
+    /// (`docs/experimental.md`).
+    ///
+    /// # Errors
+    ///
+    /// `InvalidHyperparameter` for an outcome other than
+    /// [`Outcome::IntervalCensored`](crate::Outcome::IntervalCensored);
+    /// `RowCountMismatch`, `BoundCountMismatch`, `InvalidInterval`.
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn set_interval_censored_response(&mut self, lower: &[f64], upper: &[f64]) -> Result<()> {
+        require_interval_censored(&self.config)?;
+        if lower.len() != self.y.len() {
+            return Err(Error::RowCountMismatch {
+                y_len: lower.len(),
+                x_rows: self.y.len(),
+            });
+        }
+        let y = interval_working(lower, upper)?;
+        for (slot, v) in self.y.iter_mut().zip(y) {
+            *slot = self.scaler.scale_y(v);
+        }
+        let map = |&v: &f64| {
+            if v.is_finite() {
+                self.scaler.scale_y(v)
+            } else {
+                v
+            }
+        };
+        let (lower, upper) = (
+            lower.iter().map(map).collect(),
+            upper.iter().map(map).collect(),
+        );
+        if let Some(outcome) = self.outcome.as_interval_censored_mut() {
+            outcome.set_bounds(lower, upper);
         }
         self.outcome.init(&self.y);
         Ok(())

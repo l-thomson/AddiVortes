@@ -433,6 +433,69 @@ fixed-tessellation quadrature known-answer test against numerical
 integration of the model's own censored likelihood, SBC and Geweke at
 both sizes.
 
+### Interval-censored (`Outcome::IntervalCensored`, experimental)
+
+    y*_i = f(x_i) + e_i,   e_i ~ N(0, sigma^2),
+    observed [l_i, u_i]: l_i = u_i  an exact value (y*_i = l_i),
+                         l_i < u_i  y*_i in [l_i, u_i],
+    l_i = -inf or u_i = inf is one-sided censoring
+
+The response is known only to lie between two row-specific bounds, the
+interval-censoring observation scheme (Sun 2006): tested negative at
+one inspection and positive at a later one. The bounds are data, one
+pair per row: the model is fitted through `fit_interval_censored` or
+`Sampler::interval_censored`, and `fit` rejects the outcome. A pair
+with l_i = u_i is an exact observation and must be finite; a pair with
+a NaN endpoint, with l_i > u_i or with both endpoints infinite is
+rejected (`Error::InvalidInterval`). The inspection scheme is taken as
+independent of the response (non-informative censoring), so the bounds
+enter the likelihood only through the interval probability.
+
+Sampler: the censored refresh shared with the tobit model, extended to
+a two-sided draw. Each censored row's latent is refreshed before the
+sweep from
+
+    y*_i | f, sigma^2  ~  N(f(x_i), sigma^2) truncated to [l_i, u_i]
+
+(Robert 1995: the one-sided draw by exponential rejection, the
+two-sided draw by his section 2 rules choosing among Normal, uniform
+and exponential rejection), an exact row's latent being its value, and
+the completed response runs the Gaussian model's sweep unchanged with
+the tobit model's scan order (refresh first). No structural move gains
+an acceptance-ratio term. With a variance ensemble attached the
+truncated draw's variance is s^2(x_i).
+
+Priors: the Gaussian model's exactly, on the working response min-max
+scaled to [-0.5, 0.5]. The working response completes each interval
+with one value: the exact value where l_i = u_i, the midpoint where
+both bounds are finite and the finite endpoint of a one-sided
+interval; sigma_hat calibrates from its least-squares fit, the
+Gaussian model's heuristic, and the bounds cross to the scaled space
+by the same frozen affine map. Imputed latents may fall outside the
+training range, which the frozen map permits. Exact data (every pair
+l_i = u_i) reproduces the Gaussian model draw for draw at the same
+seed: the refresh touches no row and consumes no randomness.
+
+Correspondence: none in the BART family; the BART package has no
+interval-censored model. survival's `survreg(dist = "gaussian")` with
+`Surv(l, u, type = "interval2")` fits the linear-model analogue by
+maximum likelihood.
+
+Fitted model: `predict` is the posterior mean of the latent f(x);
+`predict_variance` is sigma_d^2 (s_d^2(x) under a variance ensemble);
+`prediction_interval` is the predictive interval of a new latent
+value, uncensored, the bounds being an observation scheme rather than
+part of the response law; `log_likelihood` is `Error::NotApplicable`
+(the pointwise likelihood needs the bounds) and
+`log_likelihood_interval_censored(x, lower, upper)` takes it:
+ln N(l_i; f_d, s_d^2) at an exact row,
+ln(Phi((u_i - f_d) / s_d) - Phi((l_i - f_d) / s_d)) at a censored one
+with an infinite endpoint dropping its term; `sigma` is sigma_d on the
+caller's scale; `in_sample_rmse` is against the working response.
+Validation: fixed-tessellation quadrature known-answer test against
+numerical integration of the model's own interval likelihood, SBC and
+Geweke at both sizes.
+
 ## References
 
 - Albert, J. H. and Chib, S. (1993). Bayesian analysis of binary and
@@ -475,6 +538,8 @@ both sizes.
 - Stone, A. and Gosling, J. P. (2025). AddiVortes: (Bayesian) additive
   Voronoi tessellations. Journal of Computational and Graphical
   Statistics 34(3), 859-871.
+- Sun, J. (2006). The Statistical Analysis of Interval-censored Failure
+  Time Data. Springer.
 - Tobin, J. (1958). Estimation of relationships for limited dependent
   variables. Econometrica 26(1), 24-36.
 - Wei, L. J. (1992). The accelerated failure time model: a useful
