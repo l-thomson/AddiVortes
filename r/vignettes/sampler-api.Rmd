@@ -103,6 +103,51 @@ c(
 )
 ```
 
+## Prototyping an outcome model
+
+An outcome model with a latent Gaussian representation can be prototyped
+in the loop before it earns a family: impute the latent from its
+conditional given the observed outcome, hand it back, sweep. The probit
+model is the worked case, its latent drawn from the normal truncated to
+the side its label demands (Albert and Chib 1993).
+
+```{r}
+set.seed(1)
+labels <- as.numeric(x[, 1] + rnorm(n, sd = 0.3) > 0.5)
+
+z <- ifelse(labels == 1, 0.5, -0.5)
+sampler <- thiessen_sampler(x, z, control, seed = 1)
+sampler$step(50)
+latent_mean <- numeric(n)
+for (draw in seq_len(100)) {
+  mean_f <- sampler$fitted_values()
+  scale <- sqrt(sampler$noise_variances())
+  # The conditional mass below zero, then a draw from the label's side
+  # of it, by inversion.
+  at_zero <- pnorm(0, mean_f, scale)
+  u <- runif(n)
+  inside <- ifelse(labels == 1, at_zero + u * (1 - at_zero), u * at_zero)
+  sampler$set_response(qnorm(inside, mean_f, scale))
+  sampler$step(1)
+  latent_mean <- latent_mean + sampler$fitted_values()
+}
+latent_mean <- latent_mean / 100
+
+family <- thiessen(x, labels, thiessen_control(
+  outcome = probit(),
+  tessellations = 10,
+  general_params = general_params(burn_in = 50, draws = 100)
+), seed = 1)
+mean((latent_mean > 0) == (predict(family, x) > 0.5))
+```
+
+The prototype and the family are the same model up to one difference:
+the family fixes the latent variance at 1 for identification, while the
+prototype keeps sampling sigma^2. Differences of that kind are what
+graduate a prototype into an outcome family. A prototype is checked
+distributionally, by simulation-based calibration and posterior
+summaries within Monte Carlo error, never bitwise against the family.
+
 ## The verbs
 
 `$step(n)` runs n sweeps; `$keep()` records the state as a posterior
