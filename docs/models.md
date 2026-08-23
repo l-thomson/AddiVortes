@@ -321,6 +321,55 @@ Validation: known-answer tests of the marginal and the joint draw, SBC
 and Geweke at both sizes, and a broken-sampler fixture dropping the
 determinant term.
 
+### Tobit (`Outcome::Tobit`, experimental)
+
+    y*_i = f(x_i) + e_i,   e_i ~ N(0, sigma^2),
+    y_i  = lower  if y*_i <= lower,
+           upper  if y*_i >= upper,
+           y*_i   otherwise
+
+The type-I tobit model (Tobin 1958): the limits are known constants of
+the design, a response value equal to a limit is read as censored on
+that side, and a value beyond a limit is rejected at fit
+(`Error::ResponseBeyondLimit`). At least one limit is declared; models
+with unknown censoring points are out of scope.
+
+Sampler: the data augmentation of Chib (1992). Each censored row's
+latent is refreshed before the sweep from N(f(x_i), sigma^2) truncated
+to its censored side (Robert 1995 exponential rejection), an observed
+row's latent being its response, and the completed response runs the
+Gaussian model's sweep unchanged. The scan is y* | sigma^2, f then
+sigma^2 | y* then f | y*, sigma^2; the refresh runs first so sigma^2
+and the ensemble only condition on latents drawn from their
+conditional. No structural move gains an acceptance-ratio term. With a
+variance ensemble attached the truncated draw's variance is s^2(x_i),
+the same per-observation precision the backfit uses.
+
+Priors: the Gaussian model's exactly, on the response min-max scaled
+to [-0.5, 0.5]; the limits cross by the same frozen affine map;
+sigma_hat calibrates from the observed response with censored rows at
+their limits. Imputed latents may fall outside the training range,
+which the frozen map permits. Configuration:
+`Outcome::tobit(lower, upper)`, each limit optional, nu and q on the
+tobit parameters; uncensored data (no row at a limit) reproduces the
+Gaussian model draw for draw at the same seed.
+
+Correspondence: with MCMCpack `MCMCtobit` (the Chib 1992 sampler for
+the linear model), lower = `below`, upper = `above` (its defaults are 0
+and infinity).
+
+Fitted model: `predict` is the posterior mean of the uncensored f(x);
+`predict_variance` is sigma_d^2 (s_d^2(x) under a variance ensemble);
+`prediction_interval` is the censored predictive's central interval,
+the uncensored ends clamped to the limits; `log_likelihood` is the
+type-I tobit likelihood (ln Phi((lower - f_d) / s_d) at a row censored
+below, ln Phi((f_d - upper) / s_d) above, the Normal log density
+otherwise); `sigma` is sigma_d on the caller's scale; `in_sample_rmse`
+is against the observed response, censored rows at their limits.
+Validation: fixed-tessellation quadrature known-answer test against
+numerical integration of the censored likelihood, SBC and Geweke at
+both sizes.
+
 ## References
 
 - Albert, J. H. and Chib, S. (1993). Bayesian analysis of binary and
@@ -334,6 +383,8 @@ determinant term.
   non-Gaussian data. Statistics and Computing 19, 479-492.
 - Geweke, J. (1993). Bayesian treatment of the independent Student-t
   linear model. Journal of Applied Econometrics 8(S1), S19-S40.
+- Chib, S. (1992). Bayes inference in the tobit censored regression
+  model. Journal of Econometrics 51(1-2), 79-99.
 - Chipman, H. A., George, E. I. and McCulloch, R. E. (2010). BART:
   Bayesian additive regression trees. Annals of Applied Statistics 4(1),
   266-298.
@@ -361,3 +412,5 @@ determinant term.
 - Stone, A. and Gosling, J. P. (2025). AddiVortes: (Bayesian) additive
   Voronoi tessellations. Journal of Computational and Graphical
   Statistics 34(3), 859-871.
+- Tobin, J. (1958). Estimation of relationships for limited dependent
+  variables. Econometrica 26(1), 24-36.

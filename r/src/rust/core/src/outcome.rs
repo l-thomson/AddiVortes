@@ -79,10 +79,13 @@ pub(crate) trait OutcomeModel: std::fmt::Debug {
     fn draw_extra(&mut self, rng: &mut Rng);
 
     /// Write this sweep's working response into `y`, given the mean
-    /// ensemble's current total at the training rows. The identity for a
-    /// model whose response is observed; a truncated-normal refresh for a
-    /// latent-normal model.
-    fn working_response(&mut self, total: &[f64], y: &mut [f64], rng: &mut Rng);
+    /// ensemble's current total at the training rows and this sweep's
+    /// per-observation precisions (already written for the sweep, so a
+    /// latent refresh sees the same noise the backfit will). The identity
+    /// for a model whose response is observed; a truncated-normal refresh
+    /// for a latent-normal model. Not called under prior-only sampling,
+    /// where the precisions are zero.
+    fn working_response(&mut self, total: &[f64], precision: &[f64], y: &mut [f64], rng: &mut Rng);
 
     /// The per-observation weights of this sweep's precisions: `None` for
     /// unit weight on every observation (the latent-normal models), one
@@ -132,7 +135,14 @@ mod tests {
 
         fn draw_extra(&mut self, _rng: &mut Rng) {}
 
-        fn working_response(&mut self, _total: &[f64], _y: &mut [f64], _rng: &mut Rng) {}
+        fn working_response(
+            &mut self,
+            _total: &[f64],
+            _precision: &[f64],
+            _y: &mut [f64],
+            _rng: &mut Rng,
+        ) {
+        }
 
         fn weights(&self) -> Option<&[f64]> {
             None
@@ -155,7 +165,7 @@ mod tests {
         model.init(&y);
         assert!(model.initialised);
         model.draw_extra(&mut rng);
-        model.working_response(&[0.0, 0.0], &mut y, &mut rng);
+        model.working_response(&[0.0, 0.0], &[1.0, 1.0], &mut y, &mut rng);
         assert_eq!(y, vec![0.25, -0.25]);
         assert_eq!(model.weights(), None);
         assert_eq!(model.sigma2_mode(), Sigma2Mode::Sampled);

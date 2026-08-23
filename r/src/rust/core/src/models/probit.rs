@@ -117,8 +117,15 @@ impl OutcomeModel for ProbitOutcome {
     fn draw_extra(&mut self, _rng: &mut Rng) {}
 
     /// z_i ~ N(c + f(x_i), 1) truncated to z_i > 0 when y_i = 1 and
-    /// z_i < 0 when y_i = 0; the working response is z_i - c.
-    fn working_response(&mut self, total: &[f64], y: &mut [f64], rng: &mut Rng) {
+    /// z_i < 0 when y_i = 0; the working response is z_i - c. The
+    /// precisions are not read: the latent variance is fixed at 1.
+    fn working_response(
+        &mut self,
+        total: &[f64],
+        _precision: &[f64],
+        y: &mut [f64],
+        rng: &mut Rng,
+    ) {
         for ((slot, &label), &f) in y.iter_mut().zip(self.labels.iter()).zip(total) {
             let mean = f + self.offset;
             let z = if label == 1.0 {
@@ -162,7 +169,7 @@ mod outcome_tests {
         assert_eq!(outcome.predictive_quantile(0.0, 1.0, 0.5), None);
         let mut rng = chain_rng(11);
         let mut y = vec![0.0; 3];
-        outcome.working_response(&[0.0, 0.0, 0.0], &mut y, &mut rng);
+        outcome.working_response(&[0.0, 0.0, 0.0], &[1.0; 3], &mut y, &mut rng);
         for (z, &label) in y.iter().zip(&labels) {
             assert_eq!((z + outcome.offset() > 0.0), label == 1.0);
         }

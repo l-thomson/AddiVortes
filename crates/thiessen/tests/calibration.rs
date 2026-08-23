@@ -46,11 +46,13 @@ const SOFT_QUANTITIES: [&str; 8] = [
     "sigma_sq", "cells", "dims", "f_a", "f_b", "f_c", "tau0", "y_mean",
 ];
 
-/// The Gaussian outcome's sigma^2 prior (nu, q) of a configuration.
+/// The sigma^2 prior (nu, q) of a configuration whose outcome samples one.
 fn gaussian_prior(config: &Config) -> (f64, f64) {
     match &config.outcome {
         thiessen::Outcome::Gaussian(params) => (params.nu, params.q),
-        _ => unreachable!("the tests read nu and q under gaussian"),
+        #[cfg(feature = "experimental")]
+        thiessen::Outcome::Tobit(params) => (params.nu, params.q),
+        _ => unreachable!("the tests read nu and q under a sampled sigma^2"),
     }
 }
 
@@ -89,6 +91,11 @@ enum Kind {
     Gaussian,
     Probit,
     Heteroscedastic,
+    #[cfg(feature = "experimental")]
+    Tobit {
+        lower: f64,
+        upper: f64,
+    },
 }
 
 /// The centre-coordinate law of one column, the test's own: N(mean, sd^2),
@@ -484,6 +491,22 @@ fn probit_model() -> Model {
     }
 }
 
+/// The tobit model at the calibration size: the Gaussian model's rows,
+/// structural prior and lambda, censored at -0.25 and 0.3, limits that
+/// censor a material share of the generated responses on each side.
+#[cfg(feature = "experimental")]
+fn tobit_model() -> Model {
+    let gaussian = gaussian_model();
+    let (lower, upper) = (-0.25, 0.3);
+    Model {
+        kind: Kind::Tobit { lower, upper },
+        config: gaussian
+            .config
+            .with_outcome(thiessen::Outcome::tobit(Some(lower), Some(upper))),
+        ..gaussian
+    }
+}
+
 /// The heteroscedastic model at the calibration size: the Gaussian
 /// model's rows, structural prior and lambda, with m' = 2 variance
 /// tessellations (nu' = 2 / (1 - (2 / 3)^(1 / 2)), lambda' = 0.2).
@@ -508,6 +531,8 @@ impl Model {
         let scale = match self.kind {
             Kind::Gaussian | Kind::Heteroscedastic => 0.5,
             Kind::Probit => 3.0,
+            #[cfg(feature = "experimental")]
+            Kind::Tobit { .. } => 0.5,
         };
         scale / (self.config.mean_params.k * (self.config.mean_tessellations() as f64).sqrt())
     }
@@ -645,11 +670,11 @@ impl Model {
             })
             .collect();
         let sigma_sq = match self.kind {
-            Kind::Gaussian => {
+            Kind::Probit | Kind::Heteroscedastic => 1.0,
+            _ => {
                 let chi_sq = -2.0 * (rng.uniform().ln() + rng.uniform().ln() + rng.uniform().ln());
                 gaussian_prior(&self.config).0 * self.lambda / chi_sq
             }
-            Kind::Probit | Kind::Heteroscedastic => 1.0,
         };
         let variance = match self.kind {
             Kind::Heteroscedastic => {
@@ -662,7 +687,7 @@ impl Model {
                     })
                     .collect()
             }
-            Kind::Gaussian | Kind::Probit => Vec::new(),
+            _ => Vec::new(),
         };
         PriorDraw {
             tessellations,
@@ -721,7 +746,7 @@ impl Model {
                     values[self.nearest(&self.rows[i], dims, centres)]
                 })
                 .product(),
-            Kind::Gaussian | Kind::Probit => draw.sigma_sq,
+            _ => draw.sigma_sq,
         }
     }
 
@@ -851,7 +876,8 @@ impl Model {
         cell
     }
 
-    /// y | theta: f + s e, or labels Bernoulli(Phi(c + f)).
+    /// y | theta: f + s e, labels Bernoulli(Phi(c + f)), or the tobit
+    /// model's censored recording of f + s e.
     fn generate_y(&self, draw: &PriorDraw, rng: &mut TestRng) -> Vec<f64> {
         (0..self.x.n_rows())
             .map(|i| {
@@ -861,6 +887,10 @@ impl Model {
                         f + self.variance_at(draw, i).sqrt() * rng.normal()
                     }
                     Kind::Probit => f64::from(rng.uniform() < normal_cdf(self.offset() + f)),
+                    #[cfg(feature = "experimental")]
+                    Kind::Tobit { lower, upper } => {
+                        (f + self.variance_at(draw, i).sqrt() * rng.normal()).clamp(lower, upper)
+                    }
                 }
             })
             .collect()
@@ -879,7 +909,7 @@ impl Model {
             .map(|(d, _, _, _, _)| d.len())
             .sum();
         let mut out = Vec::with_capacity(self.quantities.len());
-        if self.kind == Kind::Gaussian {
+        if self.samples_sigma_sq() {
             out.push(draw.sigma_sq);
         }
         out.push(cells as f64);
@@ -908,7 +938,7 @@ impl Model {
         let dims: usize = sampler.tessellations().iter().map(|t| t.n_dims()).sum();
         let fit = sampler.fitted_values();
         let mut out = Vec::with_capacity(self.quantities.len());
-        if self.kind == Kind::Gaussian {
+        if self.samples_sigma_sq() {
             out.push(sampler.sigma_sq());
         }
         out.push(cells as f64);
@@ -951,7 +981,19 @@ impl Model {
             *slot = match self.kind {
                 Kind::Gaussian | Kind::Heteroscedastic => f + v.sqrt() * rng.normal(),
                 Kind::Probit => f64::from(rng.uniform() < normal_cdf(*f)),
+                #[cfg(feature = "experimental")]
+                Kind::Tobit { lower, upper } => (f + v.sqrt() * rng.normal()).clamp(lower, upper),
             };
+        }
+    }
+
+    /// Whether the model reports a global sampled sigma^2.
+    fn samples_sigma_sq(&self) -> bool {
+        match self.kind {
+            Kind::Gaussian => true,
+            Kind::Probit | Kind::Heteroscedastic => false,
+            #[cfg(feature = "experimental")]
+            Kind::Tobit { .. } => true,
         }
     }
 }
@@ -1142,6 +1184,14 @@ fn sbc_small_ranks_are_uniform_linear() {
     assert_uniform(&model, &ranks, 19);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+fn sbc_small_ranks_are_uniform_tobit() {
+    let model = tobit_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 415);
+    assert_uniform(&model, &ranks, 19);
+}
+
 /// The bandwidth walks on ln tau and needs heavier thinning than the
 /// structural quantities, here and in the full run.
 #[cfg(feature = "experimental")]
@@ -1206,6 +1256,13 @@ fn sbc_full_ranks_are_uniform_categorical() {
 #[ignore = "full size, nightly"]
 fn sbc_full_ranks_are_uniform_linear() {
     sbc_full(&linear_model(), "sbc_ranks_linear.csv", 413);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "full size, nightly"]
+fn sbc_full_ranks_are_uniform_tobit() {
+    sbc_full(&tobit_model(), "sbc_ranks_tobit.csv", 415);
 }
 
 #[cfg(feature = "experimental")]
@@ -1444,6 +1501,14 @@ fn geweke_small_simulators_agree_soft() {
     assert_simulators_agree(&model, &mc, &sc);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+fn geweke_small_simulators_agree_tobit() {
+    let model = tobit_model();
+    let (mc, sc) = geweke_samples(&model, 2000, 800, 45, 200, 915);
+    assert_simulators_agree(&model, &mc, &sc);
+}
+
 /// Files first, so a failed gate still leaves the R evaluation its input.
 fn geweke_full(model: &Model, file: &str, seed: u64) {
     let (mc, sc) = geweke_samples(model, 20_000, 5000, 45, 500, seed);
@@ -1515,6 +1580,13 @@ fn geweke_full_simulators_agree_soft() {
     geweke_full(&soft_model(), "geweke_samples_soft.csv", 914);
 }
 
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "full size, nightly"]
+fn geweke_full_simulators_agree_tobit() {
+    geweke_full(&tobit_model(), "geweke_samples_tobit.csv", 915);
+}
+
 fn write_csv(name: &str, lines: &[String]) {
     // The test binary's working directory is the crate, two levels below
     // the workspace target directory.
@@ -1532,10 +1604,11 @@ fn write_csv(name: &str, lines: &[String]) {
 #[cfg(feature = "experimental")]
 #[test]
 fn calibrated_configuration_list_is_current() {
-    let entries: [(&str, Model); 14] = [
+    let entries: [(&str, Model); 15] = [
         ("gaussian", gaussian_model()),
         ("probit", probit_model()),
         ("heteroscedastic", heteroscedastic_model()),
+        ("tobit (experimental)", tobit_model()),
         ("spherical metric", spherical_model()),
         ("categorical metric", categorical_model()),
         ("minkowski metric (experimental)", minkowski_model()),

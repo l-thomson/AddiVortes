@@ -28,6 +28,7 @@ history.
 | DART inclusion | inclusion prior (model-grade validation) | `structure.inclusion` entry `{"dart": {"a": ..., "b": ..., "rho": ...}}` | 0.3.0 | SBC and Geweke, both sizes; broken-sampler fixture | experimental | [#67](https://github.com/l-thomson/thiessen/pull/67) |
 | Linear cell basis | cell basis (model-grade validation) | `mean_params.cell.basis` entry `"linear"` | 0.3.0 | known answer; SBC and Geweke, both sizes; broken-sampler fixture | experimental | [#68](https://github.com/l-thomson/thiessen/pull/68) |
 | Soft membership | membership rule (model-grade validation) | `mean_params.geometry.membership` entry `{"soft": {"rate": ...}}` | 0.3.0 | known answer; SBC and Geweke, both sizes; broken-sampler fixture | experimental | [#78](https://github.com/l-thomson/thiessen/pull/78) |
+| Tobit outcome | outcome model (model-grade validation) | `outcome` entry `{"tobit": {"lower": ..., "upper": ...}}` | 0.3.0 | known answer (censored-likelihood quadrature); SBC and Geweke, both sizes | experimental | [#81](https://github.com/l-thomson/thiessen/pull/81) |
 
 Columns: the configuration field or variant; the first core version
 carrying the item behind the feature; calibration status (SBC and Geweke

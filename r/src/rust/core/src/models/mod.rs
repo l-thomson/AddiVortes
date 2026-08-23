@@ -14,6 +14,9 @@ use crate::sampler::Sampler;
 pub mod gaussian;
 pub mod heteroscedastic;
 pub mod probit;
+#[cfg(feature = "experimental")]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+pub mod tobit;
 
 /// Fit the model the configuration names: validate, run `burn_in` sweeps,
 /// then keep every `thinning`-th of the next `draws * thinning` sweeps.
