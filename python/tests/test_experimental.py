@@ -34,6 +34,7 @@ GATED = (
 
 #: Configuration fields that exist behind the feature only.
 GATED_FIELDS = (
+    ("mean_params", {"geometry": {"membership": "soft"}}),
     ("mean_params", {"geometry": {"precision": [1.0]}}),
     ("mean_params", {"structure": {"inclusion": "uniform"}}),
     ("mean_params", {"cell": {"basis": "linear"}}),

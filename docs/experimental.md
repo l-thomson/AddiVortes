@@ -9,15 +9,15 @@ a changelog line. Enabling the feature does not change the draws of a
 configuration that uses no experimental option. The Python and R packages
 build the core without the feature.
 
-An item is stabilised when it meets the acceptance criteria of the
-contributing guide, has shipped behind the feature for one minor release,
-has a stabilisation report on its tracking issue, and has a page under
-`docs/` stating the model, priors, and the calibration and recovery
-evidence. Removing the gate is a minor version bump.
+The stabilisation rule is stated once, in the crate-root documentation
+(`crates/thiessen/src/lib.rs`, Stability): graduation is a pull request
+against that rule, not a ticket. This file is the status table for every
+gated item; the pull-request column is the public record of each item's
+history.
 
 ## Table
 
-| Item | Kind | Configuration | Feature since | Calibration | Status | Tracking issue |
+| Item | Kind | Configuration | Feature since | Calibration | Status | Pull request |
 |---|---|---|---|---|---|---|
 | Minkowski distance (Manhattan as p = 1) | distance | `geometry.metric` entries `{"minkowski": {"p": ...}}`, `{"manhattan": {}}` | 0.3.0 | conformance, small SBC at p = 1 | experimental | [#61](https://github.com/l-thomson/thiessen/pull/61) |
 | Cosine distance | distance | `geometry.metric` entry `{"cosine": {}}` | 0.3.0 | conformance (no triangle inequality), small SBC | experimental | [#62](https://github.com/l-thomson/thiessen/pull/62) |
@@ -29,11 +29,11 @@ evidence. Removing the gate is a minor version bump.
 | Linear cell basis | cell basis (model-grade validation) | `mean_params.cell.basis` entry `"linear"` | 0.3.0 | known answer; SBC and Geweke, both sizes; broken-sampler fixture | experimental | [#68](https://github.com/l-thomson/thiessen/pull/68) |
 | Soft membership | membership rule (model-grade validation) | `mean_params.geometry.membership` entry `{"soft": {"rate": ...}}` | 0.3.0 | known answer; SBC and Geweke, both sizes; broken-sampler fixture | experimental | [#78](https://github.com/l-thomson/thiessen/pull/78) |
 
-Columns: the configuration field or `Model` variant; the first core version
+Columns: the configuration field or variant; the first core version
 carrying the item behind the feature; calibration status (SBC and Geweke
 at the two sizes, or the component conformance tests); experimental or
-stabilised, with the core version of stabilisation; the issue carrying the
-acceptance checklist and the stabilisation report.
+stabilised, with the core version of stabilisation; the pull request that
+added the item, its public record.
 
 ## References
 

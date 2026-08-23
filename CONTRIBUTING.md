@@ -69,14 +69,12 @@ takes the "Sampled values changed" line but does not force a minor bump.
 Release notes carry the sentence "Options behind the `experimental`
 feature are outside the semver promise; see docs/experimental.md".
 
-An item is stabilised when it has met the acceptance criteria, has
-shipped behind the feature for one minor release, has a stabilisation
-report on its tracking issue (what changed during that release, the
-open questions closed, the stable configuration surface), and has a page
-under `docs/` stating the model, priors, and the calibration and recovery
-evidence, linked from `docs/models.md`. The stabilisation pull request
-removes the `cfg` gate, marks the table row stabilised with the version,
-and is a minor version bump.
+An item graduates by the stabilisation rule stated once in the
+crate-root documentation (`crates/thiessen/src/lib.rs`, Stability). The
+stabilising pull request removes the `cfg` gate, marks the item's row in
+`docs/experimental.md` stabilised with the version, and is a minor
+version bump; the pull request is the public record, so no per-item
+tracking issue exists.
 
 ## R package
 
