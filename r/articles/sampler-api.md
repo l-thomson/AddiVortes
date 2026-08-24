@@ -1,0 +1,190 @@
+# The sampler API
+
+An outcome family, a censoring scheme or an imputation scheme this
+package does not ship is written in R against
+[`thiessen_sampler()`](https://l-thomson.github.io/thiessen/r/reference/thiessen_sampler.md),
+with no Rust and no recompilation. It hands over the Gibbs loop one
+sweep at a time and allows the response to be rewritten between sweeps,
+which is what a latent-Gaussian data augmentation needs.
+
+The seven verbs are stable. The experimental badge on the object covers
+additions to it and changes to what a verb returns beyond its documented
+contract.
+
+It follows the updatable sampler object of dbarts and the low-level
+interface of stochtree: construct with the configuration, the data and a
+seed, then drive the loop yourself. Burn-in and thinning are the
+caller’s loop.
+
+## The contracts
+
+The response is on the caller’s scale through an affine map frozen at
+construction, so a response outside the training range is legitimate;
+that is what makes censoring and imputation work. The sampler owns its
+RNG, seeded at construction with the chain that
+[`thiessen()`](https://l-thomson.github.io/thiessen/r/reference/thiessen.md)
+would run first, so driving the configured schedule by hand reproduces a
+one-chain fit bit for bit. The loop cannot rewire tessellation
+membership or cell internals.
+
+## What is reachable, and what is not
+
+`$set_response()` is the only setter on the object, so a model is
+buildable here exactly when it is a Gaussian regression on a response
+you can rewrite each sweep.
+
+Reachable, those being the latent-Gaussian data augmentations: probit,
+tobit, accelerated failure time, interval-censored and ordinal. The
+first is worked below, and the second is the censoring example below
+under another name. Four of the five are outcome families the core
+carries behind its experimental feature, so this loop is the answer when
+a release does not expose the family you need.
+
+Not reachable: an augmentation needing per-observation weights, so
+logistic through Polya-Gamma, robust-t as a scale mixture, and negative
+binomial, because `$noise_variances()` reads the noise and nothing sets
+it. Nor the geometry, tessellation membership, cell internals, the
+covariate-inclusion prior or the proposals.
+
+Parameters sampled in your own loop, cutpoints for instance, are not in
+`$finish()`’s draws. Keep and diagnose those yourself.
+
+## A fit as its own loop
+
+``` r
+
+library(thiessen)
+
+set.seed(1)
+n <- 120
+x <- cbind(runif(n), runif(n))
+y <- x[, 1] + rnorm(n, sd = 0.1)
+control <- thiessen_control(
+  tessellations = 10,
+  general_params = general_params(burn_in = 50, draws = 100)
+)
+
+sampler <- thiessen_sampler(x, y, control, seed = 1)
+sampler$step(50)
+for (draw in seq_len(100)) {
+  sampler$step(1)
+  sampler$keep()
+}
+driven <- sampler$finish()
+
+fit <- thiessen(x, y, control, seed = 1)
+identical(predict(driven, x), predict(fit, x))
+#> [1] TRUE
+```
+
+## Imputation between sweeps
+
+A right-censored response can be redrawn from its conditional before
+each sweep: read the current mean function and noise level, redraw the
+censored values above the limit, and hand the response back. The redraw
+below inverts the conditional tail probability, so it is a draw from the
+truncated normal.
+
+``` r
+
+set.seed(1)
+latent <- x[, 1] + rnorm(n, sd = 0.1)
+limit <- quantile(latent, 0.8)
+censored <- latent > limit
+y_observed <- pmin(latent, limit)
+
+sampler <- thiessen_sampler(x, y_observed, control, seed = 1)
+sampler$step(50)
+for (draw in seq_len(100)) {
+  mean_f <- sampler$fitted_values()
+  scale <- sqrt(sampler$noise_variances())
+  lower <- pnorm(limit, mean_f[censored], scale[censored])
+  tail_draw <- qnorm(
+    lower + runif(sum(censored)) * (1 - lower),
+    mean_f[censored], scale[censored]
+  )
+  working <- y_observed
+  working[censored] <- tail_draw
+  sampler$set_response(working)
+  sampler$step(1)
+  sampler$keep()
+}
+fit_censored <- sampler$finish()
+fit_censored$n_draws
+#> [1] 100
+```
+
+The censored fit recovers more of the upper tail than a fit to the
+clamped response:
+
+``` r
+
+clamped <- thiessen(x, y_observed, control, seed = 1)
+c(
+  censored = max(predict(fit_censored, x)),
+  clamped = max(predict(clamped, x)),
+  limit = unname(limit)
+)
+#>  censored   clamped     limit 
+#> 0.8767076 0.7990626 0.8068637
+```
+
+## Prototyping an outcome model
+
+This is the proof of the claim at the top of the article: fifteen lines
+of R reimplement a shipped outcome family and agree with it. An outcome
+model with a latent Gaussian representation can be prototyped in the
+loop before it earns a family: impute the latent from its conditional
+given the observed outcome, hand it back, sweep. The probit model is the
+worked case, its latent drawn from the normal truncated to the side its
+label demands (Albert and Chib 1993).
+
+``` r
+
+set.seed(1)
+labels <- as.numeric(x[, 1] + rnorm(n, sd = 0.3) > 0.5)
+
+z <- ifelse(labels == 1, 0.5, -0.5)
+sampler <- thiessen_sampler(x, z, control, seed = 1)
+sampler$step(50)
+latent_mean <- numeric(n)
+for (draw in seq_len(100)) {
+  mean_f <- sampler$fitted_values()
+  scale <- sqrt(sampler$noise_variances())
+  # The conditional mass below zero, then a draw from the label's side
+  # of it, by inversion.
+  at_zero <- pnorm(0, mean_f, scale)
+  u <- runif(n)
+  inside <- ifelse(labels == 1, at_zero + u * (1 - at_zero), u * at_zero)
+  sampler$set_response(qnorm(inside, mean_f, scale))
+  sampler$step(1)
+  latent_mean <- latent_mean + sampler$fitted_values()
+}
+latent_mean <- latent_mean / 100
+
+family <- thiessen(x, labels, thiessen_control(
+  outcome = probit_outcome(),
+  tessellations = 10,
+  general_params = general_params(burn_in = 50, draws = 100)
+), seed = 1)
+mean((latent_mean > 0) == (predict(family, x) > 0.5))
+#> [1] 0.9833333
+```
+
+The prototype and the family are the same model up to one difference:
+the family fixes the latent variance at 1 for identification, while the
+prototype keeps sampling sigma^2. Differences of that kind are what
+graduate a prototype into an outcome family. A prototype is checked
+distributionally, by simulation-based calibration and posterior
+summaries within Monte Carlo error, never bitwise against the family.
+
+## The verbs
+
+`$step(n)` runs n sweeps; `$keep()` records the state as a posterior
+draw; `$n_kept()` counts them; `$set_response(y)` replaces the response,
+keeping the tessellations, the cell values and sigma^2;
+`$fitted_values()` and `$noise_variances()` read the current state at
+the training rows; `$finish()` returns the fit
+[`thiessen()`](https://l-thomson.github.io/thiessen/r/reference/thiessen.md)
+returns and consumes the sampler. Every later call on a finished sampler
+errors.
