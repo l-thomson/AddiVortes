@@ -225,14 +225,15 @@ jobs:
         with:
           use-public-rspm: true
       - run: tools/vendor.sh
-      # Staged by force because the vendored core is ignored: an added file
-      # would otherwise be untracked, and so absent from a diff.
+      # Staged first: an added file is untracked, and so absent from a diff.
+      # Fails on a stale committed core, archive, AUTHORS or chain fixture.
       - run: |
           paths="r/DESCRIPTION r/inst/AUTHORS r/src/rust/Cargo.lock \
-            r/src/rust/core r/tests/testthat/core-gaussian-chain.txt \
+            r/src/rust/core r/src/rust/vendor.tar.xz \
+            r/tests/testthat/core-gaussian-chain.txt \
             r/tests/testthat/core-probit-chain.txt \
             r/tests/testthat/core-heteroscedastic-chain.txt"
-          git add --force $paths
+          git add $paths
           git diff --cached --exit-code -- $paths
       # The binding crate is outside the root workspace, so the fmt and
       # clippy jobs above do not reach it.

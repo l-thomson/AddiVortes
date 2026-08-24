@@ -2,8 +2,9 @@
 # Vendors the Rust sources the R package builds from, offline, as CRAN
 # requires: the core crate as `cargo package` publishes it, less its
 # `[dev-dependencies]` table, and every third-party crate through
-# `cargo vendor`. Writes r/src/rust/vendor.tar.xz (unpacks to rust/core
-# and rust/vendor), r/inst/AUTHORS, and the core version in r/DESCRIPTION.
+# `cargo vendor`. Writes r/src/rust/core as source, r/src/rust/vendor.tar.xz
+# holding the third-party crates alone, r/inst/AUTHORS, and the core version
+# in r/DESCRIPTION.
 #
 # Usage, from the repository root: tools/vendor.sh
 set -eu
@@ -44,7 +45,7 @@ cargo metadata --format-version 1 --locked | jq -r '
 
 rm -f vendor.tar.xz
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='2000-01-01 00:00Z' \
-  -cJf vendor.tar.xz core vendor
+  -cJf vendor.tar.xz vendor
 
 # The determinism test compares against the core's committed chain, which
 # the package tarball does not otherwise carry.

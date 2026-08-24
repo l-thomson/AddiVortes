@@ -17,7 +17,7 @@ $(SHLIB): $(STATLIB)
 $(STATLIB):
 	mkdir -p "$(CARGOTMP)/libgcc_mock"
 	touch "$(CARGOTMP)/libgcc_mock/libgcc_eh.a"
-	if [ ! -d rust/core ] && [ -f rust/vendor.tar.xz ]; then \
+	if [ ! -d rust/vendor ] && [ -f rust/vendor.tar.xz ]; then \
 	  tar xf rust/vendor.tar.xz -C rust; \
 	  touch rust/.unpacked; \
 	fi
@@ -36,7 +36,7 @@ $(STATLIB):
 rust_clean: $(SHLIB)
 	rm -Rf "$(CARGOTMP)" "$(TARGET_DIR)"
 	if [ -f rust/.unpacked ]; then \
-	  rm -Rf "$(VENDOR_DIR)" rust/core rust/.unpacked; \
+	  rm -Rf "$(VENDOR_DIR)" rust/.unpacked; \
 	fi
 
 clean:
