@@ -103,6 +103,25 @@ its place on each surface, is rendered from the spec by
 `tools/parity_table.py` and checked against the committed file, so drift
 is a test failure.
 
+### Cost regressions
+
+In `crates/thiessen-bench/benches/instructions.rs`, under callgrind, on
+pull requests touching the core or the registry. Retired instructions and
+estimated cycles for one sweep and one predict call per shipped model,
+and for one sweep at 5, 10 and 40 columns, each against the base
+revision measured with the same benchmark code; a soft limit of five per
+cent fails the job.
+
+This layer detects a change that costs more without changing what the
+chain does. Every layer above it is blind to that: the determinism tests
+prove the draws have not moved and say nothing about how long they took,
+which is how a factor of two entered the default Euclidean path with an
+experimental feature and survived every gate. The column sweep is the
+shape of that defect specifically, a fit growing in p where a
+tessellation reads a handful of columns. Wall-clock is not a gate
+anywhere; the same-machine A/B in [CONTRIBUTING.md](../CONTRIBUTING.md)
+is where it is read.
+
 ## Numbers
 
 Every size, alpha and critical value is stated next to the test that

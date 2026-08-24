@@ -179,6 +179,64 @@ jobs:
           path: calibration-out
 
 
+  # The only performance measurement CI is allowed to gate on. Callgrind
+  # counts retired instructions, which is deterministic, so a shared runner
+  # measures it as well as a quiet workstation; wall-clock on the same
+  # runner carries a few per cent of noise with far larger excursions and
+  # lives in `tools/perf-compare.sh` instead.
+  #
+  # The base revision is measured with the pull request's benchmark code,
+  # not its own: the comparison is of the library, so the harness has to be
+  # held fixed, and a pull request that adds a benchmark has no counterpart
+  # at the base to run.
+  perf-instructions:
+    name: perf-instructions
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # Full history; the base revision is not in a shallow clone.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: paths
+        run: |
+          hit=false
+          if git diff --name-only \
+            ${{ github.event.pull_request.base.sha }}...HEAD -- \
+            'crates/thiessen/src/*' \
+            'crates/thiessen/src/models/*' \
+            crates/thiessen-bench | grep -q .; then
+            hit=true
+          fi
+          echo "hit=$hit" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        if: steps.paths.outputs.hit == 'true'
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        if: steps.paths.outputs.hit == 'true'
+      - if: steps.paths.outputs.hit == 'true'
+        run: sudo apt-get update && sudo apt-get install --yes valgrind
+      - if: steps.paths.outputs.hit == 'true'
+        run: cargo install --locked --version 0.19.4 gungraun-runner
+      - if: steps.paths.outputs.hit == 'true'
+        run: |
+          git worktree add --detach "${{ runner.temp }}/base" \
+            ${{ github.event.pull_request.base.sha }}
+          rm -rf "${{ runner.temp }}/base/crates/thiessen-bench"
+          cp -r crates/thiessen-bench "${{ runner.temp }}/base/crates/"
+          cp Cargo.lock "${{ runner.temp }}/base/Cargo.lock"
+      # One target directory for both runs, so the baseline the base
+      # revision saves is the one the pull request's run compares against.
+      - if: steps.paths.outputs.hit == 'true'
+        working-directory: ${{ runner.temp }}/base
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: cargo bench -p thiessen-bench --bench instructions -- --save-baseline=base
+      # Fails on a soft-limit breach; the limits are in the bench file.
+      - if: steps.paths.outputs.hit == 'true'
+        run: cargo bench -p thiessen-bench --bench instructions -- --baseline=base
+
   coverage:
     name: coverage
     strategy:
@@ -431,14 +489,15 @@ jobs:
   alls-green:
     name: alls-green
     if: always()
-    needs: [fmt, clippy, test, deny, doc, semver, calibration-full, coverage, cff,
+    needs: [fmt, clippy, test, deny, doc, semver, calibration-full,
+            perf-instructions, coverage, cff,
             py-lint, py-test, py-coverage, py-docs, r-source, r-check, r-docs]
     runs-on: ubuntu-latest
     steps:
       - uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-          # semver and calibration-full run on pull requests only; coverage
-          # is informational
-          allowed-skips: semver, calibration-full
+          # semver, calibration-full and perf-instructions run on pull
+          # requests only; coverage is informational
+          allowed-skips: semver, calibration-full, perf-instructions
           allowed-failures: coverage, py-coverage
