@@ -81,11 +81,12 @@ tracking issue exists.
 The package under `r/` links the core as a static library through
 extendr and builds offline from vendored sources, as the CRAN policy on
 Rust requires. `tools/vendor.sh` packages the core as `cargo package`
-would publish it (less its dev-dependencies), runs `cargo vendor` for the
-third-party crates, and writes `r/src/rust/vendor.tar.xz`,
-`r/inst/AUTHORS` and the core version in `r/DESCRIPTION`. Run it after
-any change to the core or to `r/src/rust/Cargo.toml`, commit the
-regenerated files (the tarball is not tracked), then
+would publish it (less its dev-dependencies) into `r/src/rust/core`, runs
+`cargo vendor` for the third-party crates and archives those alone as
+`r/src/rust/vendor.tar.xz`, and writes `r/inst/AUTHORS` and the core
+version in `r/DESCRIPTION`. Run it after any change to the core or to
+`r/src/rust/Cargo.toml`, commit every regenerated file including the
+archive, then
 
     R CMD build r
     R CMD check --as-cran thiessen_*.tar.gz

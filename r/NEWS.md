@@ -71,5 +71,6 @@
   core's message; `core_experimental()` reports the build's setting.
 * Errors carry the condition class `thiessen_error` and warnings
   `thiessen_warning`.
-* Builds and links the core crate offline from the vendored sources in
+* Builds and links the core crate offline from vendored sources, the core
+  as source under `src/rust/core` and the third-party crates in
   `src/rust/vendor.tar.xz`; `core_version()` reports the core version.
