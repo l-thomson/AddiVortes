@@ -19,17 +19,29 @@ compares posterior summaries against the authors' R package,
 
 ## Installation
 
-The package is not yet on CRAN. Building from source needs a Rust
-toolchain (rustc 1.74 or later with Cargo). Every crate the build needs
-ships with the package, so the compilation itself uses no network.
+The package is not yet on CRAN, and it compiles Rust, so the build needs
+more than R:
+
+- rustc 1.74 or later with Cargo, from [rustup](https://rustup.rs).
+- On Windows, [Rtools](https://cran.r-project.org/bin/windows/Rtools/)
+  as well, and the Rust target the R build links against. Under the
+  usual Rtools that is `x86_64-pc-windows-gnu`, so
+  `rustup target add x86_64-pc-windows-gnu`; `configure.win` prints the
+  target it selected, which differs on the clang and ARM builds.
+- `knitr` and `rmarkdown` if you want the articles, since they build
+  them.
+
+Every crate the build needs ships with the package, so the compilation
+itself uses no network.
 
 ``` r
-# install.packages("remotes")
-remotes::install_github("l-thomson/thiessen", subdir = "r")
+install.packages(c("remotes", "knitr", "rmarkdown"))
+remotes::install_github("l-thomson/thiessen", subdir = "r",
+                        build_vignettes = TRUE)
 ```
 
-`install_github()` leaves the articles out by default. Add
-`build_vignettes = TRUE` to install the ones named below.
+Without `build_vignettes = TRUE` the install skips the articles and the
+`vignette()` calls below find nothing.
 
 ## Example
 
