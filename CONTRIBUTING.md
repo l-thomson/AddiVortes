@@ -26,6 +26,51 @@ The full-size calibration tests write ranks and samples under
 `benchmarks/calibration/evaluate.R` turns them into rank ECDF difference
 and comparison plots, as the nightly `calibration` job does.
 
+## Performance
+
+Benchmarks live in `bench`, off the published crate so
+they carry their own toolchain floor. The registry in
+`bench/src/lib.rs` holds one workload per shipped model:
+a model added there is benchmarked without any other edit.
+
+A pull request that touches a hot path reports numbers. Same-machine A/B,
+old revision against new, both built and run in one session:
+
+    tools/perf-compare.sh <rev-a> <rev-b>     # or: just perf-compare
+    cargo install critcmp                     # once
+
+The script runs revision A twice, first and last. The A-against-A table
+is the drift check: a machine that is not quiet shows a difference there,
+and the comparison taken on it means nothing.
+
+A claimed win below roughly 10% cites the instruction-count delta, not
+wall-clock alone. Code layout by itself moves wall-clock by around 8%
+(Mytkowicz, Diwan, Hauswirth and Sweeney 2009), which is larger than most
+wins worth reporting. Instruction counts need valgrind:
+
+    cargo install --locked --version 0.19.4 gungraun-runner
+    cargo bench --manifest-path bench/Cargo.toml \
+        --bench instructions
+
+CI runs that bench on pull requests touching the core or the registry,
+measuring the base revision with the pull request's benchmark code, and
+fails on a soft-limit breach. It is the only performance job allowed to
+gate, because instruction counts are deterministic and a shared runner
+measures them as well as a quiet workstation does. There is no wall-clock
+gate anywhere: the runners sit at a few per cent of noise with far larger
+excursions.
+
+Binding changes report the binding's own numbers the same way, one
+machine, old against new, in the pull request body:
+
+    pip install -r python/requirements-bench.txt
+    pytest tests/benchmarks --benchmark-columns=median,iqr,ops
+
+`Sampler.step(n)` runs n sweeps behind one crossing and `step()` called n
+times runs them behind n crossings, so the pair measures the boundary cost
+with the sampling held identical. Nothing there asserts and nothing is
+stored: the pull request is the record.
+
 ## Reproducibility and snapshots
 
 The reproducibility contract is in the crate-root documentation

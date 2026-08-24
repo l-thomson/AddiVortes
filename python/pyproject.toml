@@ -78,9 +78,10 @@ strict = true
 module = "thiessen._native"
 ignore_missing_imports = true
 
-# Neither scikit-learn nor arviz ships py.typed.
+# Neither scikit-learn nor arviz ships py.typed. pytest-benchmark is a
+# benchmark-only dependency and is absent from the lint environment.
 [[tool.mypy.overrides]]
-module = ["arviz.*", "sklearn.*"]
+module = ["arviz.*", "pytest_benchmark.*", "sklearn.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -98,3 +99,6 @@ disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The benchmarks need pytest-benchmark and take minutes; they are run by
+# hand against two revisions and reported in the pull request, never in CI.
+addopts = "--ignore=tests/benchmarks"

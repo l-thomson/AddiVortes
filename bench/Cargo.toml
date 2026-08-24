@@ -1,0 +1,46 @@
+# Outside the root workspace, as the R binding crate is, with a lock of its
+# own: criterion and gungraun pull in edition-2024 crates, which the 1.74
+# leg of the test matrix cannot parse even when it builds `-p thiessen`
+# alone, because `--locked` reads every manifest in the lock.
+[workspace]
+
+[package]
+name = "thiessen-bench"
+version = "0.0.0"
+edition = "2021"
+# criterion 0.8 requires 1.86 and gungraun 0.19 requires 1.85.1; the
+# published core crate keeps its 1.74 floor.
+rust-version = "1.86"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/l-thomson/thiessen"
+description = "Benchmark registry and harness for the thiessen crate"
+publish = false
+
+[features]
+# Forwarded, so the registry carries the experimental models under the name
+# the rest of the repository uses.
+experimental = ["thiessen/experimental"]
+
+[dependencies]
+thiessen = { path = "../crates/thiessen" }
+
+[dev-dependencies]
+# No plots and no rayon: deltas are read through critcmp, and a thread pool
+# inside the harness would confound a single-threaded measure.
+criterion = { version = "0.8", default-features = false, features = [
+    "cargo_bench_support",
+] }
+gungraun = "0.19"
+
+# `test = false` on both: `cargo test` runs bench targets by default, which
+# would put a criterion pass into every test run and would invoke the
+# callgrind harness on machines without valgrind.
+[[bench]]
+name = "wall_clock"
+harness = false
+test = false
+
+[[bench]]
+name = "instructions"
+harness = false
+test = false
