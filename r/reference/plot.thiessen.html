@@ -82,7 +82,12 @@ so a trace shows the kept draws only.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>For traces of the mean function and for distributional displays, pass
+    <p>The covariate trace is flat by construction where p is 3 or fewer: the
+default <code>omega</code> of <code>min(3, p)</code> makes <code>omega / p</code> equal to 1, so every
+tessellation holds every covariate on every draw and the count cannot
+move. It is the same property that makes <code><a href="variable_inclusion.html">variable_inclusion()</a></code> uniform
+at small p, and it is not a stalled chain.</p>
+<p>For traces of the mean function and for distributional displays, pass
 <code><a href="https://mc-stan.org/posterior/reference/draws_df.html" class="external-link">posterior::as_draws_df()</a></code> to bayesplot: <code>mcmc_trace()</code> plots sequences,
 <code>mcmc_areas()</code> and <code>mcmc_dens()</code> plot posterior densities, and
 <code>mcmc_combo()</code> plots both in one figure.</p>

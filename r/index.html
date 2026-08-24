@@ -66,17 +66,22 @@
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
 </h2>
-<p>The package is not yet on CRAN. Building from source needs a Rust toolchain (rustc 1.74 or later with Cargo). Every crate the build needs ships with the package, so the compilation itself uses no network.</p>
+<p>The package is not yet on CRAN, and it compiles Rust, so the build needs a toolchain besides R’s own:</p>
+<ul>
+<li>rustc 1.74 or later with Cargo, from <a href="https://rustup.rs" class="external-link">rustup</a>.</li>
+<li>On Windows, <a href="https://cran.r-project.org/bin/windows/Rtools/" class="external-link">Rtools</a> as well, and the Rust target the R build links against. Under the usual Rtools that is <code>x86_64-pc-windows-gnu</code>, so <code>rustup target add x86_64-pc-windows-gnu</code>; <code>configure.win</code> prints the target it selected, which differs on the clang and ARM builds.</li>
+</ul>
+<p>Install the toolchain before starting R, or restart the session afterwards: rustup puts <code>cargo</code> on the path of new sessions only, and a session older than the install fails the build as though no toolchain were there. Every crate the build needs ships with the package, so the compilation itself uses no network.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># install.packages("remotes")</span></span>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"remotes"</span><span class="op">)</span></span>
 <span><span class="fu">remotes</span><span class="fu">::</span><span class="fu">install_github</span><span class="op">(</span><span class="st">"l-thomson/thiessen"</span>, subdir <span class="op">=</span> <span class="st">"r"</span><span class="op">)</span></span></code></pre></div>
-<p><code>install_github()</code> leaves the articles out by default. Add <code>build_vignettes = TRUE</code> to install the ones named below.</p>
+<p>The articles are on the website named below, so the install leaves them out. <code>build_vignettes = TRUE</code> installs them locally instead, and needs <code>knitr</code> and <code>rmarkdown</code> present to build them.</p>
 </div>
 <div class="section level2">
 <h2 id="example">Example<a class="anchor" aria-label="anchor" href="#example"></a>
 </h2>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://l-thomson.github.io/thiessen/r">thiessen</a></span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://l-thomson.github.io/thiessen/r/">thiessen</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
 <span><span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">200</span></span>
@@ -96,7 +101,7 @@
 <span><span class="co">#&gt; [1] 0.2181837 0.1508115 0.3662940 0.4198369 0.2212262 0.6757635</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/sigma.html" class="external-link">sigma</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] 0.09331458</span></span></code></pre></div>
-<p><code>plot(fit)</code> draws the fitted values against the response and the residuals against the fitted values.</p>
+<p><code>plot(fit)</code> traces the per-draw sampler diagnostics, one panel each. It is a convergence check rather than a display of the fit; for the fit itself pass <code>posterior::as_draws_df(fit)</code> to bayesplot.</p>
 </div>
 <div class="section level2">
 <h2 id="documentation">Documentation<a class="anchor" aria-label="anchor" href="#documentation"></a>

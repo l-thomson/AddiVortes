@@ -26,6 +26,8 @@ Statistics* 34(3), 859-871.
 
 Useful links:
 
+- <https://l-thomson.github.io/thiessen/r/>
+
 - <https://github.com/l-thomson/thiessen>
 
 - Report bugs at <https://github.com/l-thomson/thiessen/issues>

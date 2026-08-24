@@ -30,6 +30,13 @@ plot(x, ...)
 
 ## Details
 
+The covariate trace is flat by construction where p is 3 or fewer: the
+default `omega` of `min(3, p)` makes `omega / p` equal to 1, so every
+tessellation holds every covariate on every draw and the count cannot
+move. It is the same property that makes
+[`variable_inclusion()`](https://l-thomson.github.io/thiessen/r/reference/variable_inclusion.md)
+uniform at small p, and it is not a stalled chain.
+
 For traces of the mean function and for distributional displays, pass
 [`posterior::as_draws_df()`](https://mc-stan.org/posterior/reference/draws_df.html)
 to bayesplot: `mcmc_trace()` plots sequences, `mcmc_areas()` and
