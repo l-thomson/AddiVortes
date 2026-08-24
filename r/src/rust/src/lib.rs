@@ -81,68 +81,6 @@ fn core_validate(config_json: &str) -> Result<()> {
     config(config_json)?.validate().map_err(core_error)
 }
 
-/// Fit the model of the configuration and return the fit and the quantities
-/// the print, summary, fitted and residuals methods report. `chains` runs
-/// that many chains, seeded by `thiessen::chain_seed`, and pools their
-/// draws. `report`, an R function or `NULL`, is called `updates` times over
-/// the sweep schedules of every chain.
-#[extendr]
-fn core_fit(
-    config_json: &str,
-    x: RMatrix<f64>,
-    y: &[f64],
-    seed_value: f64,
-    chains: i32,
-    report: Robj,
-    updates: i32,
-) -> Result<List> {
-    let config = config(config_json)?;
-    let data = design(&x)?;
-    let seed = seed(seed_value)?;
-    let chains = chains.max(1) as usize;
-    let reporter = report.as_function();
-    let updates = updates.max(1) as usize;
-    let schedule = &config.general_params;
-    let sweeps = schedule.burn_in + schedule.draws * schedule.thinning;
-    let total = chains * sweeps;
-    let mut emitted = 0_usize;
-    let mut done = 0_usize;
-    let mut fits = Vec::with_capacity(chains);
-    for index in 0..chains {
-        let chain = thiessen::chain_seed(seed, index);
-        let fitted = match &reporter {
-            Some(report) => {
-                thiessen::fit_with_progress(&config, &data, y, chain, |completed, _| {
-                    // `updates` calls spread evenly over the sweeps of every
-                    // chain. A failing handler must not lose a completed
-                    // fit, so the result of the call is discarded.
-                    while (emitted + 1) * total <= (done + completed) * updates {
-                        emitted += 1;
-                        let _ = report.call(pairlist!());
-                    }
-                })
-            }
-            None => thiessen::fit(&config, &data, y, chain),
-        }
-        .map_err(core_error)?;
-        done += sweeps;
-        fits.push(fitted);
-    }
-    let fitted = thiessen::Fitted::pool(&fits, &data, y).map_err(core_error)?;
-    let fitted_values = fitted.predict(&data).map_err(core_error)?;
-    let warnings: Vec<String> = fitted.warnings().iter().map(ToString::to_string).collect();
-    Ok(list!(
-        state = serde_json::to_string(&fitted).map_err(json_error)?,
-        config = serde_json::to_string(fitted.config()).map_err(json_error)?,
-        model = fitted.model_name().to_string(),
-        n_chains = chains as i32,
-        n_draws = fitted.n_draws() as i32,
-        in_sample_rmse = fitted.in_sample_rmse(),
-        warnings = warnings,
-        fitted_values = fitted_values
-    ))
-}
-
 /// The posterior mean at each row of `x`.
 #[extendr]
 fn core_predict(state_json: &str, x: RMatrix<f64>) -> Result<Vec<f64>> {
@@ -228,18 +166,20 @@ fn finished() -> Error {
     Error::Other("the sampler is finished".to_string())
 }
 
-/// Construct a sampler with the chain-0 seed of `core_fit`, so driving
-/// the configured schedule by hand reproduces a one-chain fit bit for bit.
+/// Construct a sampler on the seed the core derives for chain `chain`, so
+/// driving the configured schedule by hand reproduces that chain of a fit
+/// bit for bit.
 #[extendr]
 fn core_sampler_new(
     config_json: &str,
     x: RMatrix<f64>,
     y: &[f64],
     seed_value: f64,
+    chain: i32,
 ) -> Result<ExternalPtr<SamplerHandle>> {
     let config = config(config_json)?;
     let data = design(&x)?;
-    let chain = thiessen::chain_seed(seed(seed_value)?, 0);
+    let chain = thiessen::chain_seed(seed(seed_value)?, chain.max(0) as usize);
     let inner = thiessen::Sampler::new(&config, &data, y, chain).map_err(core_error)?;
     Ok(ExternalPtr::new(SamplerHandle {
         inner: RefCell::new(Some(inner)),
@@ -332,21 +272,31 @@ fn core_sampler_config(sampler: ExternalPtr<SamplerHandle>) -> Result<String> {
     .map_err(json_error)
 }
 
-/// The fitted model from the kept draws, pooled as a one-chain fit and
-/// returned in the shape of `core_fit`.
+/// The fitted model from the kept draws of every sampler, their chains
+/// pooled. Consumes the samplers.
 #[extendr]
-fn core_sampler_finish(sampler: ExternalPtr<SamplerHandle>) -> Result<List> {
-    let live = sampler.inner.borrow_mut().take().ok_or_else(finished)?;
-    let fitted = live.finish().map_err(core_error)?;
-    let y = sampler.y.borrow();
-    let fitted = thiessen::Fitted::pool(&[fitted], &sampler.data, &y).map_err(core_error)?;
-    let fitted_values = fitted.predict(&sampler.data).map_err(core_error)?;
+fn core_finish(samplers: List) -> Result<List> {
+    let handles = samplers
+        .values()
+        .map(ExternalPtr::<SamplerHandle>::try_from)
+        .collect::<Result<Vec<_>>>()?;
+    let first = handles
+        .first()
+        .ok_or_else(|| Error::Other("a fit needs at least one chain".to_string()))?;
+    let mut fits = Vec::with_capacity(handles.len());
+    for handle in &handles {
+        let live = handle.inner.borrow_mut().take().ok_or_else(finished)?;
+        fits.push(live.finish().map_err(core_error)?);
+    }
+    let y = first.y.borrow();
+    let fitted = thiessen::Fitted::pool(&fits, &first.data, &y).map_err(core_error)?;
+    let fitted_values = fitted.predict(&first.data).map_err(core_error)?;
     let warnings: Vec<String> = fitted.warnings().iter().map(ToString::to_string).collect();
     Ok(list!(
         state = serde_json::to_string(&fitted).map_err(json_error)?,
         config = serde_json::to_string(fitted.config()).map_err(json_error)?,
         model = fitted.model_name().to_string(),
-        n_chains = 1_i32,
+        n_chains = fits.len() as i32,
         n_draws = fitted.n_draws() as i32,
         in_sample_rmse = fitted.in_sample_rmse(),
         warnings = warnings,
@@ -360,7 +310,6 @@ extendr_module! {
     fn core_experimental;
     fn core_defaults;
     fn core_validate;
-    fn core_fit;
     fn core_predict;
     fn core_predict_draws;
     fn core_interval;
@@ -375,5 +324,5 @@ extendr_module! {
     fn core_sampler_fitted_values;
     fn core_sampler_noise_variances;
     fn core_sampler_config;
-    fn core_sampler_finish;
+    fn core_finish;
 }

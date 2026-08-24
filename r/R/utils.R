@@ -204,20 +204,18 @@ resolve_chains <- function(chains, call = rlang::caller_env()) {
   as.integer(chains)
 }
 
-#' A function the core calls to signal progress, and the number of calls
+#' The number of progress reports a fit signals
 #'
 #' Progress is signalled with progressr, so a session reports it only after
 #' `progressr::handlers()`; nothing is printed by default.
 #'
 #' @param control An object of class `"thiessen_control"`.
 #' @param chains The number of chains the fit runs.
-#' @return A list of the function the core calls and the number of calls.
+#' @return An integer: one report per sweep, to a maximum of a hundred.
 #' @noRd
-progress_reporter <- function(control, chains = 1L) {
+progress_updates <- function(control, chains = 1L) {
   schedule <- control$general_params
   sweeps <- chains *
     (schedule$burn_in + schedule$draws * schedule$thinning)
-  updates <- min(sweeps, 100L)
-  report <- progressr::progressor(steps = updates)
-  list(report = function() report(), updates = as.integer(updates))
+  as.integer(min(sweeps, 100L))
 }

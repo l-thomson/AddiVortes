@@ -206,10 +206,8 @@ new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
   }
   chains <- resolve_chains(chains, call = call_env)
   resolved <- resolve_seed(seed, call = call_env)
-  progress <- progress_reporter(control, chains)
   fit <- core_call(
-    core_fit(config_json(control), design, y, resolved, chains,
-             progress$report, progress$updates),
+    run_schedule(control, design, y, resolved, chains),
     call = call_env
   )
   assemble_fit(fit, design, y, resolved, call,
@@ -217,9 +215,69 @@ new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
                call_env = call_env)
 }
 
+#' Run the sweep schedule of every chain and pool the draws
+#'
+#' The schedule runs here rather than in the core because progressr reports
+#' by signalling a condition, and extendr evaluates an R callback through
+#' `R_tryEval`, which clears R's handler stack: a condition raised inside a
+#' callback the core calls reaches no handler established outside the
+#' `.Call`. Driving the sampler from R signals where the handlers are live.
+#' The sweep order is the core's own, so the draws are unchanged.
+#'
+#' @param control An object of class `"thiessen_control"`.
+#' @param design The numeric design.
+#' @param y The numeric response.
+#' @param seed The resolved seed.
+#' @param chains The number of chains to run.
+#' @return The list `core_finish()` returns.
+#' @noRd
+run_schedule <- function(control, design, y, seed, chains) {
+  schedule <- control$general_params
+  config <- config_json(control)
+  thinning <- as.integer(schedule$thinning)
+  sweeps <- schedule$burn_in + schedule$draws * thinning
+  total <- chains * sweeps
+  updates <- progress_updates(control, chains)
+  report <- progressr::progressor(steps = updates)
+  emitted <- 0L
+  done <- 0L
+  # `updates` reports spread evenly over the sweeps of every chain, and the
+  # sweeps to the next of them, so burn-in advances in one call per report.
+  gap <- function(completed) {
+    ceiling((emitted + 1L) * total / updates) - done - completed
+  }
+  tick <- function(completed) {
+    while (emitted < updates &&
+             (emitted + 1L) * total <= (done + completed) * updates) {
+      emitted <<- emitted + 1L
+      report()
+    }
+  }
+  samplers <- vector("list", chains)
+  for (index in seq_len(chains)) {
+    handle <- core_sampler_new(config, design, y, seed, index - 1L)
+    samplers[[index]] <- handle
+    completed <- 0L
+    while (completed < schedule$burn_in) {
+      run <- max(1L, min(schedule$burn_in - completed, gap(completed)))
+      core_sampler_step(handle, as.integer(run))
+      completed <- completed + run
+      tick(completed)
+    }
+    for (draw in seq_len(schedule$draws)) {
+      core_sampler_step(handle, thinning)
+      completed <- completed + thinning
+      core_sampler_keep(handle)
+      tick(completed)
+    }
+    done <- done + sweeps
+  }
+  core_finish(samplers)
+}
+
 #' Assemble the object the methods return from the core's fit list
 #'
-#' @param fit The list `core_fit` or `core_sampler_finish` returns.
+#' @param fit The list `core_finish()` returns.
 #' @param design The numeric design.
 #' @param y The numeric response.
 #' @param seed The resolved seed.

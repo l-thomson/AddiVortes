@@ -17,10 +17,6 @@ core_defaults <- function() .Call(wrap__core_defaults)
 
 core_validate <- function(config_json) .Call(wrap__core_validate, config_json)
 
-core_fit <- function(config_json, x, y, seed_value, chains, report, updates) {
-  .Call(wrap__core_fit, config_json, x, y, seed_value, chains, report, updates)
-}
-
 core_predict <- function(state_json, x) .Call(wrap__core_predict, state_json, x)
 
 core_predict_draws <- function(state_json, x, kind) {
@@ -41,8 +37,8 @@ core_diagnostics <- function(state_json) {
   .Call(wrap__core_diagnostics, state_json)
 }
 
-core_sampler_new <- function(config_json, x, y, seed_value) {
-  .Call(wrap__core_sampler_new, config_json, x, y, seed_value)
+core_sampler_new <- function(config_json, x, y, seed_value, chain) {
+  .Call(wrap__core_sampler_new, config_json, x, y, seed_value, chain)
 }
 
 core_sampler_step <- function(sampler, n) .Call(wrap__core_sampler_step, sampler, n)
@@ -65,4 +61,4 @@ core_sampler_noise_variances <- function(sampler) {
 
 core_sampler_config <- function(sampler) .Call(wrap__core_sampler_config, sampler)
 
-core_sampler_finish <- function(sampler) .Call(wrap__core_sampler_finish, sampler)
+core_finish <- function(samplers) .Call(wrap__core_finish, samplers)

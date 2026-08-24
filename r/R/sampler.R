@@ -81,7 +81,9 @@ thiessen_sampler <- function(x, y, control = thiessen_control(), seed = NULL) {
   }
   y <- as.double(y)
   resolved <- resolve_seed(seed)
-  handle <- core_call(core_sampler_new(config_json(control), design, y, resolved))
+  handle <- core_call(
+    core_sampler_new(config_json(control), design, y, resolved, 0L)
+  )
   current_y <- y
 
   self <- new.env(parent = emptyenv())
@@ -115,7 +117,7 @@ thiessen_sampler <- function(x, y, control = thiessen_control(), seed = NULL) {
     core_call(core_sampler_noise_variances(handle))
   }
   self$finish <- function() {
-    fit <- core_call(core_sampler_finish(handle))
+    fit <- core_call(core_finish(list(handle)))
     assemble_fit(fit, design = design, y = current_y, seed = resolved,
                  call = sys.call(-1L))
   }
