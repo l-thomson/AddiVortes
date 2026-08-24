@@ -14,7 +14,8 @@ Description: Bayesian regression on a sum of Voronoi tessellations
     prediction, posterior intervals and summaries. The sampler is the
     'thiessen' Rust crate, built and linked from vendored sources.
 License: MIT + file LICENSE
-URL: https://github.com/l-thomson/thiessen
+URL: https://l-thomson.github.io/thiessen/r,
+    https://github.com/l-thomson/thiessen
 BugReports: https://github.com/l-thomson/thiessen/issues
 Encoding: UTF-8
 Language: en-GB

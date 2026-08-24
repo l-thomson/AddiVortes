@@ -75,6 +75,10 @@ residuals against the fitted values.
 - `vignette("sampler-api")`, driving the Gibbs loop from R to build a
   model the package does not ship.
 
+The same articles are rendered with their output, and the reference
+pages with them, at
+[l-thomson.github.io/thiessen/r](https://l-thomson.github.io/thiessen/r/).
+
 Read them in that order: getting started, then the article for the model
 in hand, then the control surface as a reference, and the sampler API
 only when extending the method.
