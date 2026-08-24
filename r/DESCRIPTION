@@ -37,7 +37,7 @@ Suggests:
     loo,
     rmarkdown,
     srr,
-    testthat (>= 3.0.0),
+    testthat (>= 3.1.5),
     tidybayes
 VignetteBuilder: knitr
 Roxygen: list(markdown = TRUE, load = "source",

@@ -89,7 +89,9 @@ test_that("sigma is one under the probit model", {
   fixture <- small_fixture()
   labels <- as.double(fixture$y >= stats::median(fixture$y))
 
-  fit <- thiessen(fixture$x, labels, small_control(outcome = probit()), seed = 1)
+  fit <- thiessen(
+    fixture$x, labels, small_control(outcome = probit_outcome()), seed = 1
+  )
 
   expect_identical(sigma(fit), 1)
 })

@@ -14,7 +14,7 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 Binary AddiVortes is the classification variant of Stone and Gosling
 (2025): P(y = 1 | x) = Phi(c + f(x)), fitted with the latent-variable
 augmentation of Albert and Chib (1993), as BART's `pbart` fits its
-probit model. It is selected by the `probit()` family. The offset c
+probit model. It is selected by the `probit_outcome()` family. The offset c
 defaults to Phi^-1(ybar), resolved at fit.
 
 ```{r}
@@ -27,7 +27,7 @@ label <- factor(ifelse(x[, 1] + 0.3 * x[, 2] + rnorm(n, sd = 0.2) > 0.6,
                        "yes", "no"))
 
 control <- thiessen_control(
-  outcome = probit(),
+  outcome = probit_outcome(),
   tessellations = 25,
   general_params = general_params(burn_in = 100, draws = 200)
 )

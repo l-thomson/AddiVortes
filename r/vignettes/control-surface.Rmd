@@ -24,15 +24,18 @@ thiessen_control()
 
 ## The outcome family
 
-`outcome` selects the observation model, the `glm(family = )` idiom:
-`gaussian(nu, q)` for continuous responses, carrying the sigma^2 prior's
-degrees of freedom and calibration quantile, and `probit(offset)` for
-binary ones. Attaching `variance_params` with a positive tessellation
-count extends the Gaussian family to the heteroscedastic model.
+`outcome` selects the observation model:
+`gaussian_outcome(nu, q)` for continuous responses, carrying the sigma^2
+prior's degrees of freedom and calibration quantile, and
+`probit_outcome(offset)` for binary ones. The suffix keeps
+`gaussian_outcome()` from masking `stats::gaussian()`, which `glm()` takes,
+and both families carry it rather than only the one that would clash.
+Attaching `variance_params` with a positive tessellation count extends the
+Gaussian family to the heteroscedastic model.
 
 ```{r}
-gaussian(nu = 3)
-probit()
+gaussian_outcome(nu = 3)
+probit_outcome()
 ```
 
 ## The ensembles
@@ -79,9 +82,9 @@ it is the only flat argument. Every value is validated by the core at
 construction, with the reason kept:
 
 ```{r, error = TRUE}
-thiessen_control(outcome = gaussian(q = 1.5))
+thiessen_control(outcome = gaussian_outcome(q = 1.5))
 thiessen_control(
-  outcome = probit(),
+  outcome = probit_outcome(),
   variance_params = term_params(tessellations = 40)
 )
 ```
@@ -96,10 +99,37 @@ term_params(zeta = 1)
 ## Defaults
 
 An argument left at its default gives the core's default, so
-`thiessen_control()` is the published configuration: 200 tessellations,
-`k = 3`, `lambda_c = 5`, `nu = 6`, `q = 0.85`, `sigma_c = 0.8`,
-`omega = min(3, p)`. The one default that departs from the paper is
-`lambda_c`: Stone and Gosling (2025), s. 2.3, report 25, and CRAN
+`thiessen_control()` is the published configuration. The core resolves the
+configuration at fit and the fit carries what it resolved, so the values
+below are read from the core rather than repeated here.
+
+```{r}
+n <- 40
+x <- cbind(
+  a = seq(0, 1, length.out = n),
+  b = rep(c(0, 0.25, 0.5, 0.75), length.out = n),
+  c = rep(c(0, 1), length.out = n)
+)
+y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
+
+resolved <- thiessen(x, y, thiessen_control(
+  general_params = general_params(burn_in = 1, draws = 1)
+), seed = 1)$control
+mean_params <- resolved$mean_params
+
+c(
+  tessellations = mean_params$tessellations,
+  k = mean_params$k,
+  lambda_c = mean_params$lambda_c,
+  sigma_c = mean_params$geometry$sigma_c,
+  omega = mean_params$structure$omega,
+  nu = resolved$outcome$nu,
+  q = resolved$outcome$q
+)
+```
+
+`omega` is the one that depends on the data, resolving to `min(3, p)`,
+three of the three covariates above. The one default that departs from the
+paper is `lambda_c`: Stone and Gosling (2025), s. 2.3, report 25, and CRAN
 AddiVortes takes 5 from 0.6.8 onward; this package follows the
-implementation, and `term_params(lambda_c = 25)` is the paper's
-setting.
+implementation, and `term_params(lambda_c = 25)` is the paper's setting.

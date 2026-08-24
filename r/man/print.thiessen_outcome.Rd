@@ -18,5 +18,5 @@
 Print an outcome family
 }
 \examples{
-print(gaussian())
+print(gaussian_outcome())
 }

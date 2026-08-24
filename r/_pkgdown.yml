@@ -24,8 +24,8 @@ reference:
   - thiessen_control
 - title: Outcome families
   contents:
-  - gaussian
-  - probit
+  - gaussian_outcome
+  - probit_outcome
   - print.thiessen_outcome
 - title: Parameter groups
   contents:
@@ -63,4 +63,5 @@ reference:
 - title: Build information
   contents:
   - core_version
+  - core_experimental
   - thiessen-package

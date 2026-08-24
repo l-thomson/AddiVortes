@@ -3,7 +3,7 @@
 #' The configuration of Stone and Gosling (2025), s. 2, in the shape the
 #' core stores it: an outcome family, one parameter group per ensemble,
 #' and the sweep schedule. Each part has its own constructor with its own
-#' documentation: [gaussian()] and [probit()] for the family,
+#' documentation: [gaussian_outcome()] and [probit_outcome()] for the family,
 #' [term_params()] for an ensemble, and [general_params()] for the
 #' schedule. An argument left at its default gives the core's default, so
 #' `thiessen_control()` is the published configuration.
@@ -32,7 +32,8 @@
 #' in isolation, and every other combination of the documented options is
 #' valid to run and is not separately verified.
 #'
-#' @param outcome The outcome family, from [gaussian()] or [probit()].
+#' @param outcome The outcome family, from [gaussian_outcome()] or
+#'   [probit_outcome()].
 #' @param mean_params The ensemble describing the average, from
 #'   [term_params()].
 #' @param variance_params The ensemble describing the spread, from
@@ -56,13 +57,13 @@
 #' thiessen_control(tessellations = 50)
 #'
 #' thiessen_control(
-#'   outcome = gaussian(nu = 10),
+#'   outcome = gaussian_outcome(nu = 10),
 #'   mean_params = term_params(tessellations = 200, lambda_c = 25),
 #'   variance_params = term_params(tessellations = 40),
 #'   general_params = general_params(burn_in = 500, draws = 2000)
 #' )
 #' @export
-thiessen_control <- function(outcome = gaussian(),
+thiessen_control <- function(outcome = gaussian_outcome(),
                              mean_params = term_params(),
                              variance_params = NULL,
                              general_params = NULL,
@@ -74,7 +75,9 @@ thiessen_control <- function(outcome = gaussian(),
     general_params <- thiessen::general_params()
   }
   if (!inherits(outcome, "thiessen_outcome")) {
-    thiessen_abort("`outcome` must come from `gaussian()` or `probit()`.")
+    thiessen_abort(
+      "`outcome` must come from `gaussian_outcome()` or `probit_outcome()`."
+    )
   }
   check_group(mean_params, "mean_params", "term_params")
   check_group(variance_params, "variance_params", "term_params",

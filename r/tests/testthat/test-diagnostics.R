@@ -19,7 +19,9 @@ test_that("the sigma column is absent where the model has no sigma", {
   fixture <- small_fixture()
   y <- as.numeric(fixture$y > stats::median(fixture$y))
 
-  probit <- thiessen(fixture$x, y, small_control(outcome = probit()), seed = 1)
+  probit <- thiessen(
+    fixture$x, y, small_control(outcome = probit_outcome()), seed = 1
+  )
   heteroscedastic <- thiessen(
     fixture$x, fixture$y,
     small_control(variance_params = term_params(tessellations = 4)), seed = 1

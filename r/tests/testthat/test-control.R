@@ -55,12 +55,12 @@ test_that("an unknown name in a group is an unused argument", {
   expect_error(geometry_params(zeta = 1), "unused argument")
   expect_error(structure_params(zeta = 1), "unused argument")
   expect_error(general_params(zeta = 1), "unused argument")
-  expect_error(gaussian(zeta = 1), "unused argument")
+  expect_error(gaussian_outcome(zeta = 1), "unused argument")
   expect_error(thiessen_control(zeta = 1), "unused argument")
 })
 
 test_that("the core rejects an invalid value at construction", {
-  expect_error(thiessen_control(outcome = gaussian(q = 1.5)),
+  expect_error(thiessen_control(outcome = gaussian_outcome(q = 1.5)),
                class = "thiessen_error")
   expect_error(thiessen_control(tessellations = 0),
                class = "thiessen_error")
@@ -69,7 +69,7 @@ test_that("the core rejects an invalid value at construction", {
 test_that("a variance ensemble under the probit family is refused", {
   expect_error(
     thiessen_control(
-      outcome = probit(),
+      outcome = probit_outcome(),
       variance_params = term_params(tessellations = 40)
     ),
     "fixed at 1 for identification",
@@ -104,10 +104,16 @@ test_that("a spherical metric carries its sphere label", {
 })
 
 test_that("the outcome constructors print as their calls", {
-  expect_identical(format(gaussian()), "gaussian(nu = 6, q = 0.85)")
-  expect_identical(format(probit()), "probit()")
-  expect_identical(format(probit(offset = 0.5)), "probit(offset = 0.5)")
-  expect_output(print(gaussian(nu = 3)), "gaussian(nu = 3", fixed = TRUE)
+  expect_identical(
+    format(gaussian_outcome()), "gaussian_outcome(nu = 6, q = 0.85)"
+  )
+  expect_identical(format(probit_outcome()), "probit_outcome()")
+  expect_identical(
+    format(probit_outcome(offset = 0.5)), "probit_outcome(offset = 0.5)"
+  )
+  expect_output(
+    print(gaussian_outcome(nu = 3)), "gaussian_outcome(nu = 3", fixed = TRUE
+  )
 })
 
 test_that("the parameter groups print as their calls", {
@@ -122,7 +128,7 @@ test_that("printing a control reports each group", {
   expect_output(print(thiessen_control(tessellations = 50)),
                 "tessellations = 50")
   expect_output(print(thiessen_control()), "none \\(constant spread\\)")
-  expect_output(print(thiessen_control()), "gaussian\\(")
+  expect_output(print(thiessen_control()), "gaussian_outcome\\(")
 })
 
 test_that("a control object is required", {
@@ -132,4 +138,23 @@ test_that("a control object is required", {
     thiessen(fixture$x, fixture$y, control = list(tessellations = 5)),
     class = "thiessen_error"
   )
+})
+
+test_that("a fit resolves every default the control-surface article prints", {
+  # The article reads these from the core at knit time rather than stating
+  # them, so a renamed or moved field must fail here.
+  fixture <- small_fixture()
+  resolved <- thiessen(
+    fixture$x, fixture$y,
+    thiessen_control(general_params = general_params(burn_in = 1, draws = 1)),
+    seed = 1
+  )$control
+
+  expect_true(is.numeric(resolved$mean_params$tessellations))
+  expect_true(is.numeric(resolved$mean_params$k))
+  expect_true(is.numeric(resolved$mean_params$lambda_c))
+  expect_true(is.numeric(resolved$mean_params$geometry$sigma_c))
+  expect_true(is.numeric(resolved$mean_params$structure$omega))
+  expect_true(is.numeric(resolved$outcome$nu))
+  expect_true(is.numeric(resolved$outcome$q))
 })

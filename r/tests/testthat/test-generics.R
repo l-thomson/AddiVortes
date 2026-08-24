@@ -6,7 +6,9 @@ gaussian_fit <- function() {
 probit_fit <- function() {
   fixture <- small_fixture()
   labels <- as.double(fixture$y >= stats::median(fixture$y))
-  thiessen(fixture$x, labels, small_control(outcome = probit()), seed = 1)
+  thiessen(
+    fixture$x, labels, small_control(outcome = probit_outcome()), seed = 1
+  )
 }
 
 test_that("the draws carry the mean function, sigma and the counts", {

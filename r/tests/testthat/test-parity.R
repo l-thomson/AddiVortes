@@ -17,7 +17,7 @@ full_term <- function(tessellations) {
 
 full_control <- function() {
   thiessen_control(
-    outcome = gaussian(nu = 5, q = 0.9),
+    outcome = gaussian_outcome(nu = 5, q = 0.9),
     mean_params = full_term(8),
     variance_params = full_term(4),
     general_params = general_params(
@@ -45,7 +45,7 @@ UNEXPOSED <- c("mean_params.cell", "variance_params.cell")
 
 test_that("every surface argument is a core option", {
   expect_no_error(full_control())
-  expect_no_error(thiessen_control(outcome = probit(offset = 0.5)))
+  expect_no_error(thiessen_control(outcome = probit_outcome(offset = 0.5)))
 })
 
 test_that("every core option is reachable from the surface", {
@@ -61,13 +61,15 @@ test_that("every core option is reachable from the surface", {
 })
 
 test_that("every outcome family option is a constructor argument", {
-  expect_identical(names(formals(gaussian)), c("nu", "q"))
+  expect_identical(names(formals(gaussian_outcome)), c("nu", "q"))
   expect_identical(
-    sort(names(unclass(gaussian()))),
-    sort(names(formals(gaussian)))
+    sort(names(unclass(gaussian_outcome()))),
+    sort(names(formals(gaussian_outcome)))
   )
-  expect_identical(names(formals(probit)), "offset")
-  expect_identical(names(unclass(probit())), names(formals(probit)))
+  expect_identical(names(formals(probit_outcome)), "offset")
+  expect_identical(
+    names(unclass(probit_outcome())), names(formals(probit_outcome))
+  )
 })
 
 test_that("the factor encoding is the shared fixture", {
@@ -93,4 +95,23 @@ test_that("the factor encoding is the shared fixture", {
     as.double(level == "l2")
   )
   expect_identical(unname(fit$x), unname(expected))
+})
+
+test_that("the package masks nothing attached by default", {
+  # `gaussian()` masked `stats::gaussian()`, so a `glm(family = gaussian)`
+  # after `library(thiessen)` passed a `thiessen_outcome` to `glm` and
+  # failed obscurely. `R CMD check` does not flag it.
+  exports <- getNamespaceExports("thiessen")
+  attached <- c("stats", "graphics", "grDevices", "utils", "datasets",
+                "methods", "base")
+
+  masked <- Reduce(
+    union,
+    lapply(attached, function(package) {
+      intersect(exports, getNamespaceExports(package))
+    }),
+    character(0)
+  )
+
+  expect_identical(masked, character(0))
 })
