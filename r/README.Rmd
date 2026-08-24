@@ -28,17 +28,30 @@ suite compares posterior summaries against the authors' R package,
 
 ## Installation
 
-The package is not yet on CRAN. Building from source needs a Rust
-toolchain (rustc 1.74 or later with Cargo). Every crate the build needs
-ships with the package, so the compilation itself uses no network.
+The package is not yet on CRAN, and it compiles Rust, so the build needs
+a toolchain besides R's own:
+
+- rustc 1.74 or later with Cargo, from [rustup](https://rustup.rs).
+- On Windows, [Rtools](https://cran.r-project.org/bin/windows/Rtools/) as
+  well, and the Rust target the R build links against. Under the usual
+  Rtools that is `x86_64-pc-windows-gnu`, so
+  `rustup target add x86_64-pc-windows-gnu`; `configure.win` prints the
+  target it selected, which differs on the clang and ARM builds.
+
+Install the toolchain before starting R, or restart the session
+afterwards: rustup puts `cargo` on the path of new sessions only, and a
+session older than the install fails the build as though no toolchain
+were there. Every crate the build needs ships with the package, so the
+compilation itself uses no network.
 
 ``` r
-# install.packages("remotes")
+install.packages("remotes")
 remotes::install_github("l-thomson/thiessen", subdir = "r")
 ```
 
-`install_github()` leaves the articles out by default. Add
-`build_vignettes = TRUE` to install the ones named below.
+The articles are on the website named below, so the install leaves them
+out. `build_vignettes = TRUE` installs them locally instead, and needs
+`knitr` and `rmarkdown` present to build them.
 
 ## Example
 
@@ -59,8 +72,9 @@ head(predict(fit, x))
 sigma(fit)
 ```
 
-`plot(fit)` draws the fitted values against the response and the
-residuals against the fitted values.
+`plot(fit)` traces the per-draw sampler diagnostics, one panel each. It
+is a convergence check rather than a display of the fit; for the fit
+itself pass `posterior::as_draws_df(fit)` to bayesplot.
 
 ## Documentation
 

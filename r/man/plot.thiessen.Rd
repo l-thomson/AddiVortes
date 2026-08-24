@@ -22,6 +22,12 @@ tessellation. Burn-in sweeps are discarded before the first draw is kept,
 so a trace shows the kept draws only.
 }
 \details{
+The covariate trace is flat by construction where p is 3 or fewer: the
+default \code{omega} of \code{min(3, p)} makes \code{omega / p} equal to 1, so every
+tessellation holds every covariate on every draw and the count cannot
+move. It is the same property that makes \code{\link[=variable_inclusion]{variable_inclusion()}} uniform
+at small p, and it is not a stalled chain.
+
 For traces of the mean function and for distributional displays, pass
 \code{\link[posterior:as_draws_df]{posterior::as_draws_df()}} to bayesplot: \code{mcmc_trace()} plots sequences,
 \code{mcmc_areas()} and \code{mcmc_dens()} plot posterior densities, and

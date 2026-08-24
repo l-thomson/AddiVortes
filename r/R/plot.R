@@ -8,6 +8,12 @@
 #' tessellation. Burn-in sweeps are discarded before the first draw is kept,
 #' so a trace shows the kept draws only.
 #'
+#' The covariate trace is flat by construction where p is 3 or fewer: the
+#' default `omega` of `min(3, p)` makes `omega / p` equal to 1, so every
+#' tessellation holds every covariate on every draw and the count cannot
+#' move. It is the same property that makes [variable_inclusion()] uniform
+#' at small p, and it is not a stalled chain.
+#'
 #' For traces of the mean function and for distributional displays, pass
 #' [posterior::as_draws_df()] to bayesplot: `mcmc_trace()` plots sequences,
 #' `mcmc_areas()` and `mcmc_dens()` plot posterior densities, and
