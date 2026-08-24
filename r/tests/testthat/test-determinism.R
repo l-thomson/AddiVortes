@@ -54,7 +54,7 @@ test_that("the probit draws equal the core's committed chain", {
   threshold <- sort(fixture$y)[length(fixture$y) / 2 + 1]
   labels <- as.double(fixture$y >= threshold)
 
-  fit <- thiessen(fixture$x, labels, core_control(outcome = probit()),
+  fit <- thiessen(fixture$x, labels, core_control(outcome = probit_outcome()),
                   seed = CORE_SEED)
 
   expect_identical(fit$n_draws, nrow(stored))

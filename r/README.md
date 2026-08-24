@@ -48,7 +48,7 @@ work on a fit; see `vignette("thiessen")`.
 
 The priors are those of Stone and Gosling (2025) and are set through
 `thiessen_control()`. The outcome family carries the prior on the
-noise: `gaussian(nu, q)` scales the inverse chi-squared prior on
+noise: `gaussian_outcome(nu, q)` scales the inverse chi-squared prior on
 sigma^2 so that a proportion `q` of its mass lies below the sample
 variance of the response. The mean ensemble's priors sit in
 `term_params()`: `k` fixes the spread of the cell-value prior,

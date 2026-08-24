@@ -103,7 +103,8 @@ test_that("a two-level factor response becomes 0 and 1", {
   frame <- frame_fixture()
   frame$label <- factor(ifelse(frame$y >= stats::median(frame$y), "yes", "no"))
 
-  fit <- thiessen(label ~ a + b, frame, small_control(outcome = probit()),
+  fit <- thiessen(label ~ a + b, frame,
+                  small_control(outcome = probit_outcome()),
                   seed = 1)
 
   expect_identical(fit$response_levels, c("no", "yes"))

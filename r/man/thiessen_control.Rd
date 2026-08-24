@@ -5,7 +5,7 @@
 \title{Configuration of a fit}
 \usage{
 thiessen_control(
-  outcome = gaussian(),
+  outcome = gaussian_outcome(),
   mean_params = term_params(),
   variance_params = NULL,
   general_params = NULL,
@@ -13,7 +13,8 @@ thiessen_control(
 )
 }
 \arguments{
-\item{outcome}{The outcome family, from \code{\link[=gaussian]{gaussian()}} or \code{\link[=probit]{probit()}}.}
+\item{outcome}{The outcome family, from \code{\link[=gaussian_outcome]{gaussian_outcome()}} or
+\code{\link[=probit_outcome]{probit_outcome()}}.}
 
 \item{mean_params}{The ensemble describing the average, from
 \code{\link[=term_params]{term_params()}}.}
@@ -37,7 +38,7 @@ groups.
 The configuration of Stone and Gosling (2025), s. 2, in the shape the
 core stores it: an outcome family, one parameter group per ensemble,
 and the sweep schedule. Each part has its own constructor with its own
-documentation: \code{\link[=gaussian]{gaussian()}} and \code{\link[=probit]{probit()}} for the family,
+documentation: \code{\link[=gaussian_outcome]{gaussian_outcome()}} and \code{\link[=probit_outcome]{probit_outcome()}} for the family,
 \code{\link[=term_params]{term_params()}} for an ensemble, and \code{\link[=general_params]{general_params()}} for the
 schedule. An argument left at its default gives the core's default, so
 \code{thiessen_control()} is the published configuration.
@@ -71,7 +72,7 @@ valid to run and is not separately verified.
 thiessen_control(tessellations = 50)
 
 thiessen_control(
-  outcome = gaussian(nu = 10),
+  outcome = gaussian_outcome(nu = 10),
   mean_params = term_params(tessellations = 200, lambda_c = 25),
   variance_params = term_params(tessellations = 40),
   general_params = general_params(burn_in = 500, draws = 2000)

@@ -24,15 +24,18 @@ thiessen_control()
 
 ## The outcome family
 
-`outcome` selects the observation model, the `glm(family = )` idiom:
-`gaussian(nu, q)` for continuous responses, carrying the sigma^2 prior's
-degrees of freedom and calibration quantile, and `probit(offset)` for
-binary ones. Attaching `variance_params` with a positive tessellation
-count extends the Gaussian family to the heteroscedastic model.
+`outcome` selects the observation model:
+`gaussian_outcome(nu, q)` for continuous responses, carrying the sigma^2
+prior's degrees of freedom and calibration quantile, and
+`probit_outcome(offset)` for binary ones. The suffix keeps
+`gaussian_outcome()` from masking `stats::gaussian()`, which `glm()` takes,
+and both families carry it rather than only the one that would clash.
+Attaching `variance_params` with a positive tessellation count extends the
+Gaussian family to the heteroscedastic model.
 
 ```{r}
-gaussian(nu = 3)
-probit()
+gaussian_outcome(nu = 3)
+probit_outcome()
 ```
 
 ## The ensembles
@@ -79,9 +82,9 @@ it is the only flat argument. Every value is validated by the core at
 construction, with the reason kept:
 
 ```{r, error = TRUE}
-thiessen_control(outcome = gaussian(q = 1.5))
+thiessen_control(outcome = gaussian_outcome(q = 1.5))
 thiessen_control(
-  outcome = probit(),
+  outcome = probit_outcome(),
   variance_params = term_params(tessellations = 40)
 )
 ```

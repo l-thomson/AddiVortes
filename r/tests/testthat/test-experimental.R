@@ -13,8 +13,12 @@ test_that("the package builds the core without the feature", {
 })
 
 test_that("the published models are accepted", {
-  expect_s3_class(thiessen_control(outcome = gaussian()), "thiessen_control")
-  expect_s3_class(thiessen_control(outcome = probit()), "thiessen_control")
+  expect_s3_class(
+    thiessen_control(outcome = gaussian_outcome()), "thiessen_control"
+  )
+  expect_s3_class(
+    thiessen_control(outcome = probit_outcome()), "thiessen_control"
+  )
   expect_s3_class(
     thiessen_control(variance_params = term_params(tessellations = 40)),
     "thiessen_control"

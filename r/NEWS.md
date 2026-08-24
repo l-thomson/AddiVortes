@@ -2,8 +2,9 @@
 
 * `thiessen()` fits the Gaussian, binary probit and heteroscedastic models
   to a numeric matrix, with `thiessen_control()` carrying the configuration
-  in the shape the core stores it: an outcome family from `gaussian()` or
-  `probit()`, one `term_params()` group per ensemble (with
+  in the shape the core stores it: an outcome family from
+  `gaussian_outcome()` or `probit_outcome()`, one `term_params()` group per
+  ensemble (with
   `geometry_params()` and `structure_params()` nested inside), and the
   sweep schedule from `general_params()`. A positive tessellation count on
   `variance_params` selects the heteroscedastic model, and

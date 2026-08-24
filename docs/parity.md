@@ -6,16 +6,20 @@ defaults. The Python suite renders it again and fails on any difference,
 and each binding's parity test proves every listed option constructible,
 so this file is regenerated, never edited.
 
-Every name is identical across the three surfaces. Python groups run-length
-settings flat on the estimator and `Model`; R groups them in
-`general_params()`. The one R shortcut, `thiessen_control(tessellations =)`,
-sets `mean_params.tessellations`.
+Every name is identical across the three surfaces but for the two outcome
+constructors, which carry an `_outcome` suffix in R: `gaussian()` there
+would mask the exported `stats::gaussian()`, and both families take the
+suffix rather than only the one that clashes. The serialised name is
+unchanged, so the stored configuration is the same on every surface. Python
+groups run-length settings flat on the estimator and `Model`; R groups them
+in `general_params()`. The one R shortcut,
+`thiessen_control(tessellations =)`, sets `mean_params.tessellations`.
 
 | Core option | Python | R |
 | --- | --- | --- |
-| `outcome.gaussian.nu` | `gaussian(nu=)` in `outcome=` | `gaussian(nu = )` in `outcome = ` |
-| `outcome.gaussian.q` | `gaussian(q=)` in `outcome=` | `gaussian(q = )` in `outcome = ` |
-| `outcome.probit.offset` | `probit(offset=)` in `outcome=` | `probit(offset = )` in `outcome = ` |
+| `outcome.gaussian.nu` | `gaussian(nu=)` in `outcome=` | `gaussian_outcome(nu = )` in `outcome = ` |
+| `outcome.gaussian.q` | `gaussian(q=)` in `outcome=` | `gaussian_outcome(q = )` in `outcome = ` |
+| `outcome.probit.offset` | `probit(offset=)` in `outcome=` | `probit_outcome(offset = )` in `outcome = ` |
 | `mean_params.tessellations` | `TermParams(tessellations=)` in `mean_params=` | `term_params(tessellations = )` in `mean_params = ` |
 | `mean_params.k` | `TermParams(k=)` in `mean_params=` | `term_params(k = )` in `mean_params = ` |
 | `mean_params.lambda_c` | `TermParams(lambda_c=)` in `mean_params=` | `term_params(lambda_c = )` in `mean_params = ` |

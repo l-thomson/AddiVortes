@@ -161,9 +161,9 @@
 #'   its parameter.
 #' @srrstats {BS1.2b} The vignette control-surface.Rmd describes the
 #'   priors in general and applied terms with executable code.
-#' @srrstats {BS1.2c} `thiessen_control()`, `gaussian()`, `term_params()`,
-#'   `geometry_params()` and `structure_params()` document each parameter,
-#'   with examples.
+#' @srrstats {BS1.2c} `thiessen_control()`, `gaussian_outcome()`,
+#'   `term_params()`, `geometry_params()` and `structure_params()` document
+#'   each parameter, with examples.
 #' @srrstats {BS1.3} `general_params()` documents burn-in, draw count and
 #'   thinning; `thiessen()` documents `chains` and `seed`.
 #' @srrstats {BS1.3a} The vignette sampler-api.Rmd shows a run continued

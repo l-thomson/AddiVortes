@@ -62,15 +62,16 @@ the mean, and `type = "draws"` returns the per-draw values.
 ## The configuration
 
 The configuration has four parts, named as the core stores them: an
-outcome family from `gaussian()` or `probit()`, one `term_params()`
-group per ensemble, and the sweep schedule from `general_params()`.
+outcome family from `gaussian_outcome()` or `probit_outcome()`, one
+`term_params()` group per ensemble, and the sweep schedule from
+`general_params()`.
 `thiessen_control(tessellations = )` is the one shortcut, setting the
 mean ensemble's size. The control-surface vignette walks through every
 group.
 
 ```{r}
 thiessen_control(
-  outcome = gaussian(nu = 6, q = 0.85),
+  outcome = gaussian_outcome(nu = 6, q = 0.85),
   mean_params = term_params(tessellations = 200, k = 3, lambda_c = 5)
 )
 ```

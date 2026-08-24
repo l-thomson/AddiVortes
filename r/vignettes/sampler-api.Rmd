@@ -134,7 +134,7 @@ for (draw in seq_len(100)) {
 latent_mean <- latent_mean / 100
 
 family <- thiessen(x, labels, thiessen_control(
-  outcome = probit(),
+  outcome = probit_outcome(),
   tessellations = 10,
   general_params = general_params(burn_in = 50, draws = 100)
 ), seed = 1)

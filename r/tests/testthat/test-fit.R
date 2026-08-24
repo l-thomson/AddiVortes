@@ -126,7 +126,10 @@ test_that("a response the model does not admit is refused by the core", {
   fixture <- small_fixture()
 
   expect_error(
-    thiessen(fixture$x, fixture$y, small_control(outcome = probit()), seed = 1),
+    thiessen(
+      fixture$x, fixture$y, small_control(outcome = probit_outcome()),
+      seed = 1
+    ),
     class = "thiessen_error"
   )
 })
@@ -145,7 +148,9 @@ test_that("the probit model fits a binary response", {
   fixture <- small_fixture()
   labels <- as.double(fixture$y >= stats::median(fixture$y))
 
-  fit <- thiessen(fixture$x, labels, small_control(outcome = probit()), seed = 1)
+  fit <- thiessen(
+    fixture$x, labels, small_control(outcome = probit_outcome()), seed = 1
+  )
 
   expect_identical(fit$model, "probit")
   expect_true(all(fitted(fit) >= 0 & fitted(fit) <= 1))
