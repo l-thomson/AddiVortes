@@ -11,13 +11,12 @@ all: $(SHLIB) rust_clean
 
 $(SHLIB): $(STATLIB)
 
-# Offline from the vendored sources when they are present, unpacking
-# rust/vendor.tar.xz first if the tarball is the only copy of the core; a
-# checkout carries the core in the tree, and only what this rule unpacked is
-# removed afterwards. Two jobs and a package-local CARGO_HOME, as the CRAN
-# policy on Rust requires.
+# Offline from the vendored third-party crates, unpacking rust/vendor.tar.xz
+# when the unpacked copy is absent; the core ships as source, and only what
+# this rule unpacked is removed afterwards. Two jobs and a package-local
+# CARGO_HOME, as the CRAN policy on Rust requires.
 $(STATLIB):
-	if [ ! -d rust/core ] && [ -f rust/vendor.tar.xz ]; then \
+	if [ ! -d rust/vendor ] && [ -f rust/vendor.tar.xz ]; then \
 	  tar xf rust/vendor.tar.xz -C rust; \
 	  touch rust/.unpacked; \
 	fi
@@ -37,7 +36,7 @@ $(STATLIB):
 rust_clean: $(SHLIB)
 	rm -Rf "$(CARGOTMP)" "$(TARGET_DIR)"
 	if [ -f rust/.unpacked ]; then \
-	  rm -Rf "$(VENDOR_DIR)" rust/core rust/.unpacked; \
+	  rm -Rf "$(VENDOR_DIR)" rust/.unpacked; \
 	fi
 
 clean:
