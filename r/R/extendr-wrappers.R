@@ -11,6 +11,21 @@
 #' @export
 core_version <- function() .Call(wrap__core_version)
 
+#' Whether the core was built with its experimental feature
+#'
+#' The outcome families and options the core crate keeps behind its
+#' `experimental` Cargo feature are absent from a build without it, so a
+#' configuration or a saved fit naming one is rejected with the core's
+#' message naming the feature. This package enables the feature in no
+#' build, so the answer is `FALSE` in every released version; report it with
+#' [core_version()] in a bug report, since a fit rejected for naming a gated
+#' option looks the same either way.
+#'
+#' @return A logical of length one: whether the core in use was built with
+#'   the `experimental` feature.
+#' @examples
+#' core_experimental()
+#' @export
 core_experimental <- function() .Call(wrap__core_experimental)
 
 core_defaults <- function() .Call(wrap__core_defaults)
@@ -58,7 +73,5 @@ core_sampler_fitted_values <- function(sampler) {
 core_sampler_noise_variances <- function(sampler) {
   .Call(wrap__core_sampler_noise_variances, sampler)
 }
-
-core_sampler_config <- function(sampler) .Call(wrap__core_sampler_config, sampler)
 
 core_finish <- function(samplers) .Call(wrap__core_finish, samplers)

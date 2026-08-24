@@ -63,4 +63,5 @@ reference:
 - title: Build information
   contents:
   - core_version
+  - core_experimental
   - thiessen-package

@@ -258,20 +258,6 @@ fn core_sampler_noise_variances(sampler: ExternalPtr<SamplerHandle>) -> Result<V
         .noise_variances())
 }
 
-/// The configuration, with omega and the probit offset resolved.
-#[extendr]
-fn core_sampler_config(sampler: ExternalPtr<SamplerHandle>) -> Result<String> {
-    serde_json::to_string(
-        sampler
-            .inner
-            .borrow()
-            .as_ref()
-            .ok_or_else(finished)?
-            .config(),
-    )
-    .map_err(json_error)
-}
-
 /// The fitted model from the kept draws of every sampler, their chains
 /// pooled. Consumes the samplers.
 #[extendr]
@@ -323,6 +309,5 @@ extendr_module! {
     fn core_sampler_set_response;
     fn core_sampler_fitted_values;
     fn core_sampler_noise_variances;
-    fn core_sampler_config;
     fn core_finish;
 }

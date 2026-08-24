@@ -133,3 +133,22 @@ test_that("a control object is required", {
     class = "thiessen_error"
   )
 })
+
+test_that("a fit resolves every default the control-surface article prints", {
+  # The article reads these from the core at knit time rather than stating
+  # them, so a renamed or moved field must fail here.
+  fixture <- small_fixture()
+  resolved <- thiessen(
+    fixture$x, fixture$y,
+    thiessen_control(general_params = general_params(burn_in = 1, draws = 1)),
+    seed = 1
+  )$control
+
+  expect_true(is.numeric(resolved$mean_params$tessellations))
+  expect_true(is.numeric(resolved$mean_params$k))
+  expect_true(is.numeric(resolved$mean_params$lambda_c))
+  expect_true(is.numeric(resolved$mean_params$geometry$sigma_c))
+  expect_true(is.numeric(resolved$mean_params$structure$omega))
+  expect_true(is.numeric(resolved$outcome$nu))
+  expect_true(is.numeric(resolved$outcome$q))
+})
