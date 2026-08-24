@@ -9,6 +9,11 @@ a changelog line. Enabling the feature does not change the draws of a
 configuration that uses no experimental option. The Python and R packages
 build the core without the feature.
 
+[experimental-plain-english.md](experimental-plain-english.md) is a
+non-technical companion to this table: what each item does, where the
+idea came from and how it was checked, without the vocabulary. This
+table is authoritative where the two differ.
+
 The stabilisation rule is stated once, in the crate-root documentation
 (`crates/thiessen/src/lib.rs`, Stability): graduation is a pull request
 against that rule, not a ticket. This file is the status table for every
