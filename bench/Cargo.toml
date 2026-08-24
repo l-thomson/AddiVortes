@@ -1,23 +1,28 @@
+# Outside the root workspace, as the R binding crate is, with a lock of its
+# own: criterion and gungraun pull in edition-2024 crates, which the 1.74
+# leg of the test matrix cannot parse even when it builds `-p thiessen`
+# alone, because `--locked` reads every manifest in the lock.
+[workspace]
+
 [package]
 name = "thiessen-bench"
 version = "0.0.0"
-edition.workspace = true
-# Above the workspace's 1.74: criterion 0.8 requires 1.86 and gungraun 0.19
-# requires 1.85.1. The published core crate keeps 1.74 and the MSRV leg of
-# the test matrix builds `-p thiessen` alone.
+edition = "2021"
+# criterion 0.8 requires 1.86 and gungraun 0.19 requires 1.85.1; the
+# published core crate keeps its 1.74 floor.
 rust-version = "1.86"
-license.workspace = true
-repository.workspace = true
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/l-thomson/thiessen"
 description = "Benchmark registry and harness for the thiessen crate"
 publish = false
 
 [features]
-# Forwarded, so the registry carries the experimental models under the flag
-# the rest of the workspace uses.
+# Forwarded, so the registry carries the experimental models under the name
+# the rest of the repository uses.
 experimental = ["thiessen/experimental"]
 
 [dependencies]
-thiessen = { path = "../thiessen" }
+thiessen = { path = "../crates/thiessen" }
 
 [dev-dependencies]
 # No plots and no rayon: deltas are read through critcmp, and a thread pool

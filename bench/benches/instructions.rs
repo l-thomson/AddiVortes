@@ -11,7 +11,8 @@
 //!
 //! ```text
 //! cargo install --version 0.19.4 gungraun-runner
-//! cargo bench -p thiessen-bench --bench instructions
+//! cargo bench --manifest-path bench/Cargo.toml \
+//!     --bench instructions
 //! ```
 //!
 //! The attribute macros take literal case names, so this file does not

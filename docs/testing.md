@@ -105,7 +105,7 @@ is a test failure.
 
 ### Cost regressions
 
-In `crates/thiessen-bench/benches/instructions.rs`, under callgrind, on
+In `bench/benches/instructions.rs`, under callgrind, on
 pull requests touching the core or the registry. Retired instructions and
 estimated cycles for one sweep and one predict call per shipped model,
 and for one sweep at 5, 10 and 40 columns, each against the base

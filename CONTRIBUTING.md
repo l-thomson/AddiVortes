@@ -28,9 +28,9 @@ and comparison plots, as the nightly `calibration` job does.
 
 ## Performance
 
-Benchmarks live in `crates/thiessen-bench`, off the published crate so
+Benchmarks live in `bench`, off the published crate so
 they carry their own toolchain floor. The registry in
-`crates/thiessen-bench/src/lib.rs` holds one workload per shipped model:
+`bench/src/lib.rs` holds one workload per shipped model:
 a model added there is benchmarked without any other edit.
 
 A pull request that touches a hot path reports numbers. Same-machine A/B,
@@ -49,7 +49,8 @@ wall-clock alone. Code layout by itself moves wall-clock by around 8%
 wins worth reporting. Instruction counts need valgrind:
 
     cargo install --locked --version 0.19.4 gungraun-runner
-    cargo bench -p thiessen-bench --bench instructions
+    cargo bench --manifest-path bench/Cargo.toml \
+        --bench instructions
 
 CI runs that bench on pull requests touching the core or the registry,
 measuring the base revision with the pull request's benchmark code, and

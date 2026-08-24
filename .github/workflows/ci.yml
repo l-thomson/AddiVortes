@@ -205,7 +205,7 @@ jobs:
             ${{ github.event.pull_request.base.sha }}...HEAD -- \
             'crates/thiessen/src/*' \
             'crates/thiessen/src/models/*' \
-            crates/thiessen-bench | grep -q .; then
+            bench | grep -q .; then
             hit=true
           fi
           echo "hit=$hit" >> "$GITHUB_OUTPUT"
@@ -213,8 +213,17 @@ jobs:
         if: steps.paths.outputs.hit == 'true'
         with:
           toolchain: stable
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         if: steps.paths.outputs.hit == 'true'
+      # The bench crate is outside the root workspace, so the fmt and
+      # clippy jobs above do not reach it.
+      - if: steps.paths.outputs.hit == 'true'
+        working-directory: bench
+        run: cargo fmt --check
+      - if: steps.paths.outputs.hit == 'true'
+        working-directory: bench
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - if: steps.paths.outputs.hit == 'true'
         run: sudo apt-get update && sudo apt-get install --yes valgrind
       - if: steps.paths.outputs.hit == 'true'
@@ -223,19 +232,22 @@ jobs:
         run: |
           git worktree add --detach "${{ runner.temp }}/base" \
             ${{ github.event.pull_request.base.sha }}
-          rm -rf "${{ runner.temp }}/base/crates/thiessen-bench"
-          cp -r crates/thiessen-bench "${{ runner.temp }}/base/crates/"
-          cp Cargo.lock "${{ runner.temp }}/base/Cargo.lock"
+          rm -rf "${{ runner.temp }}/base/bench"
+          cp -r bench "${{ runner.temp }}/base/bench"
       # One target directory for both runs, so the baseline the base
       # revision saves is the one the pull request's run compares against.
       - if: steps.paths.outputs.hit == 'true'
         working-directory: ${{ runner.temp }}/base
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target
-        run: cargo bench -p thiessen-bench --bench instructions -- --save-baseline=base
+        run: |
+          cargo bench --manifest-path bench/Cargo.toml \
+            --bench instructions -- --save-baseline=base
       # Fails on a soft-limit breach; the limits are in the bench file.
       - if: steps.paths.outputs.hit == 'true'
-        run: cargo bench -p thiessen-bench --bench instructions -- --baseline=base
+        run: |
+          cargo bench --manifest-path bench/Cargo.toml \
+            --bench instructions -- --baseline=base
 
   coverage:
     name: coverage

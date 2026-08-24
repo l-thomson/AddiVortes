@@ -65,7 +65,8 @@ run() {
     echo "== $baseline ==" >&2
     (
         cd "$dir"
-        CARGO_TARGET_DIR=$target cargo bench --locked -p thiessen-bench \
+        CARGO_TARGET_DIR=$target cargo bench --locked \
+            --manifest-path bench/Cargo.toml \
             --bench wall_clock -- --save-baseline "$baseline" $filter
     )
 }
