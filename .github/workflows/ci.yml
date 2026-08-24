@@ -322,7 +322,7 @@ jobs:
       # package, so the site build is the executed-documentation gate.
       - run: |
           install.packages(".", repos = NULL, type = "source")
-          pkgdown::build_site_github_pages(".", preview = FALSE)
+          pkgdown::build_site_github_pages(".")
         shell: Rscript {0}
         working-directory: r
       # README.md is knitted from README.Rmd; a stale one is a wrong
