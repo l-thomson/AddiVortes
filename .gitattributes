@@ -1,5 +1,9 @@
 * text=auto eol=lf
 
+# The vendored archive is binary. Git detects that on its own, but a
+# checkout that converted it would produce an unreadable one.
+r/src/rust/vendor.tar.xz -text
+
 # Snapshot fixtures are compared on the reference target; no checkout may
 # rewrite their line endings.
 tests/snapshots/** -text

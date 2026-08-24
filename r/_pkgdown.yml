@@ -1,6 +1,10 @@
-url: ~
+url: https://l-thomson.github.io/thiessen/r
 template:
   bootstrap: 5
+  includes:
+    # The package name is provisional, so the site is served but not
+    # offered for indexing. Remove once the name is settled.
+    in_header: '<meta name="robots" content="noindex, nofollow">'
 
 navbar:
   structure:
