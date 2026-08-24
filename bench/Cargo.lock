@@ -606,6 +606,7 @@ version = "0.0.0"
 dependencies = [
  "criterion",
  "gungraun",
+ "serde_json",
  "thiessen",
 ]
 

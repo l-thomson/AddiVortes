@@ -1,0 +1,8 @@
+# The diagnostic estimator and the statistics of the scorecard, pinned so
+# a comparison between two revisions is not also a comparison between two
+# versions of ArviZ. One estimator computes every R-hat and every effective
+# sample size the suite reports.
+arviz==1.3.0
+numpy==2.5.2
+pandas==3.0.5
+scipy==1.18.1
