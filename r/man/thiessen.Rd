@@ -90,17 +90,47 @@ of sigma and of the mean function at up to twenty training rows
 \code{summary()} repeat the warning, where R-hat exceeds 1.01 or an effective
 sample size falls below 400 (Vehtari and others, 2021). A fit of one
 chain says so instead.
+}
+\section{Progress}{
+
 
 Progress over the sweep schedule is signalled with progressr, so a
 session reports it after \code{progressr::handlers()} and nothing is printed
-by default. The draws do not depend on whether a handler is set.
+by default; \code{progressr::handlers(global = TRUE)} sets one for a whole
+session. The schedule raises one progression per sweep, to a maximum of
+a hundred over the sweeps of every chain. The draws do not depend on
+whether a handler is set.
+}
+
+\section{Persistence}{
+
 
 A fit is a plain R object holding the sampler state, so \code{\link[=saveRDS]{saveRDS()}}
-writes one and a later session reads it without a refit. A fit written by
-a build with the core's \code{experimental} feature and read by a build
-without it errors with the condition class \code{thiessen_error}, naming the
-feature, at the first call that needs the state.
+writes one and a later session reads it and predicts the same values,
+with no refit. A fit written by a build with the core's \code{experimental}
+feature and read by a build without it errors with the condition class
+\code{thiessen_error}, naming the feature, at the first call that needs the
+state.
 }
+
+\section{Conditions}{
+
+
+Errors raised by this package and by the core carry the condition class
+\code{thiessen_error}, and its warnings carry \code{thiessen_warning}, so either
+can be handled or silenced by class rather than by message. The
+convergence warning fires on any short schedule, so silencing it
+deliberately is a routine need:
+
+\if{html}{\out{<div class="sourceCode">}}\preformatted{withCallingHandlers(
+  fit <- thiessen(x, y, control, chains = 2),
+  thiessen_warning = function(condition) \{
+    invokeRestart("muffleWarning")
+  \}
+)
+}\if{html}{\out{</div>}}
+}
+
 \examples{
 n <- 60
 x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))

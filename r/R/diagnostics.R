@@ -48,6 +48,14 @@ thiessen_diagnostics <- function(object) {
 #' each covariate, averaged over the kept draws, as `dbarts::varcount`
 #' summarises tree splits. The values sum to one.
 #'
+#' They report where the ensemble spent its dimensions, not which
+#' covariates carry signal, and they inherit the covariate-inclusion prior:
+#' at the default `omega` of `min(3, p)` every dimension is always active
+#' when p is 3 or fewer, so the proportions are then uniform by
+#' construction, exactly 1/p. Separation is weak at p = 4, where two
+#' informative covariates measured 0.26 and 0.29 against pure noise at
+#' 0.25 and 0.19. Do not read them as variable selection.
+#'
 #' @param object An object of class `"thiessen"`.
 #'
 #' @return A numeric vector, one value per column of the design, named as

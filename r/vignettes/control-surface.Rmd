@@ -12,9 +12,12 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 ```
 
 The configuration of a fit has four parts, and `thiessen_control()`
-holds one of each. Every name is a name in the core's stored
+holds one of each. Every name here is a name in the core's stored
 configuration and in the Python package, so one description serves all
-three surfaces; the full mapping is `docs/parity.md` in the repository.
+three surfaces. The two outcome constructors are the exception: they
+carry an `_outcome` suffix in R, and the name the configuration stores is
+unchanged, so a fit saved by one surface is read by another. The full
+mapping is [`docs/parity.md`](https://github.com/l-thomson/thiessen/blob/dev/docs/parity.md).
 
 ```{r}
 library(thiessen)
@@ -50,8 +53,13 @@ term_params(tessellations = 200, k = 3, lambda_c = 25)
 ```
 
 `geometry_params()` is the covariate space: the `metric` of each column
-(`"euclidean"`, `"categorical"`, or a labelled sphere) and the
-centre-coordinate scale `sigma_c`. `structure_params()` is the
+and the centre-coordinate scale `sigma_c`. This release reaches three
+metrics, `"euclidean"`, `"categorical"` and a labelled sphere; the rest
+the core carries are experimental and are rejected here. A Euclidean
+column is min-max scaled to [-0.5, 0.5] over its training range inside
+the sampler, which is what makes one distance comparable across columns;
+a categorical or spherical column is not scaled, and `sigma_c` is on the
+scaled coordinate, so 1 is the full range of a Euclidean column. `structure_params()` is the
 covariate-inclusion prior: `omega / p` is the prior probability of
 including a covariate, resolved to `min(3, p)` at fit when unset. The
 two ensembles share one covariate space: set these on `mean_params` and

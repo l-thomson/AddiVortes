@@ -11,14 +11,20 @@ vignette: >
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 ```
 
-`thiessen_sampler()` is the researcher's interface, and it is
-experimental: it may change in a minor release without a deprecation
-cycle. It follows the updatable sampler object of dbarts and the
-low-level interface of stochtree: construct with the configuration, the
-data and a seed, then drive the Gibbs loop yourself. Burn-in and
-thinning are the caller's loop, and the response may be replaced between
-sweeps. Anything that is not an outcome family or a setting goes through
-this loop and stays there until it earns a name.
+An outcome family, a censoring scheme or an imputation scheme this
+package does not ship is written in R against `thiessen_sampler()`, with
+no Rust and no recompilation. It hands over the Gibbs loop one sweep at
+a time and allows the response to be rewritten between sweeps, which is
+what a latent-Gaussian data augmentation needs.
+
+The seven verbs are stable. The experimental badge on the object covers
+additions to it and changes to what a verb returns beyond its documented
+contract.
+
+It follows the updatable sampler object of dbarts and the low-level
+interface of stochtree: construct with the configuration, the data and a
+seed, then drive the loop yourself. Burn-in and thinning are the
+caller's loop.
 
 ## The contracts
 
@@ -29,6 +35,28 @@ RNG, seeded at construction with the chain that `thiessen()` would run
 first, so driving the configured schedule by hand reproduces a one-chain
 fit bit for bit. The loop cannot rewire tessellation membership or cell
 internals.
+
+## What is reachable, and what is not
+
+`$set_response()` is the only setter on the object, so a model is
+buildable here exactly when it is a Gaussian regression on a response
+you can rewrite each sweep.
+
+Reachable, those being the latent-Gaussian data augmentations: probit,
+tobit, accelerated failure time, interval-censored and ordinal. The
+first is worked below, and the second is the censoring example below
+under another name. Four of the five are outcome families the core
+carries behind its experimental feature, so this loop is the answer when
+a release does not expose the family you need.
+
+Not reachable: an augmentation needing per-observation weights, so
+logistic through Polya-Gamma, robust-t as a scale mixture, and negative
+binomial, because `$noise_variances()` reads the noise and nothing sets
+it. Nor the geometry, tessellation membership, cell internals, the
+covariate-inclusion prior or the proposals.
+
+Parameters sampled in your own loop, cutpoints for instance, are not in
+`$finish()`'s draws. Keep and diagnose those yourself.
 
 ## A fit as its own loop
 
@@ -105,8 +133,10 @@ c(
 
 ## Prototyping an outcome model
 
-An outcome model with a latent Gaussian representation can be prototyped
-in the loop before it earns a family: impute the latent from its
+This is the proof of the claim at the top of the article: fifteen lines
+of R reimplement a shipped outcome family and agree with it. An outcome
+model with a latent Gaussian representation can be prototyped in the
+loop before it earns a family: impute the latent from its
 conditional given the observed outcome, hand it back, sweep. The probit
 model is the worked case, its latent drawn from the normal truncated to
 the side its label demands (Albert and Chib 1993).

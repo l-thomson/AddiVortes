@@ -19,6 +19,15 @@ The share of the active dimensions of the mean tessellations falling on
 each covariate, averaged over the kept draws, as \code{dbarts::varcount}
 summarises tree splits. The values sum to one.
 }
+\details{
+They report where the ensemble spent its dimensions, not which
+covariates carry signal, and they inherit the covariate-inclusion prior:
+at the default \code{omega} of \code{min(3, p)} every dimension is always active
+when p is 3 or fewer, so the proportions are then uniform by
+construction, exactly 1/p. Separation is weak at p = 4, where two
+informative covariates measured 0.26 and 0.29 against pure noise at
+0.25 and 0.19. Do not read them as variable selection.
+}
 \examples{
 n <- 60
 x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))

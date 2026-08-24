@@ -59,14 +59,20 @@ The models reachable here are the published method and follow semantic
 versioning. Everything else the core crate adds sits behind its
 \code{experimental} Cargo feature, which this package does not enable, so a
 configuration or a saved fit naming such an option is rejected with the
-core's message naming the feature. The table of experimental items and
-their status is \code{docs/experimental.md} in the repository. A graduated
-item is accepted here as any other option, with no separate opt-in.
+core's message naming the feature. The outcome families it gates are
+tobit, accelerated failure time, interval-censored and ordinal: none is
+a function in this package, and \code{\link[=core_experimental]{core_experimental()}} reports the
+setting of the build in use. Each graduates on its own once calibrated
+and is then accepted as any other option, with no separate opt-in; until
+then it can be built in R against \code{\link[=thiessen_sampler]{thiessen_sampler()}}. The table of
+experimental items and their status is
+\href{https://github.com/l-thomson/thiessen/blob/dev/docs/experimental.md}{\code{docs/experimental.md}}.
 
 The core's calibration suite covers the configurations listed in
-\code{docs/calibrated.md} in the repository; component options are verified
-in isolation, and every other combination of the documented options is
-valid to run and is not separately verified.
+\href{https://github.com/l-thomson/thiessen/blob/dev/docs/calibrated.md}{\code{docs/calibrated.md}};
+component options are verified in isolation, and every other combination
+of the documented options is valid to run and is not separately
+verified.
 }
 \examples{
 thiessen_control(tessellations = 50)

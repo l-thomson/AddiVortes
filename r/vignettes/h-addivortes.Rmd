@@ -54,11 +54,14 @@ point of the model:
 
 ```{r}
 interval <- predict(fit, x, interval = "prediction", level = 0.9)
-width <- interval[, 2] - interval[, 1]
-c(
+width <- interval[, "upper"] - interval[, "lower"]
+widths <- c(
   low_x = mean(width[head(order, 50)]),
   high_x = mean(width[tail(order, 50)])
 )
+# The claim above, asserted rather than read: a wrong number fails the build.
+stopifnot(widths[["high_x"]] > widths[["low_x"]])
+widths
 ```
 
 ## What is shared and what is separate

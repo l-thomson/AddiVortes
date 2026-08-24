@@ -20,6 +20,7 @@ __pycache__/
 /r/src/rust/.unpacked
 /r/src/Makevars.win
 /r/docs
+/r/README.html
 
 # R build and check output, wherever the command is run from
 *.Rcheck/
