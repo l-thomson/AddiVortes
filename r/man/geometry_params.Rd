@@ -16,7 +16,9 @@ matched case-sensitively, so \code{"Euclidean"} is rejected. Non-Euclidean
 columns are not scaled.}
 
 \item{sigma_c}{Prior and proposal standard deviation sigma_c of a
-centre coordinate in the scaled space. Default 0.8.}
+centre coordinate. A Euclidean column is min-max scaled to
+[-0.5, 0.5] over its training range inside the sampler and \code{sigma_c}
+is on that scale, so 1 is the full range of a column. Default 0.8.}
 }
 \value{
 An object of class \code{"geometry_params"}.

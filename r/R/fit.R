@@ -33,15 +33,40 @@
 #' sample size falls below 400 (Vehtari and others, 2021). A fit of one
 #' chain says so instead.
 #'
+#' @section Progress:
+#'
 #' Progress over the sweep schedule is signalled with progressr, so a
 #' session reports it after `progressr::handlers()` and nothing is printed
-#' by default. The draws do not depend on whether a handler is set.
+#' by default; `progressr::handlers(global = TRUE)` sets one for a whole
+#' session. The schedule raises one progression per sweep, to a maximum of
+#' a hundred over the sweeps of every chain. The draws do not depend on
+#' whether a handler is set.
+#'
+#' @section Persistence:
 #'
 #' A fit is a plain R object holding the sampler state, so [saveRDS()]
-#' writes one and a later session reads it without a refit. A fit written by
-#' a build with the core's `experimental` feature and read by a build
-#' without it errors with the condition class `thiessen_error`, naming the
-#' feature, at the first call that needs the state.
+#' writes one and a later session reads it and predicts the same values,
+#' with no refit. A fit written by a build with the core's `experimental`
+#' feature and read by a build without it errors with the condition class
+#' `thiessen_error`, naming the feature, at the first call that needs the
+#' state.
+#'
+#' @section Conditions:
+#'
+#' Errors raised by this package and by the core carry the condition class
+#' `thiessen_error`, and its warnings carry `thiessen_warning`, so either
+#' can be handled or silenced by class rather than by message. The
+#' convergence warning fires on any short schedule, so silencing it
+#' deliberately is a routine need:
+#'
+#' ```
+#' withCallingHandlers(
+#'   fit <- thiessen(x, y, control, chains = 2),
+#'   thiessen_warning = function(condition) {
+#'     invokeRestart("muffleWarning")
+#'   }
+#' )
+#' ```
 #'
 #' @param x A numeric matrix of covariates, one row per observation, or a
 #'   data frame. A numeric vector is taken as one column.

@@ -36,6 +36,7 @@ Suggests:
     knitr,
     loo,
     rmarkdown,
+    spelling,
     srr,
     testthat (>= 3.1.5),
     tidybayes

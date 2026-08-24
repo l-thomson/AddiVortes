@@ -1,0 +1,153 @@
+---
+title: "Working with the posterior"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Working with the posterior}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+suggested <- c("posterior", "loo", "bayesplot", "tidybayes")
+available <- all(vapply(
+  suggested, requireNamespace, logical(1), quietly = TRUE
+))
+knitr::opts_chunk$set(
+  collapse = TRUE, comment = "#>", eval = available,
+  fig.width = 6, fig.height = 3, dpi = 96
+)
+```
+
+Every package this article uses sits in `Suggests`, so each chunk is
+skipped where one of posterior, loo, bayesplot or tidybayes is absent. A
+rendering with no output below is that, not a failure.
+
+A fit carries its draws, so the established Bayesian tooling takes one
+without adaptation. Nothing here is a method of this package beyond the
+generics it registers.
+
+```{r fit}
+library(thiessen)
+library(posterior)
+
+set.seed(1)
+n <- 120
+x <- cbind(runif(n), runif(n))
+y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2] + rnorm(n, sd = 0.1)
+control <- thiessen_control(
+  tessellations = 20,
+  general_params = general_params(burn_in = 100, draws = 200)
+)
+
+fit <- thiessen(x, y, control, chains = 2, seed = 1)
+```
+
+The short schedule here never meets the convergence thresholds, so the
+fit warns. That is the warning working, not a problem with the code
+below.
+
+## The draws
+
+`as_draws_df()` and `as_draws_array()` return the draws in posterior's
+own formats, chains kept separate.
+
+```{r draws}
+draws <- as_draws_df(fit)
+c(draws = ndraws(draws), chains = nchains(draws))
+dim(as_draws_array(fit))
+```
+
+The variables are the mean function at each training row, `mu[i]`, the
+noise scale `sigma`, and two structural counts: `cell_count`, the cells
+across the ensemble, and `dimension_count`, the covariates in use.
+
+```{r variables}
+grep("^mu\\[", variables(draws), invert = TRUE, value = TRUE)
+```
+
+`summarise_draws()` gives the usual table, R-hat and both effective
+sample sizes included.
+
+```{r summarise}
+summarise_draws(subset_draws(draws, variable = c("sigma", "cell_count")))
+```
+
+## Three predictive quantities
+
+The three are distinct and easy to confuse.
+
+- `posterior_epred()` is the mean function, one row per draw: E[y | x]
+  without observation noise.
+- `posterior_predict()` adds the noise, so it draws replicate
+  observations. Under the probit family it returns labels.
+- `predictive_interval()` summarises `posterior_predict()` into central
+  intervals, one row per observation.
+
+```{r predictive}
+dim(posterior_epred(fit, x))
+dim(posterior_predict(fit, x))
+head(predictive_interval(fit, newdata = x, prob = 0.9), 3)
+```
+
+`predict()` reaches the same quantities through one argument, and
+`predict(type = "draws")` is `posterior_epred()`.
+
+## Trace plots
+
+bayesplot takes the draws object as it stands.
+
+```{r trace}
+bayesplot::mcmc_trace(as_draws_array(fit), pars = c("sigma", "cell_count"))
+```
+
+`thiessen_diagnostics()` returns the same content as a per-draw data
+frame for a plot of your own. It is not for printing: a bare `print()`
+dumps every draw.
+
+## Cross-validation with loo
+
+`log_lik()` returns the pointwise log-likelihood, draws by
+observations, which is what `loo::loo()` expects.
+
+```{r loo}
+log_likelihood <- log_lik(fit)
+dim(log_likelihood)
+
+estimate <- loo::loo(log_likelihood)
+estimate$estimates
+```
+
+Read the Pareto k diagnostic before the estimate. The importance
+sampling behind PSIS-LOO fails for an observation whose k exceeds 0.7,
+and a short schedule on a small data set produces several:
+
+```{r pareto}
+k <- estimate$diagnostics$pareto_k
+c(observations = length(k), unreliable = sum(k > 0.7))
+```
+
+Where that count is more than a handful, the estimate is not
+trustworthy and the answer is more draws, not a different estimator.
+
+## tidybayes
+
+`tidy_draws()` works on the fit directly, and `spread_draws()` on the
+frame it returns.
+
+```{r tidybayes}
+tidy <- tidybayes::tidy_draws(fit)
+dim(tidy)
+
+head(tidybayes::spread_draws(tidy, sigma), 3)
+```
+
+## References
+
+Vehtari, A., Gelman, A. and Gabry, J. (2017). Practical Bayesian model
+evaluation using leave-one-out cross-validation and WAIC. *Statistics
+and Computing* 27(5), 1413-1432. doi:10.1007/s11222-016-9696-1
+
+Vehtari, A., Gelman, A., Simpson, D., Carpenter, B. and Buerkner, P.-C.
+(2021). Rank-normalization, folding, and localization: an improved R-hat
+for assessing convergence of MCMC. *Bayesian Analysis* 16(2), 667-718.
+doi:10.1214/20-BA1221

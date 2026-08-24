@@ -4,13 +4,28 @@
 #'
 #' `r lifecycle::badge("experimental")`
 #'
-#' The researcher's interface, after the updatable sampler object of dbarts
-#' and the low-level interface of stochtree: construct with the
-#' configuration, the data and a seed, then drive the Gibbs loop yourself.
-#' Burn-in and thinning are the caller's loop, and the response may be
-#' replaced between sweeps, which is what makes censoring, imputation and
-#' custom likelihoods through the response possible. Anything that is not
-#' an outcome family or a setting goes through this loop.
+#' The seven verbs below are stable. The badge covers additions to the
+#' object and changes to what a verb returns beyond its documented
+#' contract.
+#'
+#' An outcome family, a censoring scheme or an imputation scheme the
+#' package does not ship is written in R against this loop, with no Rust
+#' and no recompilation. A model is reachable exactly when it is a Gaussian
+#' regression on a response the caller can rewrite each sweep, which covers
+#' every latent-Gaussian data augmentation: probit, tobit, accelerated
+#' failure time, interval-censored and ordinal. An augmentation needing
+#' per-observation weights, such as logistic through Polya-Gamma, is not
+#' reachable, because nothing sets the noise variances. Neither is the
+#' geometry, tessellation membership, cell internals, the inclusion prior
+#' or the proposals.
+#'
+#' It follows the updatable sampler object of dbarts and the low-level
+#' interface of stochtree: construct with the configuration, the data and a
+#' seed, then drive the Gibbs loop yourself. Burn-in and thinning are the
+#' caller's loop. Parameters sampled in the caller's loop, cutpoints for
+#' instance, are not in `$finish()`'s draws, so the caller keeps and
+#' diagnoses those. `vignette("sampler-api")` reimplements the probit
+#' family in R and checks it against the built-in one.
 #'
 #' The response is on the caller's scale through an affine map frozen at
 #' construction, so a response outside the training range is legitimate.

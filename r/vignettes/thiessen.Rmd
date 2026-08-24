@@ -59,6 +59,25 @@ head(predict(fit, d, interval = "credible", level = 0.9))
 `predict(interval = "prediction")` covers a new observation rather than
 the mean, and `type = "draws"` returns the per-draw values.
 
+`fitted()`, `residuals()`, `sigma()`, `nobs()`, `print()`, `summary()`
+and `plot()` behave as they do on any model object, and
+`update(fit, seed = 2)` refits with that one argument replaced.
+
+```{r}
+c(nobs = nobs(fit), sigma = sigma(fit),
+  rmse = sqrt(mean(residuals(fit)^2)))
+```
+
+## Covariate scaling
+
+Pass raw data. Inside the sampler a Euclidean column is min-max scaled
+to [-0.5, 0.5] over its training range, which is what makes one distance
+comparable across columns of different units; a categorical column and a
+spherical one are not scaled. The centre-proposal scale `sigma_c` is on
+that internal scale, so `sigma_c = 1` is the full training range of a
+Euclidean column. Nothing else about a fit depends on the units the
+covariates arrive in.
+
 ## The configuration
 
 The configuration has four parts, named as the core stores them: an
@@ -87,6 +106,18 @@ again <- thiessen(y ~ ., d, control, seed = 1)
 identical(predict(fit, d), predict(again, d))
 ```
 
+## Saving a fit
+
+A fit is a plain R object holding the sampler state, so `saveRDS()`
+writes one and a later session reads it and predicts the same values
+without a refit.
+
+```{r}
+path <- tempfile(fileext = ".rds")
+saveRDS(fit, path)
+identical(predict(readRDS(path), d), predict(fit, d))
+```
+
 ## Diagnostics
 
 The established generics are available: `posterior::as_draws_df()`,
@@ -97,4 +128,77 @@ sizes, and a fit warns where they cross the usual thresholds.
 
 ```{r}
 summary(fit)
+```
+
+`variable_inclusion()` reports the share of the ensemble's active
+dimensions falling on each covariate.
+
+```{r}
+variable_inclusion(fit)
+```
+
+Read that as where the ensemble spent its dimensions, not as variable
+selection. At the default `omega` of `min(3, p)` every dimension is
+always active when p is 3 or fewer, so the proportions are then uniform
+by construction; p is 4 here after the factor encoding, and the
+informative covariates separate from the rest only weakly.
+
+`thiessen_diagnostics()` returns the per-draw quantities as a data
+frame, for `bayesplot::mcmc_trace()` or a plot of your own. It is not
+for printing: a bare `print()` dumps every draw.
+
+## Progress
+
+Progress over the sweep schedule is signalled with progressr, and
+nothing is printed by default: the package raises the conditions and the
+session decides whether and how to report them. Choose a handler once
+and it applies to every fit afterwards.
+
+``` r
+progressr::handlers(global = TRUE)
+progressr::handlers("txtprogressbar")
+fit <- thiessen(y ~ ., d, control, seed = 1)
+```
+
+`progressr::with_progress()` scopes a handler to one expression instead.
+The chunks here are not evaluated because progressr renders nothing into
+a static document. The schedule raises one progression per sweep, to a
+maximum of a hundred over the sweeps of every chain, and reporting does
+not change the draws.
+
+## Troubleshooting
+
+### The fit prints nothing while it runs
+
+That is the default, not a hang. See Progress above.
+
+### R-hat or an effective sample size warns
+
+`summary()` reports both. More draws is the first answer, then more
+chains; `thinning` reduces the stored draws without adding information,
+so it is not the remedy for a low effective sample size. The warning
+fires on any short schedule, this article's included, and carries the
+condition class `thiessen_warning`, so it can be silenced by class
+rather than by message:
+
+```{r}
+withCallingHandlers(
+  two <- thiessen(y ~ ., d, control, chains = 2, seed = 1),
+  thiessen_warning = function(condition) {
+    invokeRestart("muffleWarning")
+  }
+)
+two$n_chains
+```
+
+### A saved fit will not load
+
+A fit written by a build carrying the core's experimental feature and
+read by a build without it errors with the class `thiessen_error`,
+naming the feature. `core_version()` and `core_experimental()` report
+the core version and the feature setting of the build in use; a bug
+report should carry both.
+
+```{r}
+c(core = core_version(), experimental = core_experimental())
 ```

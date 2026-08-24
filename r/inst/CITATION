@@ -1,0 +1,29 @@
+# Consistent with CITATION.cff at the repository root: cite the software
+# and the method's paper. The version is read from the installed
+# DESCRIPTION so the software entry cannot drift.
+
+bibentry(
+  bibtype = "Manual",
+  title = "thiessen: Bayesian Additive Voronoi Tessellations",
+  author = person("Leo", "Thomson"),
+  year = "2026",
+  note = sprintf("R package version %s", meta$Version),
+  url = "https://github.com/l-thomson/thiessen",
+  header = "To cite the software:"
+)
+
+bibentry(
+  bibtype = "Article",
+  title = "AddiVortes: (Bayesian) Additive Voronoi Tessellations",
+  author = c(
+    person("Adam J.", "Stone"),
+    person("John Paul", "Gosling")
+  ),
+  journal = "Journal of Computational and Graphical Statistics",
+  year = "2025",
+  volume = "34",
+  number = "3",
+  pages = "859--871",
+  doi = "10.1080/10618600.2024.2414104",
+  header = "To cite the method:"
+)

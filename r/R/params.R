@@ -59,7 +59,9 @@ term_params <- function(tessellations = NULL, k = 3, lambda_c = 5,
 #'   matched case-sensitively, so `"Euclidean"` is rejected. Non-Euclidean
 #'   columns are not scaled.
 #' @param sigma_c Prior and proposal standard deviation sigma_c of a
-#'   centre coordinate in the scaled space. Default 0.8.
+#'   centre coordinate. A Euclidean column is min-max scaled to
+#'   \[-0.5, 0.5\] over its training range inside the sampler and `sigma_c`
+#'   is on that scale, so 1 is the full range of a column. Default 0.8.
 #'
 #' @return An object of class `"geometry_params"`.
 #'
