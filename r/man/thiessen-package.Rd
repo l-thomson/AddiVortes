@@ -19,6 +19,7 @@ Statistics} 34(3), 859-871. \doi{10.1080/10618600.2024.2414104}
 \seealso{
 Useful links:
 \itemize{
+  \item \url{https://l-thomson.github.io/thiessen/r/}
   \item \url{https://github.com/l-thomson/thiessen}
   \item Report bugs at \url{https://github.com/l-thomson/thiessen/issues}
 }
