@@ -98,9 +98,11 @@
   [`progressr::handlers()`](https://progressr.futureverse.org/reference/handlers.html)
   and nothing is printed by default. The draws do not depend on whether
   a handler is set.
-- A fit is a plain R object holding the sampler state, so
+- A fit is a plain R object, so
   [`saveRDS()`](https://rdrr.io/r/base/readRDS.html) writes one and a
-  later session reads it without a refit.
+  later session reads it without a refit. The fitted state lives on the
+  Rust side behind a handle, with a byte encoding alongside for
+  persistence, so no method serialises or parses the whole model.
 - The call is stored on a fit, so
   [`stats::update()`](https://rdrr.io/r/stats/update.html) refits with
   an argument replaced.

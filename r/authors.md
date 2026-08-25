@@ -159,6 +159,16 @@ Tessellations.” *Journal of Computational and Graphical Statistics*,
       license: MIT OR Apache-2.0
       repository: https://github.com/dtolnay/readonly
 
+    rmp 0.8.15
+      authors: Evgeny Safronov <division494@gmail.com>, Kornel <kornel@geekhood.net>
+      license: MIT
+      repository: https://github.com/3Hren/msgpack-rust
+
+    rmp-serde 1.3.1
+      authors: Evgeny Safronov <division494@gmail.com>
+      license: MIT
+      repository: https://github.com/3Hren/msgpack-rust
+
     serde 1.0.229
       authors: Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>
       license: MIT OR Apache-2.0

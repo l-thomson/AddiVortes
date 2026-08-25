@@ -59,7 +59,7 @@
 <li>
 <code><a href="../reference/thiessen_diagnostics.html">thiessen_diagnostics()</a></code> returns the per-draw sigma, mean cells and mean active covariates, with the chain each draw comes from, and <code><a href="../reference/variable_inclusion.html">variable_inclusion()</a></code> the share of the active dimensions falling on each covariate.</li>
 <li>Progress over the sweep schedule is signalled with progressr, so a session reports it after <code><a href="https://progressr.futureverse.org/reference/handlers.html" class="external-link">progressr::handlers()</a></code> and nothing is printed by default. The draws do not depend on whether a handler is set.</li>
-<li>A fit is a plain R object holding the sampler state, so <code><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS()</a></code> writes one and a later session reads it without a refit.</li>
+<li>A fit is a plain R object, so <code><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS()</a></code> writes one and a later session reads it without a refit. The fitted state lives on the Rust side behind a handle, with a byte encoding alongside for persistence, so no method serialises or parses the whole model.</li>
 <li>The call is stored on a fit, so <code><a href="https://rdrr.io/r/stats/update.html" class="external-link">stats::update()</a></code> refits with an argument replaced.</li>
 <li>
 <code>seed = NULL</code> draws the chain’s seed from R’s stream, so <code><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed()</a></code> governs; a whole number passes to the core unchanged.</li>
