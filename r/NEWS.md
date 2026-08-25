@@ -61,8 +61,9 @@
   reports it after `progressr::handlers()` and nothing is printed by
   default. The sweeps, pooling the draws and the convergence summary each
   report, and each names itself in the progression's message, so the bar
-  stands until the fit is complete. The draws do not depend on whether a
-  handler is set.
+  stands until the fit is complete. Pooling costs about what the sweeps
+  cost and carries their weight, so the bar is around half way when the
+  sweeps end. The draws do not depend on whether a handler is set.
 * A fit is a plain R object holding the sampler state, so `saveRDS()`
   writes one and a later session reads it without a refit.
 * The call is stored on a fit, so `stats::update()` refits with an argument

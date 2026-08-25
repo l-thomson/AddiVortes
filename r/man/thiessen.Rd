@@ -98,12 +98,14 @@ Progress over the whole fit is signalled with progressr, so a session
 reports it after \code{progressr::handlers()} and nothing is printed by
 default; \code{progressr::handlers(global = TRUE)} sets one for a whole
 session. The schedule raises one progression per sweep, to a maximum of
-a hundred over the sweeps of every chain, then one for pooling the draws
-and one for the convergence summary, so the report closes when the fit
-is complete rather than at the last sweep. Each phase names itself in
-the progression's message, which handlers such as \code{"progress"} and
-\code{"cli"} display and \code{"txtprogressbar"} does not. The draws do not depend
-on whether a handler is set.
+a hundred over the sweeps of every chain, then pooling the draws and the
+convergence summary, so the report closes when the fit is complete
+rather than at the last sweep. Pooling predicts at every training row
+for every kept draw, so it carries the weight of the sweeps rather than
+a step, and the bar is around half way when the sweeps end. Each phase
+names itself in the progression's message, which handlers such as
+\code{"progress"} and \code{"cli"} display and \code{"txtprogressbar"} does not. The
+draws do not depend on whether a handler is set.
 }
 
 \section{Persistence}{

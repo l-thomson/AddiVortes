@@ -79,21 +79,35 @@ test_that("the sweeps of every chain are reported", {
 # The sweeps once took every step of the progressor, which finished the
 # report at the last sweep and left pooling, the longest phase of a long
 # fit, and the convergence summary running under a closed handler.
-test_that("the sweeps leave a step for each phase that follows them", {
+test_that("the sweeps leave the budget the phases after them need", {
   fixture <- small_fixture()
+  sweeps <- progress_updates(small_control())
 
   seen <- progressions(
     thiessen(fixture$x, fixture$y, small_control(), seed = 1)
   )
 
+  expect_identical(sweep_updates(seen), sweeps)
   expect_identical(
-    total_advance(seen) - sweep_updates(seen),
-    as.integer(PROGRESS_PHASES)
+    total_advance(seen) - sweeps,
+    POOLING_WEIGHT * sweeps + 1L
   )
   expect_identical(
     phase_messages(seen),
     c("sampling", "pooling the draws", "summarising the draws")
   )
+})
+
+# Pooling is one call into the core, so the bar rests where the sweeps
+# leave it for as long as pooling runs. A bar that rests all but complete
+# reads as a fit that has hung rather than one still working.
+test_that("the sweeps leave the bar around half way, not all but complete", {
+  for (chains in 1:2) {
+    fraction <- progress_updates(small_control(), chains) /
+      progress_steps(small_control(), chains)
+    expect_gt(fraction, 0.3)
+    expect_lt(fraction, 0.6)
+  }
 })
 
 test_that("the chains of a fit are named as they are sampled", {

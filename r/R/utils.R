@@ -220,20 +220,21 @@ progress_updates <- function(control, chains = 1L) {
   as.integer(min(sweeps, 100L))
 }
 
-# Phases a fit reports after its last sweep: pooling the draws, which
-# predicts at every training row for every kept draw and so on a long
-# schedule outlasts the sweeps, and the convergence summary.
-PROGRESS_PHASES <- 2L
+# Pooling the draws predicts at every training row for every kept draw, so
+# it costs about what the sweeps themselves cost, in multiples of them. A
+# step apiece would leave the bar all but complete over the longer phase.
+POOLING_WEIGHT <- 1L
 
 #' The number of steps a fit's progressor takes
 #'
 #' @param control An object of class `"thiessen_control"`.
 #' @param chains The number of chains the fit runs.
-#' @return An integer: the sweep reports and one for each phase that
-#'   follows them.
+#' @return An integer: the sweep reports, pooling at its weight, and one
+#'   step for the convergence summary.
 #' @noRd
 progress_steps <- function(control, chains = 1L) {
-  progress_updates(control, chains) + PROGRESS_PHASES
+  updates <- progress_updates(control, chains)
+  updates + POOLING_WEIGHT * updates + 1L
 }
 
 #' The message the sweeps of a chain report
