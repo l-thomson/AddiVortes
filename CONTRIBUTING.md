@@ -53,11 +53,13 @@ wins worth reporting. Instruction counts need valgrind:
         --bench instructions
 
 CI runs that bench on pull requests touching the core or the registry,
-measuring the base revision with the pull request's benchmark code, and
-fails on a soft-limit breach. It is the only performance job allowed to
-gate, because instruction counts are deterministic and a shared runner
-measures them as well as a quiet workstation does. There is no wall-clock
-gate anywhere: the runners sit at a few per cent of noise with far larger
+measuring the base revision with the pull request's benchmark code, posts
+the base, pull request and change of every benchmark as a comment on the
+pull request (`tools/perf-instructions-table.py` renders it), and fails
+on a soft-limit breach. It is the only performance job allowed to gate,
+because instruction counts are deterministic and a shared runner measures
+them as well as a quiet workstation does. There is no wall-clock gate
+anywhere: the runners sit at a few per cent of noise with far larger
 excursions.
 
 Binding changes report the binding's own numbers the same way, one
