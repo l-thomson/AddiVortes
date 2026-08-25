@@ -83,3 +83,8 @@
 * Builds and links the core crate offline from vendored sources, the core
   as source under `src/rust/core` and the third-party crates in
   `src/rust/vendor.tar.xz`; `core_version()` reports the core version.
+* The library is built with the workspace release profile (`lto = "fat"`,
+  `codegen-units = 1`), which the detached manifest under `src/rust` did
+  not carry: fits about 7 per cent and predictions 10 to 15 per cent
+  faster on one machine, the shared library half the size, sampled values
+  unchanged.

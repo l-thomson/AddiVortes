@@ -26,3 +26,9 @@ thiessen = { path = "core" }
 
 # Detached from the repository workspace: the tarball carries no root.
 [workspace]
+
+# The workspace root's release profile, which a detached manifest does not
+# inherit.
+[profile.release]
+codegen-units = 1
+lto = "fat"
