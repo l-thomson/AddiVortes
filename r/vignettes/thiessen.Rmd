@@ -168,14 +168,14 @@ The schedule raises one progression per sweep, to a maximum of a hundred
 over the sweeps of every chain, then pooling the draws and the
 convergence summary. Both run after the last sweep, and pooling predicts
 at every training row for every kept draw, so on a long schedule over
-many rows it costs about what the sweeps cost. It therefore carries the
-weight of the sweeps in the bar rather than a step of it: the bar is
-around half way when the sweeps end, and it stands until the fit is
-complete. Pooling is one call into the core, so the bar rests there
-rather than advancing through it. Each phase names itself in the
-progression's message, which the `"cli"` and `"progress"` handlers
-display and `"txtprogressbar"` does not. Reporting does not change the
-draws.
+many rows it costs about twice what the sweeps cost. It therefore
+carries their weight in the bar rather than a step of it: the bar is
+around a third of the way along when the sweeps end, and it stands until
+the fit is complete. Pooling is one call into the core, so the bar rests
+there rather than advancing through it. Each phase names itself in a
+sticky message, which a terminal handler pushes above the bar rather
+than overwriting, so the phase that is running is named whatever handler
+is set. Reporting does not change the draws.
 
 ## Troubleshooting
 

@@ -240,9 +240,9 @@ progress_updates <- function(control, chains = 1L) {
 }
 
 # Pooling the draws predicts at every training row for every kept draw, so
-# it costs about what the sweeps themselves cost, in multiples of them. A
-# step apiece would leave the bar all but complete over the longer phase.
-POOLING_WEIGHT <- 1L
+# it costs about twice what the sweeps cost, in multiples of them. A step
+# apiece would leave the bar all but complete over the longer phase.
+POOLING_WEIGHT <- 2L
 
 #' The number of steps a fit's progressor takes
 #'

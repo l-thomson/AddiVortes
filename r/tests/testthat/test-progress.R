@@ -6,7 +6,8 @@ progressions <- function(expr) {
   old <- options(progressr.enable = TRUE)
   on.exit(options(old), add = TRUE)
   seen <- data.frame(
-    type = character(0), amount = numeric(0), message = character(0)
+    type = character(0), amount = numeric(0), message = character(0),
+    sticky = logical(0)
   )
   withCallingHandlers(
     expr,
@@ -14,7 +15,8 @@ progressions <- function(expr) {
       seen[nrow(seen) + 1L, ] <<- list(
         condition$type,
         if (is.null(condition$amount)) NA_real_ else condition$amount,
-        paste(conditionMessage(condition), collapse = "")
+        paste(conditionMessage(condition), collapse = ""),
+        inherits(condition, "sticky")
       )
     }
   )
@@ -101,13 +103,30 @@ test_that("the sweeps leave the budget the phases after them need", {
 # Pooling is one call into the core, so the bar rests where the sweeps
 # leave it for as long as pooling runs. A bar that rests all but complete
 # reads as a fit that has hung rather than one still working.
-test_that("the sweeps leave the bar around half way, not all but complete", {
+test_that("the sweeps leave the bar around a third along, not all but complete", {
   for (chains in 1:2) {
     fraction <- progress_updates(small_control(), chains) /
       progress_steps(small_control(), chains)
-    expect_gt(fraction, 0.3)
-    expect_lt(fraction, 0.6)
+    expect_gt(fraction, 0.25)
+    expect_lt(fraction, 0.45)
   }
+})
+
+# Under a terminal handler a plain message is overwritten by the next bar
+# redraw, so only a sticky one leaves the phase on screen.
+test_that("every phase names itself in a sticky progression", {
+  fixture <- small_fixture()
+
+  seen <- progressions(
+    thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  )
+  named <- seen[nzchar(seen$message), ]
+
+  expect_identical(
+    named$message,
+    c("sampling", "pooling the draws", "summarising the draws")
+  )
+  expect_true(all(named$sticky))
 })
 
 test_that("the chains of a fit are named as they are sampled", {

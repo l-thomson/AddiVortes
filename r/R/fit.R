@@ -42,11 +42,12 @@
 #' a hundred over the sweeps of every chain, then pooling the draws and the
 #' convergence summary, so the report closes when the fit is complete
 #' rather than at the last sweep. Pooling predicts at every training row
-#' for every kept draw, so it carries the weight of the sweeps rather than
-#' a step, and the bar is around half way when the sweeps end. Each phase
-#' names itself in the progression's message, which handlers such as
-#' `"progress"` and `"cli"` display and `"txtprogressbar"` does not. The
-#' draws do not depend on whether a handler is set.
+#' for every kept draw, so it costs about twice what the sweeps cost and
+#' carries their weight, and the bar is around a third of the way along
+#' when the sweeps end. Each phase names itself in a sticky message, which
+#' a terminal handler pushes above the bar rather than overwriting, so the
+#' phase that is running is named whatever handler is set. The draws do
+#' not depend on whether a handler is set.
 #'
 #' @section Persistence:
 #'
@@ -237,9 +238,12 @@ new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
   }
   chains <- resolve_chains(chains, call = call_env)
   resolved <- resolve_seed(seed, call = call_env)
-  # The progressor's life must span the whole fit: one whose last step fell
-  # at the last sweep would close its handler over the phases that follow.
-  report <- progressr::progressor(steps = progress_steps(control, chains))
+  # The progressor's life must span the whole fit, so the count never ends
+  # it: `auto_finish` would close the handler on the last step, and the
+  # frame this progressor belongs to exits when the fit is complete.
+  report <- progressr::progressor(
+    steps = progress_steps(control, chains), auto_finish = FALSE
+  )
   fit <- core_call(
     run_schedule(control, design, y, resolved, chains, report),
     call = call_env
@@ -289,7 +293,8 @@ run_schedule <- function(control, design, y, seed, chains, report) {
   }
   samplers <- vector("list", chains)
   for (index in seq_len(chains)) {
-    report(amount = 0, message = sweep_message(index, chains))
+    report(amount = 0, class = "sticky",
+           message = sweep_message(index, chains))
     handle <- core_sampler_new(config, design, y, seed, index - 1L)
     samplers[[index]] <- handle
     completed <- 0L
@@ -307,7 +312,7 @@ run_schedule <- function(control, design, y, seed, chains, report) {
     }
     done <- done + sweeps
   }
-  report(amount = 0, message = "pooling the draws")
+  report(amount = 0, class = "sticky", message = "pooling the draws")
   fit <- core_finish(samplers)
   report(amount = POOLING_WEIGHT * updates)
   fit
@@ -362,7 +367,7 @@ assemble_fit <- function(fit, design, y, seed, call, blueprint = NULL,
     ),
     class = "thiessen"
   )
-  report(amount = 0, message = "summarising the draws")
+  report(amount = 0, class = "sticky", message = "summarising the draws")
   fit_object$convergence <- convergence_of(fit_object)
   warn_convergence(fit_object, call = call_env)
   report()
