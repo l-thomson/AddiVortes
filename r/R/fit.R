@@ -328,13 +328,16 @@ run_schedule <- function(control, design, y, seed, chains, report) {
 #' @param blueprint The hardhat blueprint, or `NULL` for a matrix fit.
 #' @param response_levels The response's factor levels, or `NULL`.
 #' @param call_env The calling environment to report.
-#' @param report A progressr progressor.
+#' @param report A progressr progressor. The default is a disabled one,
+#'   for a caller with no report of its own to advance.
 #' @return An object of class `"thiessen"`.
 #' @noRd
 assemble_fit <- function(fit, design, y, seed, call, blueprint = NULL,
                          response_levels = NULL,
                          call_env = rlang::caller_env(),
-                         report = progress_silent()) {
+                         report = progressr::progressor(
+                           steps = 1L, enable = FALSE
+                         )) {
   for (warning in fit$warnings) {
     rlang::warn(warning, class = "thiessen_warning")
   }

@@ -268,13 +268,3 @@ sweep_message <- function(index, chains) {
   }
   sprintf("sampling chain %d of %d", index, chains)
 }
-
-#' A progressor that signals nothing
-#'
-#' The fit path passes its own; this stands in where a caller has none.
-#'
-#' @return A function taking the arguments a progressor takes.
-#' @noRd
-progress_silent <- function() {
-  function(...) invisible(NULL)
-}
