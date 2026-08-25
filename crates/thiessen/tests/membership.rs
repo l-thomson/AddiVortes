@@ -47,6 +47,35 @@ fn the_bandwidth_is_kept() {
 }
 
 #[test]
+fn the_bandwidths_are_reachable_a_row_per_draw() {
+    let (config, x, y) = fixture();
+    let m = config
+        .mean_params
+        .tessellations
+        .expect("the fixture sets m");
+    let fitted = fit(&soft(config), &x, &y, SEED).unwrap();
+
+    let bandwidths = fitted.bandwidth_draws();
+    assert_eq!(bandwidths.len(), fitted.n_draws());
+    for (d, draw) in bandwidths.iter().enumerate() {
+        assert_eq!(draw.len(), m);
+        assert!(draw.iter().all(|tau| *tau > 0.0), "{draw:?}");
+        let kept: Vec<f64> = fitted.posterior().tessellations()[d]
+            .iter()
+            .map(|t| t.bandwidth().expect("a soft tessellation carries tau"))
+            .collect();
+        assert_eq!(*draw, kept);
+    }
+}
+
+#[test]
+fn hard_membership_keeps_no_bandwidth() {
+    let (config, x, y) = fixture();
+    let fitted = fit(&config, &x, &y, SEED).unwrap();
+    assert!(fitted.bandwidth_draws().is_empty());
+}
+
+#[test]
 fn soft_membership_composes_with_the_probit_model() {
     let (config, x, labels) = probit_fixture();
     let fitted = fit(&soft(config), &x, &labels, SEED).unwrap();

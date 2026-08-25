@@ -21,6 +21,21 @@ says "Sampled values changed" with the reason.
   with the model. Either count is bounded by the parallelism available
   to the process.
 
+- (experimental) `Fitted::inclusion_weight_draws` and
+  `Fitted::concentration_draws`: the DART inclusion weights s and their
+  concentration theta of each kept draw, which the sampler drew and no
+  kept draw held. s is the sampled prior weight Linero (2018) reports and
+  `BART::wbart` returns as `varprob`, not
+  `Fitted::variable_inclusion_proportions`, which counts the usage the
+  tessellations realised. Kept only under `Inclusion::Dart`, so a payload
+  written by another configuration is byte-identical and one written
+  before this change still loads. Outside the semver promise
+  (docs/experimental.md).
+- (experimental) `Fitted::bandwidth_draws`: the soft-membership
+  bandwidth of each mean tessellation, one row per kept draw, on the
+  scaled covariate space its prior is on. The values were already kept
+  on each tessellation; this reads them off in one call. Outside the
+  semver promise (docs/experimental.md).
 - (experimental) `Metric::Minkowski` with order p >= 1 and
   `Metric::Manhattan`, its p = 1 alias: Minkowski distance on the scaled
   active coordinates, the active columns of one order combined as

@@ -20,7 +20,11 @@ use crate::threads;
 /// tessellations per draw under the heteroscedastic model; the interior
 /// cutpoints per draw under the ordinal model above two categories; the
 /// error degrees of freedom per draw under the Student-t model with a
-/// grid.
+/// grid; the inclusion weights and their concentration per draw under
+/// the DART inclusion prior.
+///
+/// The soft-membership bandwidth is not here: it belongs to a
+/// tessellation and is kept on it, one per tessellation per draw.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "PosteriorParts")]
 pub struct Posterior {
@@ -31,6 +35,10 @@ pub struct Posterior {
     cutpoints: Vec<Vec<f64>>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     dfs: Vec<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    inclusion_weights: Vec<Vec<f64>>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    concentration: Vec<f64>,
 }
 
 impl Posterior {
@@ -41,6 +49,8 @@ impl Posterior {
             variance_tessellations: Vec::new(),
             cutpoints: Vec::new(),
             dfs: Vec::new(),
+            inclusion_weights: Vec::new(),
+            concentration: Vec::new(),
         }
     }
 
@@ -51,12 +61,17 @@ impl Posterior {
         variance_tessellations: Option<Vec<Tessellation>>,
         cutpoints: Option<Vec<f64>>,
         df: Option<f64>,
+        inclusion: Option<(Vec<f64>, f64)>,
     ) {
         self.sigma_sq.extend(sigma_sq);
         self.tessellations.push(tessellations);
         self.variance_tessellations.extend(variance_tessellations);
         self.cutpoints.extend(cutpoints);
         self.dfs.extend(df);
+        if let Some((weights, concentration)) = inclusion {
+            self.inclusion_weights.push(weights);
+            self.concentration.push(concentration);
+        }
     }
 
     /// Number of kept draws.
@@ -92,6 +107,19 @@ impl Posterior {
         &self.dfs
     }
 
+    /// The sampled inclusion weight of each covariate, in column order,
+    /// per draw; empty outside the DART inclusion prior. Each draw sums
+    /// to one.
+    pub fn inclusion_weights(&self) -> &[Vec<f64>] {
+        &self.inclusion_weights
+    }
+
+    /// The Dirichlet concentration theta of each draw; empty outside the
+    /// DART inclusion prior.
+    pub fn concentration(&self) -> &[f64] {
+        &self.concentration
+    }
+
     pub(crate) fn extend(&mut self, other: &Self) {
         self.sigma_sq.extend_from_slice(&other.sigma_sq);
         self.tessellations.extend_from_slice(&other.tessellations);
@@ -99,6 +127,9 @@ impl Posterior {
             .extend_from_slice(&other.variance_tessellations);
         self.cutpoints.extend_from_slice(&other.cutpoints);
         self.dfs.extend_from_slice(&other.dfs);
+        self.inclusion_weights
+            .extend_from_slice(&other.inclusion_weights);
+        self.concentration.extend_from_slice(&other.concentration);
     }
 }
 
@@ -112,6 +143,10 @@ struct PosteriorParts {
     cutpoints: Vec<Vec<f64>>,
     #[serde(default)]
     dfs: Vec<f64>,
+    #[serde(default)]
+    inclusion_weights: Vec<Vec<f64>>,
+    #[serde(default)]
+    concentration: Vec<f64>,
 }
 
 impl TryFrom<PosteriorParts> for Posterior {
@@ -193,12 +228,45 @@ impl TryFrom<PosteriorParts> for Posterior {
         if parts.dfs.iter().any(|df| !(df.is_finite() && *df > 0.0)) {
             return Err(bad("degrees-of-freedom draws must be finite and positive"));
         }
+        if !(parts.inclusion_weights.is_empty() || parts.inclusion_weights.len() == n_draws) {
+            return Err(bad("inclusion weights must be absent or one set per draw"));
+        }
+        if parts.concentration.len() != parts.inclusion_weights.len() {
+            return Err(bad(
+                "inclusion weights and their concentration must be kept together",
+            ));
+        }
+        if let Some(first) = parts.inclusion_weights.first() {
+            let p = first.len();
+            if p == 0 || parts.inclusion_weights.iter().any(|w| w.len() != p) {
+                return Err(bad(
+                    "every draw must hold the same positive number of inclusion weights",
+                ));
+            }
+            for draw in &parts.inclusion_weights {
+                if draw.iter().any(|w| !(w.is_finite() && *w >= 0.0)) {
+                    return Err(bad("inclusion weights must be finite and non-negative"));
+                }
+                if (draw.iter().sum::<f64>() - 1.0).abs() > 1e-9 {
+                    return Err(bad("inclusion weights must sum to one"));
+                }
+            }
+        }
+        if parts
+            .concentration
+            .iter()
+            .any(|theta| !(theta.is_finite() && *theta > 0.0))
+        {
+            return Err(bad("concentration draws must be finite and positive"));
+        }
         Ok(Self {
             sigma_sq: parts.sigma_sq,
             tessellations: parts.tessellations,
             variance_tessellations: parts.variance_tessellations,
             cutpoints: parts.cutpoints,
             dfs: parts.dfs,
+            inclusion_weights: parts.inclusion_weights,
+            concentration: parts.concentration,
         })
     }
 }
@@ -1386,6 +1454,46 @@ impl Fitted {
     /// feature. Experimental (`docs/experimental.md`).
     pub fn cutpoint_draws(&self) -> &[Vec<f64>] {
         self.posterior.cutpoints()
+    }
+
+    /// The sampled inclusion weight of each covariate, in column order,
+    /// per kept draw under the DART inclusion prior; empty under another
+    /// inclusion prior. Each draw sums to one.
+    ///
+    /// This is the prior weight s the sampler drew, the quantity Linero
+    /// (2018) reports; it is not
+    /// [`variable_inclusion_proportions`](Self::variable_inclusion_proportions),
+    /// which counts the usage the tessellations realised.
+    /// Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn inclusion_weight_draws(&self) -> &[Vec<f64>] {
+        self.posterior.inclusion_weights()
+    }
+
+    /// The Dirichlet concentration theta of each kept draw under the DART
+    /// inclusion prior; empty under another inclusion prior. One value
+    /// per draw, not one per covariate. Experimental
+    /// (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn concentration_draws(&self) -> &[f64] {
+        self.posterior.concentration()
+    }
+
+    /// The soft-membership kernel bandwidth of each mean tessellation,
+    /// one row per kept draw, on the scaled covariate space its prior is
+    /// on; empty under hard membership. Experimental
+    /// (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn bandwidth_draws(&self) -> Vec<Vec<f64>> {
+        self.posterior
+            .tessellations()
+            .iter()
+            .map(|draw| draw.iter().filter_map(Tessellation::bandwidth).collect())
+            .filter(|draw: &Vec<f64>| !draw.is_empty())
+            .collect()
     }
 
     /// sigma per kept draw under a model with a global sampled sigma^2
