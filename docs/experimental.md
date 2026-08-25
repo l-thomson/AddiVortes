@@ -32,6 +32,7 @@ history.
 | AFT outcome | outcome model (model-grade validation) | `outcome` entry `{"aft": {}}` with `fit_aft(x, times, events)` | 0.3.0 | known answer (censored-likelihood quadrature); SBC and Geweke, both sizes; informational `abart` comparison | experimental | [#82](https://github.com/l-thomson/thiessen/pull/82) |
 | Interval-censored outcome | outcome model (model-grade validation) | `outcome` entry `{"interval_censored": {}}` with `fit_interval_censored(x, lower, upper)` | 0.3.0 | known answer (interval-likelihood quadrature); SBC and Geweke, both sizes | experimental | [#83](https://github.com/l-thomson/thiessen/pull/83) |
 | Ordinal outcome | outcome model (model-grade validation) | `outcome` entry `{"ordinal": {"categories": ...}}` | 0.3.0 | known answer (cutpoint and cell-mean quadrature); SBC and Geweke, both sizes, cutpoints covered; broken-sampler fixture; full-size cutpoint ESS check | experimental | [#85](https://github.com/l-thomson/thiessen/pull/85) |
+| Student-t outcome | outcome model (model-grade validation) | `outcome` entry `{"student_t": {"df": 4.0}}` or `{"student_t": {"df": [3.0, 6.0, 12.0]}}` | 0.3.0 | known answer (marginal t-likelihood quadrature, fixed and grid df); SBC and Geweke, both sizes (fixed df); no acceptance-ratio term, so no broken-sampler fixture | experimental | [#98](https://github.com/l-thomson/thiessen/pull/98) |
 
 Columns: the configuration field or variant; the first core version
 carrying the item behind the feature; calibration status (SBC and Geweke

@@ -31,6 +31,8 @@ use crate::models::interval_censored::IntervalCensoredOutcome;
 use crate::models::ordinal::OrdinalOutcome;
 use crate::models::probit::ProbitOutcome;
 #[cfg(feature = "experimental")]
+use crate::models::student_t::StudentTOutcome;
+#[cfg(feature = "experimental")]
 use crate::models::tobit::TobitOutcome;
 use crate::moves::Prior;
 use crate::outcome::{OutcomeModel, RequiredData, Sigma2Mode};
@@ -53,6 +55,8 @@ enum Outcome {
     IntervalCensored(IntervalCensoredOutcome),
     #[cfg(feature = "experimental")]
     Ordinal(OrdinalOutcome),
+    #[cfg(feature = "experimental")]
+    StudentT(StudentTOutcome),
 }
 
 /// Dispatch one method over every variant.
@@ -69,6 +73,8 @@ macro_rules! each_outcome {
             Outcome::IntervalCensored($outcome) => $body,
             #[cfg(feature = "experimental")]
             Outcome::Ordinal($outcome) => $body,
+            #[cfg(feature = "experimental")]
+            Outcome::StudentT($outcome) => $body,
         }
     };
 }
@@ -103,6 +109,8 @@ impl Outcome {
             #[cfg(feature = "experimental")]
             Outcome::Ordinal(outcome) => Some(outcome.labels()),
             Outcome::Gaussian(_) => None,
+            #[cfg(feature = "experimental")]
+            Outcome::StudentT(_) => None,
         }
     }
 
@@ -118,6 +126,14 @@ impl Outcome {
     fn as_ordinal_mut(&mut self) -> Option<&mut OrdinalOutcome> {
         match self {
             Outcome::Ordinal(outcome) => Some(outcome),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "experimental")]
+    fn as_student_t(&self) -> Option<&StudentTOutcome> {
+        match self {
+            Outcome::StudentT(outcome) => Some(outcome),
             _ => None,
         }
     }
@@ -250,28 +266,11 @@ impl Dart {
             theta: 0.0,
             s: Vec::new(),
         };
-        let index = draw_discrete(&dart.log_grid_prior, rng);
+        let index = rng::draw_discrete(&dart.log_grid_prior, rng);
         dart.theta = dart.grid_theta[index];
         dart.s = draw_dirichlet(&vec![dart.theta / p as f64; p], rng);
         dart
     }
-}
-
-/// One index drawn from unnormalised log weights, with one uniform.
-#[cfg(feature = "experimental")]
-fn draw_discrete(log_weights: &[f64], rng: &mut rng::Rng) -> usize {
-    let max = log_weights.iter().fold(f64::NEG_INFINITY, |m, &v| m.max(v));
-    let weights: Vec<f64> = log_weights.iter().map(|&v| maths::exp(v - max)).collect();
-    let total: f64 = weights.iter().sum();
-    let target = rng::uniform(rng) * total;
-    let mut cumulative = 0.0;
-    for (i, &w) in weights.iter().enumerate() {
-        cumulative += w;
-        if target < cumulative {
-            return i;
-        }
-    }
-    weights.len() - 1
 }
 
 /// A Dirichlet draw by normalised gammas, one gamma per coordinate.
@@ -716,6 +715,8 @@ impl Sampler {
             OutcomeConfig::IntervalCensored(_) => IntervalCensoredOutcome::CELL_PRIOR_HALF_WIDTH,
             #[cfg(feature = "experimental")]
             OutcomeConfig::Ordinal(_) => OrdinalOutcome::CELL_PRIOR_HALF_WIDTH,
+            #[cfg(feature = "experimental")]
+            OutcomeConfig::StudentT(_) => StudentTOutcome::CELL_PRIOR_HALF_WIDTH,
         };
         let sigma_mu_sq = scaler::sigma_mu_sq(half_width, config.mean_params.k, m);
         // Both slots declare identical geometry and structure, so the
@@ -825,6 +826,14 @@ impl Sampler {
                 let mut outcome = AftOutcome::new(events.to_vec());
                 outcome.init(&y_scaled);
                 Outcome::Aft(outcome)
+            }
+            // Weights are dimensionless, so nothing crosses the map.
+            #[cfg(feature = "experimental")]
+            OutcomeConfig::StudentT(params) => {
+                let mut outcome =
+                    StudentTOutcome::new(params.df.initial(), params.df.grid().to_vec());
+                outcome.init(&y_scaled);
+                Outcome::StudentT(outcome)
             }
             // The bounds cross to the scaled response space by the same
             // frozen affine map as the working response; an infinite
@@ -985,7 +994,7 @@ impl Sampler {
                     + (c - 1.0) * sum_ln_s
             })
             .collect();
-        dart.theta = dart.grid_theta[draw_discrete(&log_density, &mut self.rng)];
+        dart.theta = dart.grid_theta[rng::draw_discrete(&log_density, &mut self.rng)];
     }
 
     /// The DART inclusion state, (weights, concentration), when the
@@ -1051,7 +1060,8 @@ impl Sampler {
         }
         match self.outcome.sigma2_mode() {
             // sigma^2 | y, F ~ Inv-Gamma((nu + n) / 2,
-            // (nu lambda + sum r_i^2) / 2) with r = y - F, drawn by the
+            // (nu lambda + sum w_i r_i^2) / 2) with r = y - F and w the
+            // outcome's weights (unit where it has none), drawn by the
             // kernel; under prior-only sampling the prior
             // Inv-Gamma(nu / 2, nu lambda / 2). The latent refresh runs
             // first, with the standing precisions, so sigma^2 and the
@@ -1073,12 +1083,14 @@ impl Sampler {
                 let (shape, scale) = if prior_only {
                     (0.5 * nu, 2.0 / (nu * self.lambda))
                 } else {
-                    let rss: f64 = self
-                        .y
-                        .iter()
-                        .zip(self.mean.total())
-                        .map(|(y, f)| (y - f) * (y - f))
-                        .sum();
+                    let residuals = self.y.iter().zip(self.mean.total());
+                    let rss: f64 = match self.outcome.weights() {
+                        None => residuals.map(|(y, f)| (y - f) * (y - f)).sum(),
+                        Some(weights) => residuals
+                            .zip(weights)
+                            .map(|((y, f), w)| w * (y - f) * (y - f))
+                            .sum(),
+                    };
                     let n = self.y.len();
                     (0.5 * (nu + n as f64), 2.0 / (nu * self.lambda + rss))
                 };
@@ -1134,11 +1146,20 @@ impl Sampler {
             .map(<[f64]>::to_vec);
         #[cfg(not(feature = "experimental"))]
         let cutpoints = None;
+        #[cfg(feature = "experimental")]
+        let df = self
+            .outcome
+            .as_student_t()
+            .filter(|outcome| outcome.grid_sampled())
+            .map(StudentTOutcome::df);
+        #[cfg(not(feature = "experimental"))]
+        let df = None;
         self.kept.push(
             sigma_sq,
             self.mean.tessellations().to_vec(),
             variance,
             cutpoints,
+            df,
         );
     }
 
@@ -1152,6 +1173,15 @@ impl Sampler {
             .as_ordinal()
             .map(OrdinalOutcome::free_cutpoints)
             .unwrap_or(&[])
+    }
+
+    /// The current error degrees of freedom of the Student-t outcome;
+    /// `None` under another outcome. Experimental
+    /// (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    pub fn student_df(&self) -> Option<f64> {
+        self.outcome.as_student_t().map(StudentTOutcome::df)
     }
 
     /// Number of draws kept so far.

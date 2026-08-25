@@ -227,6 +227,11 @@ pub const CASES: &[Case] = &[
         name: "interval_censored",
         build: interval_censored,
     },
+    #[cfg(feature = "experimental")]
+    Case {
+        name: "student_t",
+        build: student_t,
+    },
 ];
 
 /// The schedule the predict benchmarks fit under; the sweep benchmarks
@@ -265,6 +270,24 @@ fn heteroscedastic(n: usize, p: usize) -> Workload {
         // Twenty variance tessellations against the mean ensemble's
         // default: the ratio the H-AddiVortes examples use.
         config: schedule(Config::new().with_m_var(20)),
+        x,
+        response: Response::Numeric(y),
+    }
+}
+
+#[cfg(feature = "experimental")]
+fn student_t(n: usize, p: usize) -> Workload {
+    let (x, mean, noise) = friedman(n, p, SEED);
+    // Every twentieth row carries a fivefold error, the outliers the
+    // weights are there to discount.
+    let y = mean
+        .iter()
+        .zip(&noise)
+        .enumerate()
+        .map(|(i, (m, e))| if i % 20 == 0 { m + 5.0 * e } else { m + e })
+        .collect();
+    Workload {
+        config: schedule(Config::new().with_outcome(Outcome::student_t(4.0))),
         x,
         response: Response::Numeric(y),
     }
