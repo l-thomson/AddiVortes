@@ -68,13 +68,18 @@ def fmt(value):
 
 
 def change(new, old, breached):
+    """`20.7% fewer`, `6.8% more` or `unchanged`: a word rather than a
+    sign carries the direction."""
     if new is None or old is None:
         return "-"
     if old == 0:
-        pct = "n/a"
+        text = "n/a"
+    elif new == old:
+        text = "unchanged"
     else:
-        pct = f"{100.0 * (new - old) / old:+.1f}%"
-    return f"{pct} (limit breached)" if breached else pct
+        pct = 100.0 * (new - old) / old
+        text = f"{abs(pct):.1f}% {'fewer' if pct < 0 else 'more'}"
+    return f"{text} (limit breached)" if breached else text
 
 
 def row(summary):
@@ -125,7 +130,8 @@ def main(argv):
     print(
         f"Callgrind, one run per benchmark, base revision (`{base}`) "
         "measured with this pull request's benchmark code. "
-        "The gate fails on a rise above 5% in either column."
+        "Fewer is less work; the gate fails at more than 5% more in "
+        "either column."
     )
     print()
     header = ["bench"]
