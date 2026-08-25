@@ -267,3 +267,9 @@ says "Sampled values changed" with the reason.
 - Input-data contract in the crate-root documentation; a design matrix
   with no columns is rejected with `Error::NoFeatures`.
 - The crate readme is the repository README, so `cargo package` finds it.
+- The all-Euclidean distance path is chosen once per geometry rather
+  than by a scan of every column at every distance evaluation, which
+  made the default fit grow with the number of covariates: a Friedman
+  fit at n = 200, m = 200 and 1200 sweeps takes 1.4 s at p = 5, 10 and
+  40 in place of 1.7, 2.2 and 4.6 s. Sampled values are unchanged for a
+  fixed seed.
