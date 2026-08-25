@@ -407,7 +407,7 @@ impl Fitted {
     /// configuration, scaling or category levels differ;
     /// `RowCountMismatch`; the [`predict`](Self::predict) errors.
     pub fn pool(fits: &[Self], x: &Data, y: &[f64]) -> Result<Self> {
-        Self::pooled(fits, x, y).map(|(fitted, _)| fitted)
+        Self::pooled(fits, x, y, None).map(|(fitted, _)| fitted)
     }
 
     /// The kept draws of `samplers`, in chain order, as one fitted model,
@@ -417,26 +417,54 @@ impl Fitted {
     ///
     /// `samplers` are chains of the same model constructed on `x` and
     /// `y`, keyed by [`chain_seed`](crate::chain_seed), each with at least
-    /// one kept draw. The one prediction pass over `x` gives both the
-    /// fitted values and the in-sample RMSE, so the result equals
-    /// [`pool`](Self::pool) of the chains' [`Sampler::finish`] results
-    /// without the pass each `finish` makes.
+    /// one kept draw. The fitted values and the in-sample RMSE come from
+    /// the sums each sampler accumulated at `keep`, so no prediction pass
+    /// runs: for one chain the values equal [`pool`](Self::pool) of its
+    /// [`Sampler::finish`] result bit for bit; for several chains the
+    /// per-chain sums are added before the division, which can differ
+    /// from the pooled pass in the last bit. A chain that kept a soft
+    /// draw has no sums, and the pooled model then predicts once over
+    /// `x`.
     ///
     /// # Errors
     ///
     /// `InvalidHyperparameter` for `draws` when a chain kept nothing; the
     /// [`pool`](Self::pool) errors.
     pub fn pool_samplers(samplers: Vec<Sampler>, x: &Data, y: &[f64]) -> Result<(Self, Vec<f64>)> {
+        let n_draws: usize = samplers.iter().map(Sampler::n_kept).sum();
+        let mean = samplers
+            .iter()
+            .try_fold(vec![0.0; x.n_rows()], |mut acc, sampler| {
+                let sum = sampler.fit_sum_response()?;
+                if sum.len() != acc.len() {
+                    return None;
+                }
+                for (a, v) in acc.iter_mut().zip(sum) {
+                    *a += v;
+                }
+                Some(acc)
+            })
+            .map(|acc| {
+                acc.into_iter()
+                    .map(|sum| sum / n_draws as f64)
+                    .collect::<Vec<f64>>()
+            });
         let chains = samplers
             .into_iter()
             .map(|sampler| sampler.into_fitted(0.0))
             .collect::<Result<Vec<_>>>()?;
-        Self::pooled(&chains, x, y)
+        Self::pooled(&chains, x, y, mean)
     }
 
     /// The pooled model and the posterior mean at the rows of `x`, from
-    /// which its in-sample RMSE is taken.
-    fn pooled(fits: &[Self], x: &Data, y: &[f64]) -> Result<(Self, Vec<f64>)> {
+    /// which its in-sample RMSE is taken: `mean` when the caller has it,
+    /// otherwise one prediction pass.
+    fn pooled(
+        fits: &[Self],
+        x: &Data,
+        y: &[f64],
+        mean: Option<Vec<f64>>,
+    ) -> Result<(Self, Vec<f64>)> {
         let mismatch = |reason: &str| Error::MismatchedChains {
             reason: reason.into(),
         };
@@ -473,7 +501,13 @@ impl Fitted {
             0.0,
             first.categories.clone(),
         );
-        let mean = pooled.predict(x)?;
+        let mean = match mean {
+            Some(mean) => {
+                data::validate_predict(x, pooled.scaler.n_cols())?;
+                mean
+            }
+            None => pooled.predict(x)?,
+        };
         let n = y.len() as f64;
         pooled.in_sample_rmse = (mean
             .iter()

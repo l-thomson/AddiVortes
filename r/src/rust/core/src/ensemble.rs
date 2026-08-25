@@ -102,6 +102,11 @@ impl<F: CellFamily> Ensemble<F> {
         self.prior.weights = Some(weights);
     }
 
+    /// The cell of every training row under each tessellation.
+    pub(crate) fn assignments(&self) -> &[Assignment] {
+        &self.assignments
+    }
+
     pub(crate) fn sweep(
         &mut self,
         x: &Data,
@@ -374,9 +379,5 @@ impl<F: CellFamily> Ensemble<F> {
         self.assignments[j] = Assignment::full(x, &t, &self.prior.geometry);
         self.tessellations[j] = t;
         self.total.iter_mut().for_each(|v| *v = total);
-    }
-
-    pub(crate) fn assignments(&self) -> &[Assignment] {
-        &self.assignments
     }
 }
