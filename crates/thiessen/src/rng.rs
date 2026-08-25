@@ -62,6 +62,23 @@ pub(crate) fn gamma(shape: f64, scale: f64, rng: &mut Rng) -> f64 {
         .sample(rng)
 }
 
+/// One index drawn from unnormalised log weights, with one uniform.
+#[cfg(feature = "experimental")]
+pub(crate) fn draw_discrete(log_weights: &[f64], rng: &mut Rng) -> usize {
+    let max = log_weights.iter().fold(f64::NEG_INFINITY, |m, &v| m.max(v));
+    let weights: Vec<f64> = log_weights.iter().map(|&v| libm::exp(v - max)).collect();
+    let total: f64 = weights.iter().sum();
+    let target = uniform(rng) * total;
+    let mut cumulative = 0.0;
+    for (i, &w) in weights.iter().enumerate() {
+        cumulative += w;
+        if target < cumulative {
+            return i;
+        }
+    }
+    weights.len() - 1
+}
+
 /// Standard normal draw restricted to z >= a (Robert 1995, Statistics and
 /// Computing 5, 121-125): plain rejection from N(0, 1) for a < 0.45,
 /// otherwise rejection from the exponential with rate
@@ -227,6 +244,24 @@ mod tests {
         for _ in 0..1000 {
             assert!(uniform_index(3, &mut rng) < 3);
             assert_eq!(uniform_index(1, &mut rng), 0);
+        }
+    }
+
+    #[cfg(feature = "experimental")]
+    #[test]
+    fn draw_discrete_frequencies_match_the_weights() {
+        let mut rng = chain_rng(17);
+        // Unnormalised log weights of probabilities 1/6, 2/6, 3/6, offset
+        // to exercise the max shift.
+        let log_weights = [100.0, 100.0 + libm::log(2.0), 100.0 + libm::log(3.0)];
+        let n = 60_000;
+        let mut counts = [0usize; 3];
+        for _ in 0..n {
+            counts[draw_discrete(&log_weights, &mut rng)] += 1;
+        }
+        for (count, expected) in counts.iter().zip([1.0 / 6.0, 2.0 / 6.0, 3.0 / 6.0]) {
+            let share = *count as f64 / n as f64;
+            assert!((share - expected).abs() < 0.01, "{share} vs {expected}");
         }
     }
 
