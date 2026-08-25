@@ -330,8 +330,8 @@ impl Sampler {
             .inner
             .take()
             .ok_or_else(|| ThiessenError::new_err("the sampler is finished"))?;
-        let fitted = sampler.finish().map_err(core_error)?;
-        let inner = thiessen::Fitted::pool(&[fitted], &self.data, &self.y).map_err(core_error)?;
+        let (inner, _) = thiessen::Fitted::pool_samplers(vec![sampler], &self.data, &self.y)
+            .map_err(core_error)?;
         Ok(Fitted { inner })
     }
 }
@@ -350,13 +350,8 @@ fn fit(
     let config = config(config_json)?;
     let data = design(&x)?;
     let y = response(&y);
-    let chains = n_chains.max(1);
-    let mut fits = Vec::with_capacity(chains);
-    for index in 0..chains {
-        let chain = thiessen::chain_seed(seed, index);
-        fits.push(thiessen::fit(&config, &data, &y, chain).map_err(core_error)?);
-    }
-    let inner = thiessen::Fitted::pool(&fits, &data, &y).map_err(core_error)?;
+    let (inner, _) =
+        thiessen::fit_chains(&config, &data, &y, seed, n_chains.max(1)).map_err(core_error)?;
     Ok(Fitted { inner })
 }
 

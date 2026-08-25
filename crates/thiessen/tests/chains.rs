@@ -4,7 +4,7 @@
 mod common;
 
 use common::{fixture, SEED};
-use thiessen::{chain_seed, fit, Config, Data, Fitted};
+use thiessen::{chain_seed, fit, fit_chains, Config, Data, Fitted, Sampler};
 
 fn chains(config: &Config, x: &Data, y: &[f64], n: usize) -> Vec<Fitted> {
     (0..n)
@@ -69,6 +69,66 @@ fn a_pooled_fit_round_trips_through_serde() {
 
     assert_eq!(loaded.n_draws(), pooled.n_draws());
     assert_eq!(loaded.predict(&x).unwrap(), pooled.predict(&x).unwrap());
+}
+
+#[test]
+fn pooling_samplers_equals_pooling_their_finished_chains() {
+    let (config, x, y) = fixture();
+    let schedule = &config.general_params;
+    let run = |k: usize| {
+        let mut sampler = Sampler::new(&config, &x, &y, chain_seed(SEED, k)).unwrap();
+        for _ in 0..schedule.burn_in {
+            sampler.step();
+        }
+        for _ in 0..schedule.draws {
+            for _ in 0..schedule.thinning {
+                sampler.step();
+            }
+            sampler.keep();
+        }
+        sampler
+    };
+    let finished = Fitted::pool(
+        &[run(0).finish().unwrap(), run(1).finish().unwrap()],
+        &x,
+        &y,
+    )
+    .unwrap();
+
+    let (pooled, fitted_values) = Fitted::pool_samplers(vec![run(0), run(1)], &x, &y).unwrap();
+
+    assert_eq!(pooled.sigma(), finished.sigma());
+    assert_eq!(
+        pooled.predict_draws(&x).unwrap(),
+        finished.predict_draws(&x).unwrap()
+    );
+    assert_eq!(pooled.in_sample_rmse(), finished.in_sample_rmse());
+    assert_eq!(fitted_values, pooled.predict(&x).unwrap());
+}
+
+#[test]
+fn fit_chains_equals_the_pooled_single_fits() {
+    let (config, x, y) = fixture();
+    let parts = chains(&config, &x, &y, 2);
+    let via_pool = Fitted::pool(&parts, &x, &y).unwrap();
+
+    let (pooled, fitted_values) = fit_chains(&config, &x, &y, SEED, 2).unwrap();
+
+    assert_eq!(pooled.sigma(), via_pool.sigma());
+    assert_eq!(
+        pooled.predict_draws(&x).unwrap(),
+        via_pool.predict_draws(&x).unwrap()
+    );
+    assert_eq!(pooled.in_sample_rmse(), via_pool.in_sample_rmse());
+    assert_eq!(fitted_values, via_pool.predict(&x).unwrap());
+    assert!(fit_chains(&config, &x, &y, SEED, 0).is_err());
+}
+
+#[test]
+fn a_sampler_with_no_kept_draw_does_not_pool() {
+    let (config, x, y) = fixture();
+    let sampler = Sampler::new(&config, &x, &y, SEED).unwrap();
+    assert!(Fitted::pool_samplers(vec![sampler], &x, &y).is_err());
 }
 
 #[test]

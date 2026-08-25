@@ -306,19 +306,19 @@ fn core_finish(samplers: List) -> Result<List> {
     let first = handles
         .first()
         .ok_or_else(|| Error::Other("a fit needs at least one chain".to_string()))?;
-    let mut fits = Vec::with_capacity(handles.len());
+    let mut samplers = Vec::with_capacity(handles.len());
     for handle in &handles {
-        let live = handle.inner.borrow_mut().take().ok_or_else(finished)?;
-        fits.push(live.finish().map_err(core_error)?);
+        samplers.push(handle.inner.borrow_mut().take().ok_or_else(finished)?);
     }
+    let n_chains = samplers.len() as i32;
     let y = first.y.borrow();
-    let fitted = thiessen::Fitted::pool(&fits, &first.data, &y).map_err(core_error)?;
-    let fitted_values = fitted.predict(&first.data).map_err(core_error)?;
+    let (fitted, fitted_values) =
+        thiessen::Fitted::pool_samplers(samplers, &first.data, &y).map_err(core_error)?;
     let warnings: Vec<String> = fitted.warnings().iter().map(ToString::to_string).collect();
     Ok(list!(
         config = serde_json::to_string(fitted.config()).map_err(json_error)?,
         model = fitted.model_name().to_string(),
-        n_chains = fits.len() as i32,
+        n_chains = n_chains,
         n_draws = fitted.n_draws() as i32,
         in_sample_rmse = fitted.in_sample_rmse(),
         warnings = warnings,
