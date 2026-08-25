@@ -58,6 +58,13 @@ fn the_student_t_outcome_is_rejected_naming_the_feature() {
 }
 
 #[test]
+fn the_laplace_outcome_is_rejected_naming_the_feature() {
+    let err = serde_json::from_str::<Config>(r#"{"outcome": {"laplace": {}}}"#).unwrap_err();
+    assert!(err.to_string().contains("experimental"), "{err}");
+    assert!(err.to_string().contains("laplace"), "{err}");
+}
+
+#[test]
 fn minkowski_metric_is_rejected() {
     let json = r#"{"mean_params": {"geometry": {"metric": [{"minkowski": {"p": 1.5}}]}}}"#;
     let err = serde_json::from_str::<Config>(json).unwrap_err();

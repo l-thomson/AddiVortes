@@ -23,6 +23,9 @@ pub mod heteroscedastic;
 pub mod interval_censored;
 #[cfg(feature = "experimental")]
 #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+pub mod laplace;
+#[cfg(feature = "experimental")]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
 pub mod ordinal;
 pub mod probit;
 #[cfg(feature = "experimental")]

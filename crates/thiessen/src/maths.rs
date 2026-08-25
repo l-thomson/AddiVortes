@@ -233,6 +233,29 @@ pub(crate) fn student_t_quantile(p: f64, nu: f64) -> f64 {
     0.5 * (lo + hi)
 }
 
+/// Standard Laplace CDF at `z`: exp(z) / 2 below 0, 1 - exp(-z) / 2
+/// above.
+#[cfg(feature = "experimental")]
+pub(crate) fn laplace_cdf(z: f64) -> f64 {
+    if z < 0.0 {
+        0.5 * exp(z)
+    } else {
+        1.0 - 0.5 * exp(-z)
+    }
+}
+
+/// Standard Laplace quantile at probability p in (0, 1): ln(2p) below
+/// the median, -ln(2(1 - p)) above.
+#[cfg(feature = "experimental")]
+pub(crate) fn laplace_quantile(p: f64) -> f64 {
+    debug_assert!(p > 0.0 && p < 1.0);
+    if p < 0.5 {
+        ln(2.0 * p)
+    } else {
+        -ln(2.0 * (1.0 - p))
+    }
+}
+
 /// Type 7 quantile of an ascending-sorted non-empty slice: h = p (n - 1),
 /// linear interpolation between neighbours.
 pub(crate) fn quantile_sorted(sorted: &[f64], p: f64) -> f64 {
@@ -303,6 +326,17 @@ mod tests {
         }
         // Large nu reproduces the Normal quantile.
         close(student_t_quantile(0.975, 1e6), normal_quantile(0.975), 1e-4);
+    }
+
+    #[cfg(feature = "experimental")]
+    #[test]
+    fn laplace_cdf_and_quantile_invert() {
+        close(laplace_cdf(0.0), 0.5, 1e-15);
+        close(laplace_cdf(-1.0), 0.5 * (-1.0_f64).exp(), 1e-15);
+        close(laplace_quantile(0.975), -(0.05_f64).ln(), 1e-14);
+        for p in [0.01, 0.3, 0.5, 0.8, 0.999] {
+            close(laplace_cdf(laplace_quantile(p)), p, 1e-14);
+        }
     }
 
     #[cfg(feature = "experimental")]
