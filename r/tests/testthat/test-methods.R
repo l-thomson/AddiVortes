@@ -81,7 +81,7 @@ test_that("sigma is the posterior mean under the Gaussian model", {
   fixture <- small_fixture()
   fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
 
-  expect_identical(sigma(fit), mean(core_sigma(fit$state)))
+  expect_identical(sigma(fit), mean(core_sigma(fit_state(fit))))
   expect_true(sigma(fit) > 0)
 })
 

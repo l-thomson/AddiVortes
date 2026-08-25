@@ -318,9 +318,15 @@ assemble_fit <- function(fit, design, y, seed, call, blueprint = NULL,
   for (warning in fit$warnings) {
     rlang::warn(warning, class = "thiessen_warning")
   }
+  # The payload exists before any save because `saveRDS` offers no hook to
+  # create it at write time; an external pointer alone saves as a null
+  # address.
+  state <- new.env(parent = emptyenv())
+  state$handle <- fit$state
+  state$payload <- core_call(core_state_payload(fit$state), call = call_env)
   fit_object <- structure(
     list(
-      state = fit$state,
+      state = state,
       control = control_from_config(
         jsonlite::fromJSON(fit$config, simplifyVector = FALSE)
       ),

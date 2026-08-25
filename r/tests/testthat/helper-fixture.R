@@ -32,3 +32,21 @@ small_control <- function(...) {
     ...
   )
 }
+
+# Replace the first occurrence of `from` in a raw payload with `to`. The
+# names must have equal byte length, so the encoding's length prefixes
+# still frame the payload and only the name itself is unreadable.
+swap_payload_name <- function(payload, from, to) {
+  from <- charToRaw(from)
+  to <- charToRaw(to)
+  stopifnot(length(from) == length(to))
+  span <- length(from) - 1L
+  for (start in which(payload == from[[1L]])) {
+    if (start + span <= length(payload) &&
+          identical(payload[start:(start + span)], from)) {
+      payload[start:(start + span)] <- to
+      return(payload)
+    }
+  }
+  stop("the name is not in the payload")
+}

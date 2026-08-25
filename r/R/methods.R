@@ -47,14 +47,15 @@ predict.thiessen <- function(object, newdata = NULL,
         level <= 0 || level >= 1) {
     thiessen_abort("`level` must be a single number in (0, 1).")
   }
+  state <- fit_state(object)
   if (type != "mean") {
-    return(core_call(core_predict_draws(object$state, design, type)))
+    return(core_call(core_predict_draws(state, design, type)))
   }
-  fit <- core_call(core_predict(object$state, design))
+  fit <- core_call(core_predict(state, design))
   if (interval == "none") {
     return(fit)
   }
-  bounds <- core_call(core_interval(object$state, design, interval, level))
+  bounds <- core_call(core_interval(state, design, interval, level))
   out <- cbind(fit, bounds)
   colnames(out) <- c("fit", "lower", "upper")
   out
@@ -85,7 +86,7 @@ sigma.thiessen <- function(object, ...) {
   if (object$model == "probit") {
     return(1)
   }
-  draws <- core_call(core_sigma(object$state))
+  draws <- core_call(core_sigma(fit_state(object)))
   if (length(draws) == 0L) {
     thiessen_abort(paste0(
       "The ", object$model, " model has no single residual scale; ",
@@ -196,7 +197,7 @@ print.thiessen <- function(x, ...) {
 #' @export
 summary.thiessen <- function(object, ...) {
   probs <- c(0.025, 0.25, 0.5, 0.75, 0.975)
-  draws <- core_call(core_sigma(object$state))
+  draws <- core_call(core_sigma(fit_state(object)))
   structure(
     list(
       call = object$call,

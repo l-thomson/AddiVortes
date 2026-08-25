@@ -38,7 +38,7 @@ test_that("the draws equal the core's committed chain", {
   fit <- thiessen(fixture$x, fixture$y, core_control(), seed = CORE_SEED)
 
   expect_identical(fit$n_draws, nrow(stored))
-  expect_identical(core_sigma(fit$state), stored[, 1])
+  expect_identical(core_sigma(fit_state(fit)), stored[, 1])
   expect_identical(
     unname(predict(fit, fixture$x[POINTS, ], type = "draws")),
     stored[, -1]

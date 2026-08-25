@@ -60,8 +60,10 @@
 * Progress over the sweep schedule is signalled with progressr, so a
   session reports it after `progressr::handlers()` and nothing is printed
   by default. The draws do not depend on whether a handler is set.
-* A fit is a plain R object holding the sampler state, so `saveRDS()`
-  writes one and a later session reads it without a refit.
+* A fit is a plain R object, so `saveRDS()` writes one and a later
+  session reads it without a refit. The fitted state lives on the Rust
+  side behind a handle, with a byte encoding alongside for persistence,
+  so no method serialises or parses the whole model.
 * The call is stored on a fit, so `stats::update()` refits with an argument
   replaced.
 * `seed = NULL` draws the chain's seed from R's stream, so `set.seed()`
