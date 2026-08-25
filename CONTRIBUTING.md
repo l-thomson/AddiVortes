@@ -61,15 +61,19 @@ gate anywhere: the runners sit at a few per cent of noise with far larger
 excursions.
 
 Binding changes report the binding's own numbers the same way, one
-machine, old against new, in the pull request body:
+machine, old against new, in the pull request body. Four cases in both
+languages, run against the core's time on the same designs, with the
+absolute overhead beside the ratio:
+[benchmarks/bindings/README.md](benchmarks/bindings/README.md).
 
-    pip install -r python/requirements-bench.txt
-    pytest tests/benchmarks --benchmark-columns=median,iqr,ops
+    cargo run --release --manifest-path bench/Cargo.toml --bin overhead -- \
+        designs target/bindings
+    cargo run --release --manifest-path bench/Cargo.toml --bin overhead -- \
+        run > target/bindings/core.json
+    Rscript benchmarks/bindings/overhead.R target/bindings
 
-`Sampler.step(n)` runs n sweeps behind one crossing and `step()` called n
-times runs them behind n crossings, so the pair measures the boundary cost
-with the sampling held identical. Nothing there asserts and nothing is
-stored: the pull request is the record.
+Nothing there asserts and nothing is stored: the pull request is the
+record and its history is the archive.
 
 ## Sampling efficiency
 

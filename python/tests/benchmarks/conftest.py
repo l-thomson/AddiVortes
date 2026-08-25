@@ -1,48 +1,85 @@
-"""The design the binding benchmarks run on.
+"""The designs the binding benchmarks run on.
 
-Friedman (1991) benchmark #1, generated here rather than drawn from numpy's
-global state, so a benchmark measures the same work on every run and on
-every machine.
+Written by the core rather than generated here, so the two sides run on
+the same numbers: the core's generator is a splitmix64 that no other
+language reproduces, and a comparison over different data is a comparison
+of different work. Write them, and the core's own times, with
+
+    cargo run --release --manifest-path bench/Cargo.toml --bin overhead -- \\
+        designs target/bindings
+    cargo run --release --manifest-path bench/Cargo.toml --bin overhead -- \\
+        run > target/bindings/core.json
+
+and point `THIESSEN_BENCH_DESIGNS` elsewhere if that is not where they
+went.
 """
 
 from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 import pytest
 
-#: Rows and columns of the small cell. A copy of the design shows as a
-#: slope across the two sizes rather than as an offset, so both are needed.
-SMALL = (200, 10)
+Core = dict[str, Any]
 
-#: Rows and columns of the large cell.
-LARGE = (2000, 10)
-
-#: Sweeps in the per-call cases. Large enough that the boundary cost of one
-#: crossing per sweep is visible beside the sweep itself.
-SWEEPS = 200
-
-SEED = 20260824
+ROOT = Path(__file__).resolve().parents[3]
+DESIGNS = Path(os.environ.get("THIESSEN_BENCH_DESIGNS", ROOT / "target" / "bindings"))
 
 Design = tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
 
 
-def friedman(n: int, p: int) -> Design:
-    """Return the Friedman #1 design and response at `n` rows, `p` columns."""
-    rng = np.random.default_rng(SEED)
-    x = rng.random((n, p))
-    y = (
-        10.0 * np.sin(np.pi * x[:, 0] * x[:, 1])
-        + 20.0 * (x[:, 2] - 0.5) ** 2
-        + 10.0 * x[:, 3]
-        + 5.0 * x[:, 4]
-        + rng.standard_normal(n)
-    )
-    return x, y
+def _core() -> Core:
+    path = DESIGNS / "core.json"
+    if not path.exists():
+        pytest.skip(f"no core timings at {path}; see this module's docstring")
+    return dict(json.loads(path.read_text()))
 
 
-@pytest.fixture(params=[SMALL, LARGE], ids=["n200", "n2000"])
-def design(request: pytest.FixtureRequest) -> Design:
-    """The Friedman #1 design at each benchmark size."""
+@pytest.fixture(scope="session")
+def core() -> Core:
+    """The core's own times on the same cases, and the case parameters."""
+    return _core()
+
+
+def _sizes() -> list[tuple[int, int]]:
+    if not (DESIGNS / "core.json").exists():
+        return [(200, 10)]
+    cases = _core_unchecked()["cases"]
+    return sorted({(case["n"], case["p"]) for case in cases})
+
+
+def _core_unchecked() -> Core:
+    return dict(json.loads((DESIGNS / "core.json").read_text()))
+
+
+@pytest.fixture(params=_sizes(), ids=lambda s: f"n{s[0]}-p{s[1]}")
+def size(request: pytest.FixtureRequest) -> tuple[int, int]:
+    """One (rows, columns) pair of the binding-overhead cases."""
     n, p = request.param
-    return friedman(n, p)
+    return int(n), int(p)
+
+
+@pytest.fixture
+def design(size: tuple[int, int]) -> Design:
+    """The training design and response the core wrote for this size."""
+    n, p = size
+    path = DESIGNS / f"train-n{n}-p{p}.csv"
+    if not path.exists():
+        pytest.skip(f"no design at {path}; see this module's docstring")
+    table = np.loadtxt(path, delimiter=",", skiprows=1)
+    return table[:, :p], table[:, p]
+
+
+@pytest.fixture
+def predict_design(size: tuple[int, int]) -> npt.NDArray[np.float64]:
+    """The predict matrix the core wrote for this column count."""
+    _, p = size
+    path = DESIGNS / f"predict-p{p}.csv"
+    if not path.exists():
+        pytest.skip(f"no predict matrix at {path}; see this module's docstring")
+    return np.loadtxt(path, delimiter=",", skiprows=1)
