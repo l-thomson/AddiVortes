@@ -174,6 +174,32 @@ fn core_log_lik(
     Ok(draw_matrix(&draws))
 }
 
+/// The posterior mean beside a central interval, `n_rows` by 3 (fit,
+/// lower, upper), from one traversal of the draws.
+#[extendr]
+fn core_predict_interval(
+    state: ExternalPtr<FittedHandle>,
+    x: RMatrix<f64>,
+    kind: &str,
+    level: f64,
+) -> Result<RMatrix<f64>> {
+    let data = design(&x)?;
+    let kind = match kind {
+        "credible" => thiessen::IntervalKind::Credible,
+        "prediction" => thiessen::IntervalKind::Prediction,
+        other => return Err(Error::Other(format!("unknown interval kind {other}"))),
+    };
+    let (fit, intervals) = state
+        .inner
+        .predict_with_interval(&data, kind, level)
+        .map_err(core_error)?;
+    Ok(RMatrix::new_matrix(fit.len(), 3, |row, col| match col {
+        0 => fit[row],
+        1 => intervals[row].lower,
+        _ => intervals[row].upper,
+    }))
+}
+
 /// sigma per kept draw; empty outside the Gaussian model.
 #[extendr]
 fn core_sigma(state: ExternalPtr<FittedHandle>) -> Result<Vec<f64>> {
@@ -339,6 +365,7 @@ extendr_module! {
     fn core_predict;
     fn core_predict_draws;
     fn core_interval;
+    fn core_predict_interval;
     fn core_sigma;
     fn core_log_lik;
     fn core_diagnostics;

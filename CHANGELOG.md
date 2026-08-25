@@ -285,6 +285,16 @@ says "Sampled values changed" with the reason.
   from the one pass that gives the pooled in-sample RMSE; both bindings
   use them. Sampled values, the pooled in-sample RMSE and the fitted
   values are unchanged for a fixed seed.
+- Prediction evaluates each kept tessellation over every row at once,
+  through the same streaming assignment the sampler uses under an
+  all-Euclidean geometry, in place of a nearest-centre search per row per
+  tessellation; every row's sum over the tessellations is formed in the
+  same order, so the per-draw values are unchanged. The mixture quantile
+  behind `prediction_interval` stops its bisection once the bracket has
+  collapsed to adjacent doubles, where the remaining fixed iterations
+  changed nothing. `Fitted::predict_with_interval` and `IntervalKind`
+  return the posterior mean and a central interval from one traversal;
+  the R `predict(interval = )` uses it.
 - Cell assignment under an all-Euclidean geometry runs over a
   column-major mirror of the scaled design, one active column at a time
   for every row, in place of a per-row gather over the active columns:

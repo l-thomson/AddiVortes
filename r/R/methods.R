@@ -51,12 +51,10 @@ predict.thiessen <- function(object, newdata = NULL,
   if (type != "mean") {
     return(core_call(core_predict_draws(state, design, type)))
   }
-  fit <- core_call(core_predict(state, design))
   if (interval == "none") {
-    return(fit)
+    return(core_call(core_predict(state, design)))
   }
-  bounds <- core_call(core_interval(state, design, interval, level))
-  out <- cbind(fit, bounds)
+  out <- core_call(core_predict_interval(state, design, interval, level))
   colnames(out) <- c("fit", "lower", "upper")
   out
 }

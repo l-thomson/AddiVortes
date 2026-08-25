@@ -50,6 +50,10 @@ core_interval <- function(state, x, kind, level) {
   .Call(wrap__core_interval, state, x, kind, level)
 }
 
+core_predict_interval <- function(state, x, kind, level) {
+  .Call(wrap__core_predict_interval, state, x, kind, level)
+}
+
 core_sigma <- function(state) .Call(wrap__core_sigma, state)
 
 core_log_lik <- function(state, x, y) {

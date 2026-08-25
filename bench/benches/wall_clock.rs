@@ -14,6 +14,7 @@
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use thiessen::IntervalKind;
 use thiessen_bench::{Case, Workload, CASES, N, P, SCALING_P, SEED};
 
 /// The registry entry of `name`.
@@ -53,9 +54,10 @@ fn predict(c: &mut Criterion) {
     group.finish();
 }
 
-/// The posterior mean and a credible interval over the same draws. Two
-/// passes over the tessellations where one would do is the shape of the
-/// gap against upstream's single compiled traversal, so both are measured.
+/// The posterior mean and a credible interval over the same draws, as two
+/// calls and as the one-traversal call. The pair is the cost of the second
+/// traversal, which is the shape of the gap against upstream's single
+/// compiled traversal.
 fn predict_interval(c: &mut Criterion) {
     let mut group = c.benchmark_group("predict_interval");
     let workload: Workload = (case("gaussian").build)(N, P);
@@ -64,6 +66,15 @@ fn predict_interval(c: &mut Criterion) {
         b.iter(|| {
             black_box(fitted.predict(&workload.x).unwrap());
             black_box(fitted.credible_interval(&workload.x, 0.95).unwrap());
+        })
+    });
+    group.bench_function("with_interval", |b| {
+        b.iter(|| {
+            black_box(
+                fitted
+                    .predict_with_interval(&workload.x, IntervalKind::Credible, 0.95)
+                    .unwrap(),
+            )
         })
     });
     group.finish();

@@ -349,6 +349,18 @@ impl TryFrom<FittedParts> for Fitted {
     }
 }
 
+/// The central interval [`Fitted::predict_with_interval`] returns beside
+/// the posterior mean.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntervalKind {
+    /// The credible interval of the mean function
+    /// ([`Fitted::credible_interval`]).
+    Credible,
+    /// The posterior predictive interval for a new observation
+    /// ([`Fitted::prediction_interval`]).
+    Prediction,
+}
+
 /// A central credible interval for the mean function at one row.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Interval {
@@ -590,18 +602,20 @@ impl Fitted {
         let x_scaled = self.scaler.scale_x(x);
         let n = x.n_rows();
         let offset = self.offset();
+        let mut keys = Vec::new();
         Ok(self
             .posterior
             .tessellations()
             .iter()
             .map(|draw| {
-                (0..n)
-                    .map(|i| {
-                        let row = x_scaled.row(i);
-                        let sum: f64 = draw.iter().map(|t| t.value_at(row, &geometry)).sum();
-                        self.scaler.unscale_y(sum) + offset
-                    })
-                    .collect()
+                let mut sums = vec![0.0; n];
+                for t in draw {
+                    t.for_each_value(&x_scaled, &geometry, &mut keys, |i, v| sums[i] += v);
+                }
+                for sum in &mut sums {
+                    *sum = self.scaler.unscale_y(*sum) + offset;
+                }
+                sums
             })
             .collect())
     }
@@ -674,20 +688,20 @@ impl Fitted {
             let geometry = self.geometry()?;
             geometry.check_codes(x)?;
             let x_scaled = self.scaler.scale_x(x);
+            let mut keys = Vec::new();
             return Ok(self
                 .posterior
                 .variance_tessellations()
                 .iter()
                 .map(|draw| {
-                    (0..n)
-                        .map(|i| {
-                            let row = x_scaled.row(i);
-                            draw.iter()
-                                .map(|t| t.value_at(row, &geometry))
-                                .product::<f64>()
-                                * range_sq
-                        })
-                        .collect()
+                    let mut products = vec![1.0; n];
+                    for t in draw {
+                        t.for_each_value(&x_scaled, &geometry, &mut keys, |i, v| products[i] *= v);
+                    }
+                    for p in &mut products {
+                        *p *= range_sq;
+                    }
+                    products
                 })
                 .collect());
         }
@@ -709,24 +723,9 @@ impl Fitted {
     /// `InvalidProbability` for a probability outside (0, 1) or an empty
     /// `probs`; the predict errors.
     pub fn predict_quantiles(&self, x: &Data, probs: &[f64]) -> Result<Vec<f64>> {
-        if probs.is_empty() {
-            return Err(Error::InvalidProbability { value: f64::NAN });
-        }
-        for &p in probs {
-            check_probability(p)?;
-        }
+        check_probabilities(probs)?;
         let per_draw = self.predict_draws(x)?;
-        let n = x.n_rows();
-        let mut sorted = vec![0.0; per_draw.len()];
-        let mut out = Vec::with_capacity(n * probs.len());
-        for row in 0..n {
-            for (slot, draw) in sorted.iter_mut().zip(&per_draw) {
-                *slot = draw[row];
-            }
-            sorted.sort_by(f64::total_cmp);
-            out.extend(probs.iter().map(|&p| maths::quantile_sorted(&sorted, p)));
-        }
-        Ok(out)
+        Ok(quantiles_from_draws(&per_draw, x.n_rows(), probs))
     }
 
     /// Central credible interval for the quantity of
@@ -739,14 +738,8 @@ impl Fitted {
     /// `InvalidProbability` for `level` outside (0, 1); the predict errors.
     pub fn credible_interval(&self, x: &Data, level: f64) -> Result<Vec<Interval>> {
         check_probability(level)?;
-        let tail = 0.5 * (1.0 - level);
-        let q = self.predict_quantiles(x, &[tail, 1.0 - tail])?;
-        Ok(q.chunks_exact(2)
-            .map(|pair| Interval {
-                lower: pair[0],
-                upper: pair[1],
-            })
-            .collect())
+        let per_draw = self.predict_draws(x)?;
+        Ok(credible_from_draws(&per_draw, x.n_rows(), level))
     }
 
     /// Central posterior predictive interval for a new observation at each
@@ -765,6 +758,43 @@ impl Fitted {
     /// (0, 1); the predict errors.
     pub fn prediction_interval(&self, x: &Data, level: f64) -> Result<Vec<Interval>> {
         check_probability(level)?;
+        self.prediction_interval_applies()?;
+        let per_draw = self.predict_draws(x)?;
+        self.prediction_from_draws(x, &per_draw, level)
+    }
+
+    /// The posterior mean of [`predict`](Self::predict) and the central
+    /// `kind` interval at `level` at each row of `x`, from one traversal of
+    /// the kept draws: the values [`predict`](Self::predict) and the
+    /// interval method return when called separately.
+    ///
+    /// # Errors
+    ///
+    /// Those of [`predict`](Self::predict), [`credible_interval`](Self::credible_interval)
+    /// and [`prediction_interval`](Self::prediction_interval).
+    pub fn predict_with_interval(
+        &self,
+        x: &Data,
+        kind: IntervalKind,
+        level: f64,
+    ) -> Result<(Vec<f64>, Vec<Interval>)> {
+        check_probability(level)?;
+        if kind == IntervalKind::Prediction {
+            self.prediction_interval_applies()?;
+        }
+        let per_draw = self.predict_draws(x)?;
+        let n = x.n_rows();
+        let mean = column_means(&per_draw, n);
+        let intervals = match kind {
+            IntervalKind::Credible => credible_from_draws(&per_draw, n, level),
+            IntervalKind::Prediction => self.prediction_from_draws(x, &per_draw, level)?,
+        };
+        Ok((mean, intervals))
+    }
+
+    /// `NotApplicable` under the models whose predictive has no interval on
+    /// the response scale.
+    fn prediction_interval_applies(&self) -> Result<()> {
         if matches!(self.config.outcome, Outcome::Probit(_)) {
             return Err(self.not_applicable("prediction_interval"));
         }
@@ -772,9 +802,19 @@ impl Fitted {
         if matches!(self.config.outcome, Outcome::Ordinal(_)) {
             return Err(self.not_applicable("prediction_interval"));
         }
+        Ok(())
+    }
+
+    /// The central predictive interval at `level` at each row of `x`, from
+    /// the per-draw means `per_draw` at those rows.
+    fn prediction_from_draws(
+        &self,
+        x: &Data,
+        per_draw: &[Vec<f64>],
+        level: f64,
+    ) -> Result<Vec<Interval>> {
         #[cfg(feature = "experimental")]
         if matches!(self.config.outcome, Outcome::Laplace(_)) {
-            let per_draw = self.predict_draws(x)?;
             let range = self.scaler.y_range();
             let sigmas: Vec<f64> = self
                 .posterior
@@ -787,7 +827,7 @@ impl Fitted {
             let mut fits = vec![0.0; per_draw.len()];
             let mut out = Vec::with_capacity(n);
             for row in 0..n {
-                for (fit, draw) in fits.iter_mut().zip(&per_draw) {
+                for (fit, draw) in fits.iter_mut().zip(per_draw) {
                     *fit = draw[row];
                 }
                 let cdf = |t: f64| laplace_mixture_cdf(&fits, &sigmas, t);
@@ -800,7 +840,6 @@ impl Fitted {
         }
         #[cfg(feature = "experimental")]
         if let Outcome::StudentT(params) = &self.config.outcome {
-            let per_draw = self.predict_draws(x)?;
             let range = self.scaler.y_range();
             let sigmas: Vec<f64> = self
                 .posterior
@@ -816,7 +855,7 @@ impl Fitted {
             let mut fits = vec![0.0; per_draw.len()];
             let mut out = Vec::with_capacity(n);
             for row in 0..n {
-                for (fit, draw) in fits.iter_mut().zip(&per_draw) {
+                for (fit, draw) in fits.iter_mut().zip(per_draw) {
                     *fit = draw[row];
                 }
                 let cdf = |t: f64| student_mixture_cdf(&fits, &sigmas, &dfs, t);
@@ -827,7 +866,6 @@ impl Fitted {
             }
             return Ok(out);
         }
-        let per_draw = self.predict_draws(x)?;
         let variances = self.predict_variance(x)?;
         let tail = 0.5 * (1.0 - level);
         let n = x.n_rows();
@@ -1372,6 +1410,42 @@ fn column_means(per_draw: &[Vec<f64>], n: usize) -> Vec<f64> {
     means
 }
 
+/// `InvalidProbability` for an empty `probs` or one outside (0, 1).
+fn check_probabilities(probs: &[f64]) -> Result<()> {
+    if probs.is_empty() {
+        return Err(Error::InvalidProbability { value: f64::NAN });
+    }
+    probs.iter().try_for_each(|&p| check_probability(p))
+}
+
+/// Posterior quantiles at each of `n` rows for each of `probs`, row-major,
+/// by type 7 interpolation over the per-draw values.
+fn quantiles_from_draws(per_draw: &[Vec<f64>], n: usize, probs: &[f64]) -> Vec<f64> {
+    let mut sorted = vec![0.0; per_draw.len()];
+    let mut out = Vec::with_capacity(n * probs.len());
+    for row in 0..n {
+        for (slot, draw) in sorted.iter_mut().zip(per_draw) {
+            *slot = draw[row];
+        }
+        sorted.sort_by(f64::total_cmp);
+        out.extend(probs.iter().map(|&p| maths::quantile_sorted(&sorted, p)));
+    }
+    out
+}
+
+/// The central credible interval at `level` at each of `n` rows from the
+/// per-draw values.
+fn credible_from_draws(per_draw: &[Vec<f64>], n: usize, level: f64) -> Vec<Interval> {
+    let tail = 0.5 * (1.0 - level);
+    quantiles_from_draws(per_draw, n, &[tail, 1.0 - tail])
+        .chunks_exact(2)
+        .map(|pair| Interval {
+            lower: pair[0],
+            upper: pair[1],
+        })
+        .collect()
+}
+
 fn check_probability(p: f64) -> Result<()> {
     if p.is_finite() && p > 0.0 && p < 1.0 {
         Ok(())
@@ -1435,6 +1509,9 @@ fn heavy_mixture_quantile(fits: &[f64], sigmas: &[f64], p: f64, cdf: impl Fn(f64
     }
     for _ in 0..200 {
         let mid = 0.5 * (lo + hi);
+        if mid <= lo || mid >= hi {
+            break;
+        }
         if cdf(mid) < p {
             lo = mid;
         } else {
@@ -1460,6 +1537,9 @@ fn mixture_quantile(fits: &[f64], sigmas: &[f64], p: f64) -> f64 {
     let (mut lo, mut hi) = (lo - pad, hi + pad);
     for _ in 0..128 {
         let mid = 0.5 * (lo + hi);
+        if mid <= lo || mid >= hi {
+            break;
+        }
         if mixture_cdf(fits, sigmas, mid) < p {
             lo = mid;
         } else {
