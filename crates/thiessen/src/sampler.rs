@@ -730,6 +730,9 @@ impl Sampler {
         let half_width = match &config.outcome {
             OutcomeConfig::Probit(_) => ProbitOutcome::CELL_PRIOR_HALF_WIDTH,
             OutcomeConfig::Gaussian(_) => GaussianOutcome::CELL_PRIOR_HALF_WIDTH,
+            // `Config::validate`, called above, rejects a gated outcome.
+            #[cfg(not(feature = "experimental"))]
+            OutcomeConfig::Gated(_) => GaussianOutcome::CELL_PRIOR_HALF_WIDTH,
             #[cfg(feature = "experimental")]
             OutcomeConfig::Tobit(_) => TobitOutcome::CELL_PRIOR_HALF_WIDTH,
             #[cfg(feature = "experimental")]
@@ -809,6 +812,13 @@ impl Sampler {
         );
         let outcome = match &config.outcome {
             OutcomeConfig::Gaussian(_) => {
+                let mut outcome = GaussianOutcome;
+                outcome.init(&y_scaled);
+                Outcome::Gaussian(outcome)
+            }
+            // `Config::validate`, called above, rejects a gated outcome.
+            #[cfg(not(feature = "experimental"))]
+            OutcomeConfig::Gated(_) => {
                 let mut outcome = GaussianOutcome;
                 outcome.init(&y_scaled);
                 Outcome::Gaussian(outcome)

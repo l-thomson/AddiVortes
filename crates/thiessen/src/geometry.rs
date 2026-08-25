@@ -15,6 +15,7 @@ use crate::rng::{standard_normal, uniform_index, Rng};
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(not(feature = "experimental"), derive(Eq))]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(not(feature = "experimental"), serde(from = "StableMetric"))]
 #[non_exhaustive]
 pub enum Metric {
     /// Squared Euclidean distance on the column scaled to [-0.5, 0.5] over
@@ -116,6 +117,46 @@ pub enum Metric {
     /// unchanged. Experimental (`docs/experimental.md`).
     #[cfg(feature = "experimental")]
     Mahalanobis,
+    /// A metric this build gates;
+    /// [`Config::validate`](crate::Config::validate) reports it.
+    #[cfg(not(feature = "experimental"))]
+    #[doc(hidden)]
+    #[serde(skip)]
+    Gated(crate::config::Gated),
+}
+
+/// The published metrics plus the gated names; as
+/// [`StableOutcome`](crate::Outcome), a gated value is carried to
+/// `validate` rather than failing inside the deserialiser.
+#[cfg(not(feature = "experimental"))]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum StableMetric {
+    Euclidean,
+    Spherical { sphere: usize },
+    Categorical,
+    Minkowski(serde::de::IgnoredAny),
+    Manhattan(serde::de::IgnoredAny),
+    Cosine(serde::de::IgnoredAny),
+    Gower(serde::de::IgnoredAny),
+    Mahalanobis,
+}
+
+#[cfg(not(feature = "experimental"))]
+impl From<StableMetric> for Metric {
+    fn from(metric: StableMetric) -> Self {
+        use crate::config::Gated;
+        match metric {
+            StableMetric::Euclidean => Metric::Euclidean,
+            StableMetric::Spherical { sphere } => Metric::Spherical { sphere },
+            StableMetric::Categorical => Metric::Categorical,
+            StableMetric::Minkowski(_) => Metric::Gated(Gated("the `minkowski` metric")),
+            StableMetric::Manhattan(_) => Metric::Gated(Gated("the `manhattan` metric")),
+            StableMetric::Cosine(_) => Metric::Gated(Gated("the `cosine` metric")),
+            StableMetric::Gower(_) => Metric::Gated(Gated("the `gower` metric")),
+            StableMetric::Mahalanobis => Metric::Gated(Gated("the `mahalanobis` metric")),
+        }
+    }
 }
 
 /// Whether a group label is the default, for compact serialisation.
@@ -496,6 +537,10 @@ impl Geometry {
                     }
                 }
                 Metric::Spherical { .. } => {}
+                // `Config::validate` rejects a gated metric before any
+                // geometry is built, so this arm is never taken.
+                #[cfg(not(feature = "experimental"))]
+                Metric::Gated(_) => {}
                 #[cfg(feature = "experimental")]
                 Metric::Minkowski { .. }
                 | Metric::Manhattan { .. }
@@ -621,6 +666,12 @@ impl Geometry {
         (0..p)
             .map(|col| match self.kinds[col] {
                 Metric::Euclidean => Ok(CoordinateLaw::Normal {
+                    mean: 0.0,
+                    sd: sigma_c,
+                }),
+                // As `key`: `Config::validate` rejects a gated metric first.
+                #[cfg(not(feature = "experimental"))]
+                Metric::Gated(_) => Ok(CoordinateLaw::Normal {
                     mean: 0.0,
                     sd: sigma_c,
                 }),
