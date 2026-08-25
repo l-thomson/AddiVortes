@@ -151,6 +151,9 @@ pub(crate) struct Geometry {
     categories: Vec<Vec<f64>>,
     /// 2 / n^2 of each categorical column; 0 for the other columns.
     weights: Vec<f64>,
+    /// Every column is Euclidean, so `key` is the plain squared distance
+    /// over the active columns with no per-column dispatch.
+    plain: bool,
     /// Minkowski column groups, (order, label, columns), one per
     /// distinct pair.
     #[cfg(feature = "experimental")]
@@ -179,6 +182,7 @@ impl Geometry {
             sphere_of: vec![None; p],
             categories: vec![Vec::new(); p],
             weights: vec![0.0; p],
+            plain: true,
             #[cfg(feature = "experimental")]
             minkowski: Vec::new(),
             #[cfg(feature = "experimental")]
@@ -276,6 +280,7 @@ impl Geometry {
             sphere_of,
             categories: vec![Vec::new(); p],
             weights: vec![0.0; p],
+            plain: metric.iter().all(|kind| matches!(kind, Metric::Euclidean)),
             #[cfg(feature = "experimental")]
             minkowski,
             #[cfg(feature = "experimental")]
@@ -466,14 +471,7 @@ impl Geometry {
     /// coordinates `centre` on the columns `dims`, in `dims` order.
     pub(crate) fn key(&self, row: &[f64], dims: &[usize], centre: &[f64]) -> f64 {
         let mut key = 0.0;
-        let plain = self.spheres.is_empty() && self.weights.iter().all(|&w| w == 0.0);
-        #[cfg(feature = "experimental")]
-        let plain = plain
-            && self.minkowski.is_empty()
-            && self.cosine.is_empty()
-            && self.gower.is_empty()
-            && self.mahalanobis.is_empty();
-        if plain {
+        if self.plain {
             for (&dim, &c) in dims.iter().zip(centre) {
                 let diff = row[dim] - c;
                 key += diff * diff;
@@ -808,6 +806,34 @@ mod tests {
     fn euclidean_key_is_the_squared_distance_over_the_active_columns() {
         let g = Geometry::euclidean(3);
         close(g.key(&[1.0, 2.0, 3.0], &[2, 0], &[0.0, 0.5]), 9.0 + 0.25);
+    }
+
+    #[test]
+    fn plain_marks_the_all_euclidean_geometry() {
+        assert!(Geometry::euclidean(3).plain);
+        assert!(
+            Geometry::structure(&[Metric::Euclidean; 2], 2)
+                .unwrap()
+                .plain
+        );
+        assert!(!sphere2().plain);
+        let metric = [Metric::Euclidean, Metric::Categorical];
+        let g = Geometry::with_categories(&metric, 2, &[vec![], vec![1.0, 2.0]]).unwrap();
+        assert!(!g.plain);
+        #[cfg(feature = "experimental")]
+        for kind in [
+            Metric::Minkowski { p: 3.0, group: 0 },
+            Metric::Manhattan { group: 0 },
+            Metric::Cosine { group: 0 },
+            Metric::Gower {
+                kind: GowerKind::Numeric,
+                group: 0,
+            },
+            Metric::Mahalanobis,
+        ] {
+            let g = Geometry::structure(&[Metric::Euclidean, kind], 2).unwrap();
+            assert!(!g.plain, "{kind:?}");
+        }
     }
 
     #[test]
@@ -1328,6 +1354,25 @@ mod tests {
                 prop_assert!(d(a, a) < 1e-7);
                 prop_assert!((d(a, b) - d(b, a)).abs() < 1e-9);
                 prop_assert!(d(a, c) <= d(a, b) + d(b, c) + 1e-9);
+            }
+        }
+
+        // The flag selects a shortcut, not a distance: on an all-Euclidean
+        // geometry the general loop sums the same terms in the same order.
+        proptest! {
+            #[test]
+            fn plain_path_equals_the_general_path(
+                row in prop::array::uniform4(-1.0..1.0_f64),
+                centre in prop::array::uniform3(-1.0..1.0_f64),
+            ) {
+                let plain = Geometry::euclidean(4);
+                let mut general = plain.clone();
+                general.plain = false;
+                let dims = [3, 0, 2];
+                prop_assert_eq!(
+                    plain.key(&row, &dims, &centre).to_bits(),
+                    general.key(&row, &dims, &centre).to_bits()
+                );
             }
         }
 
