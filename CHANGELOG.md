@@ -267,6 +267,14 @@ says "Sampled values changed" with the reason.
 - Input-data contract in the crate-root documentation; a design matrix
   with no columns is rejected with `Error::NoFeatures`.
 - The crate readme is the repository README, so `cargo package` finds it.
+- The end of a fit predicts the training set once. `Sampler::finish`
+  computed a per-chain in-sample RMSE that `Fitted::pool` discarded and
+  recomputed from its own prediction pass, and the R binding predicted a
+  third time for the fitted values. `Fitted::pool_samplers` and
+  `fit_chains` pool the chains of a fit and return the fitted values
+  from the one pass that gives the pooled in-sample RMSE; both bindings
+  use them. Sampled values, the pooled in-sample RMSE and the fitted
+  values are unchanged for a fixed seed.
 - The all-Euclidean distance path is chosen once per geometry rather
   than by a scan of every column at every distance evaluation, which
   made the default fit grow with the number of covariates: a Friedman

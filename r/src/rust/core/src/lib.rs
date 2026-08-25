@@ -143,7 +143,7 @@ pub use fitted::{Fitted, Interval, Posterior};
 #[cfg(feature = "experimental")]
 pub use geometry::GowerKind;
 pub use geometry::Metric;
-pub use models::{fit, fit_with_progress};
+pub use models::{fit, fit_chains, fit_with_progress};
 #[cfg(feature = "experimental")]
 pub use models::{fit_aft, fit_interval_censored};
 pub use rng::chain_seed;

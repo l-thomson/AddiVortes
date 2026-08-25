@@ -1433,7 +1433,11 @@ impl Sampler {
         self.outcome.as_probit().map_or(0.0, ProbitOutcome::offset)
     }
 
-    /// The fitted model from the kept draws.
+    /// The fitted model from the kept draws, with the in-sample RMSE of
+    /// this chain from one prediction pass over the training rows. A fit
+    /// that pools chains, or wants the fitted values, goes through
+    /// [`Fitted::pool_samplers`] instead, which makes that pass once for
+    /// every chain.
     ///
     /// # Errors
     ///
@@ -1494,6 +1498,18 @@ impl Sampler {
             .sum::<f64>()
             / n as f64)
             .sqrt();
+        self.into_fitted(in_sample_rmse)
+    }
+
+    /// The kept draws as a fitted model carrying `in_sample_rmse`.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidHyperparameter` for `draws` when nothing was kept.
+    pub(crate) fn into_fitted(self, in_sample_rmse: f64) -> Result<Fitted> {
+        if self.kept.n_draws() == 0 {
+            return Err(crate::error::invalid("draws", "no draws were kept"));
+        }
         let categories = self.mean.geometry().categories().to_vec();
         Ok(Fitted::new(
             self.config,

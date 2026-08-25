@@ -72,6 +72,41 @@ pub fn fit_with_progress(
     run(config, x, y, seed, &mut progress)
 }
 
+/// Fit `n_chains` chains of the model the configuration names, seeded by
+/// [`chain_seed`](crate::chain_seed)`(seed, k)` for k below `n_chains`,
+/// and pool their draws in chain order.
+///
+/// # Arguments
+///
+/// As [`fit`]. The second value is the posterior mean at the rows of
+/// `x`, the fitted values, from the one prediction pass that also gives
+/// the pooled in-sample RMSE ([`Fitted::pool_samplers`]).
+///
+/// # Errors
+///
+/// [`Sampler::new`]; `InvalidHyperparameter` for `n_chains` of zero.
+pub fn fit_chains(
+    config: &Config,
+    x: &Data,
+    y: &[f64],
+    seed: u64,
+    n_chains: usize,
+) -> Result<(Fitted, Vec<f64>)> {
+    if n_chains == 0 {
+        return Err(crate::error::invalid(
+            "n_chains",
+            "a fit needs at least one chain",
+        ));
+    }
+    let mut samplers = Vec::with_capacity(n_chains);
+    for k in 0..n_chains {
+        let mut sampler = Sampler::new(config, x, y, crate::chain_seed(seed, k))?;
+        advance(&mut sampler, config, &mut |_, _| {});
+        samplers.push(sampler);
+    }
+    Fitted::pool_samplers(samplers, x, y)
+}
+
 /// Fit the AFT model: as [`fit`], with the times and the event
 /// indicator in place of a plain response ([`Outcome::Aft`](crate::Outcome::Aft)).
 /// Experimental (`docs/experimental.md`).
@@ -142,12 +177,19 @@ pub(crate) fn run(
     run_schedule(Sampler::new(config, x, y, seed)?, config, progress)
 }
 
-/// Advance a constructed sampler through the configured schedule.
+/// Run a constructed sampler through the configured schedule and finish
+/// it.
 fn run_schedule(
     mut sampler: Sampler,
     config: &Config,
     progress: &mut dyn FnMut(usize, usize),
 ) -> Result<Fitted> {
+    advance(&mut sampler, config, progress);
+    sampler.finish()
+}
+
+/// Advance a constructed sampler through the configured schedule.
+fn advance(sampler: &mut Sampler, config: &Config, progress: &mut dyn FnMut(usize, usize)) {
     let schedule = config.general_params.clone();
     let total = schedule.burn_in + schedule.draws * schedule.thinning;
     let mut completed = 0;
@@ -164,5 +206,4 @@ fn run_schedule(
         }
         sampler.keep();
     }
-    sampler.finish()
 }

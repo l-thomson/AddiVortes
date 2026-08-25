@@ -10,6 +10,7 @@ use crate::data::{self, Data, Warning};
 use crate::error::{Error, Result};
 use crate::geometry::Geometry;
 use crate::maths;
+use crate::sampler::Sampler;
 use crate::scaler::Scaler;
 use crate::tessellation::Tessellation;
 
@@ -406,6 +407,36 @@ impl Fitted {
     /// configuration, scaling or category levels differ;
     /// `RowCountMismatch`; the [`predict`](Self::predict) errors.
     pub fn pool(fits: &[Self], x: &Data, y: &[f64]) -> Result<Self> {
+        Self::pooled(fits, x, y).map(|(fitted, _)| fitted)
+    }
+
+    /// The kept draws of `samplers`, in chain order, as one fitted model,
+    /// with the posterior mean at the rows of `x`: the fitted values.
+    ///
+    /// # Arguments
+    ///
+    /// `samplers` are chains of the same model constructed on `x` and
+    /// `y`, keyed by [`chain_seed`](crate::chain_seed), each with at least
+    /// one kept draw. The one prediction pass over `x` gives both the
+    /// fitted values and the in-sample RMSE, so the result equals
+    /// [`pool`](Self::pool) of the chains' [`Sampler::finish`] results
+    /// without the pass each `finish` makes.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidHyperparameter` for `draws` when a chain kept nothing; the
+    /// [`pool`](Self::pool) errors.
+    pub fn pool_samplers(samplers: Vec<Sampler>, x: &Data, y: &[f64]) -> Result<(Self, Vec<f64>)> {
+        let chains = samplers
+            .into_iter()
+            .map(|sampler| sampler.into_fitted(0.0))
+            .collect::<Result<Vec<_>>>()?;
+        Self::pooled(&chains, x, y)
+    }
+
+    /// The pooled model and the posterior mean at the rows of `x`, from
+    /// which its in-sample RMSE is taken.
+    fn pooled(fits: &[Self], x: &Data, y: &[f64]) -> Result<(Self, Vec<f64>)> {
         let mismatch = |reason: &str| Error::MismatchedChains {
             reason: reason.into(),
         };
@@ -451,7 +482,7 @@ impl Fitted {
             .sum::<f64>()
             / n)
             .sqrt();
-        Ok(pooled)
+        Ok((pooled, mean))
     }
 
     fn not_applicable(&self, method: &str) -> Error {
