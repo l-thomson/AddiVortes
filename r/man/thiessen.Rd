@@ -94,12 +94,16 @@ chain says so instead.
 \section{Progress}{
 
 
-Progress over the sweep schedule is signalled with progressr, so a
-session reports it after \code{progressr::handlers()} and nothing is printed
-by default; \code{progressr::handlers(global = TRUE)} sets one for a whole
+Progress over the whole fit is signalled with progressr, so a session
+reports it after \code{progressr::handlers()} and nothing is printed by
+default; \code{progressr::handlers(global = TRUE)} sets one for a whole
 session. The schedule raises one progression per sweep, to a maximum of
-a hundred over the sweeps of every chain. The draws do not depend on
-whether a handler is set.
+a hundred over the sweeps of every chain, then one for pooling the draws
+and one for the convergence summary, so the report closes when the fit
+is complete rather than at the last sweep. Each phase names itself in
+the progression's message, which handlers such as \code{"progress"} and
+\code{"cli"} display and \code{"txtprogressbar"} does not. The draws do not depend
+on whether a handler is set.
 }
 
 \section{Persistence}{

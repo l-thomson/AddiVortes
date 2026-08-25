@@ -149,10 +149,10 @@ for printing: a bare `print()` dumps every draw.
 
 ## Progress
 
-Progress over the sweep schedule is signalled with progressr, and
-nothing is printed by default: the package raises the conditions and the
-session decides whether and how to report them. Choose a handler once
-and it applies to every fit afterwards.
+Progress over the whole fit is signalled with progressr, and nothing is
+printed by default: the package raises the conditions and the session
+decides whether and how to report them. Choose a handler once and it
+applies to every fit afterwards.
 
 ``` r
 progressr::handlers(global = TRUE)
@@ -162,9 +162,17 @@ fit <- thiessen(y ~ ., d, control, seed = 1)
 
 `progressr::with_progress()` scopes a handler to one expression instead.
 The chunks here are not evaluated because progressr renders nothing into
-a static document. The schedule raises one progression per sweep, to a
-maximum of a hundred over the sweeps of every chain, and reporting does
-not change the draws.
+a static document.
+
+The schedule raises one progression per sweep, to a maximum of a hundred
+over the sweeps of every chain, then one for pooling the draws and one
+for the convergence summary. Both run after the last sweep, and pooling
+predicts at every training row for every kept draw, so on a long
+schedule over many rows it outlasts the sweeps; each carries a step of
+its own, so the bar stands until the fit is complete. Each phase names
+itself in the progression's message, which the `"cli"` and `"progress"`
+handlers display and `"txtprogressbar"` does not. Reporting does not
+change the draws.
 
 ## Troubleshooting
 

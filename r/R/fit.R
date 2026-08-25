@@ -35,12 +35,16 @@
 #'
 #' @section Progress:
 #'
-#' Progress over the sweep schedule is signalled with progressr, so a
-#' session reports it after `progressr::handlers()` and nothing is printed
-#' by default; `progressr::handlers(global = TRUE)` sets one for a whole
+#' Progress over the whole fit is signalled with progressr, so a session
+#' reports it after `progressr::handlers()` and nothing is printed by
+#' default; `progressr::handlers(global = TRUE)` sets one for a whole
 #' session. The schedule raises one progression per sweep, to a maximum of
-#' a hundred over the sweeps of every chain. The draws do not depend on
-#' whether a handler is set.
+#' a hundred over the sweeps of every chain, then one for pooling the draws
+#' and one for the convergence summary, so the report closes when the fit
+#' is complete rather than at the last sweep. Each phase names itself in
+#' the progression's message, which handlers such as `"progress"` and
+#' `"cli"` display and `"txtprogressbar"` does not. The draws do not depend
+#' on whether a handler is set.
 #'
 #' @section Persistence:
 #'
@@ -231,13 +235,16 @@ new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
   }
   chains <- resolve_chains(chains, call = call_env)
   resolved <- resolve_seed(seed, call = call_env)
+  # The progressor's life must span the whole fit: one whose last step fell
+  # at the last sweep would close its handler over the phases that follow.
+  report <- progressr::progressor(steps = progress_steps(control, chains))
   fit <- core_call(
-    run_schedule(control, design, y, resolved, chains),
+    run_schedule(control, design, y, resolved, chains, report),
     call = call_env
   )
   assemble_fit(fit, design, y, resolved, call,
                blueprint = blueprint, response_levels = response_levels,
-               call_env = call_env)
+               call_env = call_env, report = report)
 }
 
 #' Run the sweep schedule of every chain and pool the draws
@@ -254,16 +261,16 @@ new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
 #' @param y The numeric response.
 #' @param seed The resolved seed.
 #' @param chains The number of chains to run.
+#' @param report A progressr progressor.
 #' @return The list `core_finish()` returns.
 #' @noRd
-run_schedule <- function(control, design, y, seed, chains) {
+run_schedule <- function(control, design, y, seed, chains, report) {
   schedule <- control$general_params
   config <- config_json(control)
   thinning <- as.integer(schedule$thinning)
   sweeps <- schedule$burn_in + schedule$draws * thinning
   total <- chains * sweeps
   updates <- progress_updates(control, chains)
-  report <- progressr::progressor(steps = updates)
   emitted <- 0L
   done <- 0L
   # `updates` reports spread evenly over the sweeps of every chain, and the
@@ -280,6 +287,7 @@ run_schedule <- function(control, design, y, seed, chains) {
   }
   samplers <- vector("list", chains)
   for (index in seq_len(chains)) {
+    report(amount = 0, message = sweep_message(index, chains))
     handle <- core_sampler_new(config, design, y, seed, index - 1L)
     samplers[[index]] <- handle
     completed <- 0L
@@ -297,7 +305,10 @@ run_schedule <- function(control, design, y, seed, chains) {
     }
     done <- done + sweeps
   }
-  core_finish(samplers)
+  report(amount = 0, message = "pooling the draws")
+  fit <- core_finish(samplers)
+  report()
+  fit
 }
 
 #' Assemble the object the methods return from the core's fit list
@@ -310,11 +321,13 @@ run_schedule <- function(control, design, y, seed, chains) {
 #' @param blueprint The hardhat blueprint, or `NULL` for a matrix fit.
 #' @param response_levels The response's factor levels, or `NULL`.
 #' @param call_env The calling environment to report.
+#' @param report A progressr progressor.
 #' @return An object of class `"thiessen"`.
 #' @noRd
 assemble_fit <- function(fit, design, y, seed, call, blueprint = NULL,
                          response_levels = NULL,
-                         call_env = rlang::caller_env()) {
+                         call_env = rlang::caller_env(),
+                         report = progress_silent()) {
   for (warning in fit$warnings) {
     rlang::warn(warning, class = "thiessen_warning")
   }
@@ -341,7 +354,9 @@ assemble_fit <- function(fit, design, y, seed, call, blueprint = NULL,
     ),
     class = "thiessen"
   )
+  report(amount = 0, message = "summarising the draws")
   fit_object$convergence <- convergence_of(fit_object)
   warn_convergence(fit_object, call = call_env)
+  report()
   fit_object
 }

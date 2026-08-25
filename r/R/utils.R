@@ -219,3 +219,42 @@ progress_updates <- function(control, chains = 1L) {
     (schedule$burn_in + schedule$draws * schedule$thinning)
   as.integer(min(sweeps, 100L))
 }
+
+# Phases a fit reports after its last sweep: pooling the draws, which
+# predicts at every training row for every kept draw and so on a long
+# schedule outlasts the sweeps, and the convergence summary.
+PROGRESS_PHASES <- 2L
+
+#' The number of steps a fit's progressor takes
+#'
+#' @param control An object of class `"thiessen_control"`.
+#' @param chains The number of chains the fit runs.
+#' @return An integer: the sweep reports and one for each phase that
+#'   follows them.
+#' @noRd
+progress_steps <- function(control, chains = 1L) {
+  progress_updates(control, chains) + PROGRESS_PHASES
+}
+
+#' The message the sweeps of a chain report
+#'
+#' @param index The chain, from one.
+#' @param chains The number of chains the fit runs.
+#' @return A string.
+#' @noRd
+sweep_message <- function(index, chains) {
+  if (chains == 1L) {
+    return("sampling")
+  }
+  sprintf("sampling chain %d of %d", index, chains)
+}
+
+#' A progressor that signals nothing
+#'
+#' The fit path passes its own; this stands in where a caller has none.
+#'
+#' @return A function taking the arguments a progressor takes.
+#' @noRd
+progress_silent <- function() {
+  function(...) invisible(NULL)
+}
