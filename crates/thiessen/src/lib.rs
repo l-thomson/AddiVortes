@@ -139,7 +139,7 @@ pub use config::{
 };
 pub use data::{Data, Warning};
 pub use error::{Error, Result};
-pub use fitted::{Fitted, Interval, Posterior};
+pub use fitted::{Fitted, Interval, IntervalKind, Posterior};
 #[cfg(feature = "experimental")]
 pub use geometry::GowerKind;
 pub use geometry::Metric;

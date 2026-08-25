@@ -91,6 +91,37 @@ impl Tessellation {
         self.value_in_cell(self.nearest(row, geometry).0, row)
     }
 
+    /// The value at every row of `x` in row order, passed to `f` with the
+    /// row index. Under hard membership on an all-Euclidean geometry the
+    /// cells come from one streaming assignment over the column-major
+    /// design, with `keys` as its scratch, grown once and reused across
+    /// calls; otherwise each row is evaluated as [`value_at`](Self::value_at).
+    pub(crate) fn for_each_value(
+        &self,
+        x: &Data,
+        geometry: &Geometry,
+        keys: &mut Vec<f64>,
+        mut f: impl FnMut(usize, f64),
+    ) {
+        let n = x.n_rows();
+        if n == 0 {
+            return;
+        }
+        if self.tau.is_none() && geometry.is_plain() {
+            keys.clear();
+            keys.resize(self.n_cells() * n, 0.0);
+            add_all_keys(x, self, keys);
+            for i in 0..n {
+                let (cell, _) = nearest_in(keys, n, i);
+                f(i, self.value_in_cell(cell, x.row(i)));
+            }
+        } else {
+            for i in 0..n {
+                f(i, self.value_at(x.row(i), geometry));
+            }
+        }
+    }
+
     /// The kernel-weighted sum of the cell means at `row`: weights
     /// proportional to exp(-key / (2 tau^2)) over the centres, computed
     /// from the smallest key so the nearest centre's factor is 1.
@@ -237,6 +268,32 @@ pub(crate) struct Assignment {
 /// `t`, one active column at a time in `dims` order over the column-major
 /// design: the sums [`Geometry::key`] forms row by row, in the same order,
 /// for an all-Euclidean geometry.
+/// Adds the key of every row of `x` to every centre of `t` under an
+/// all-Euclidean geometry into the zeroed `b` by `n` column-major `keys`.
+/// `x` must have at least one row.
+fn add_all_keys(x: &Data, t: &Tessellation, keys: &mut [f64]) {
+    let n = x.n_rows();
+    for (k, out) in keys.chunks_exact_mut(n).enumerate() {
+        add_centre_keys(x, t, k, out);
+    }
+}
+
+/// The nearest centre of row `i` and its key over the `b` by `n`
+/// column-major keys `all`; the lowest index on ties.
+fn nearest_in(all: &[f64], n: usize, i: usize) -> (usize, f64) {
+    let b = all.len() / n;
+    let mut best = f64::INFINITY;
+    let mut best_cell = 0;
+    for k in 0..b {
+        let key = all[k * n + i];
+        if key < best {
+            best = key;
+            best_cell = k;
+        }
+    }
+    (best_cell, best)
+}
+
 fn add_centre_keys(x: &Data, t: &Tessellation, k: usize, out: &mut [f64]) {
     let n = x.n_rows();
     let columns = x.columns();
@@ -255,9 +312,7 @@ impl Assignment {
         let n = x.n_rows();
         if t.tau.is_none() && geometry.is_plain() && n > 0 {
             let mut all = vec![0.0; t.n_cells() * n];
-            for (k, out) in all.chunks_exact_mut(n).enumerate() {
-                add_centre_keys(x, t, k, out);
-            }
+            add_all_keys(x, t, &mut all);
             return Self::argmin(&all, n);
         }
         let mut cells = Vec::with_capacity(n);
@@ -301,21 +356,12 @@ impl Assignment {
     /// The winning cell and key of every row from column-major b by n
     /// keys, the lowest index on ties as [`Tessellation::nearest`] picks.
     fn argmin(all: &[f64], n: usize) -> Self {
-        let b = all.len() / n;
         let mut cells = Vec::with_capacity(n);
         let mut keys = Vec::with_capacity(n);
         for i in 0..n {
-            let mut best = f64::INFINITY;
-            let mut best_cell = 0;
-            for k in 0..b {
-                let key = all[k * n + i];
-                if key < best {
-                    best = key;
-                    best_cell = k;
-                }
-            }
-            cells.push(best_cell);
-            keys.push(best);
+            let (cell, key) = nearest_in(all, n, i);
+            cells.push(cell);
+            keys.push(key);
         }
         Self {
             cells,
