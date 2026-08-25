@@ -18,9 +18,7 @@ use std::io::Write;
 use std::time::Instant;
 
 use thiessen::{chain_seed, Fitted};
-use thiessen_bench::{
-    build_cell, cells, Cell, CELL_BURN_IN, CELL_DRAWS, DECLARED_ROWS, HOLDOUT,
-};
+use thiessen_bench::{build_cell, cells, Cell, CELL_BURN_IN, CELL_DRAWS, DECLARED_ROWS, HOLDOUT};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -92,7 +90,9 @@ fn run(args: &[String]) {
         sampler.keep();
     }
     let fit = start.elapsed();
-    let fitted = sampler.finish().expect("the schedule keeps at least one draw");
+    let fitted = sampler
+        .finish()
+        .expect("the schedule keeps at least one draw");
 
     let predict_start = Instant::now();
     let predictions = fitted.predict(&split.test_x).expect("held-out predict");
@@ -134,7 +134,12 @@ fn run(args: &[String]) {
 /// The declared quantities, one row per draw: sigma where the model
 /// samples one, f(x) at the first held-out rows, and the two structure
 /// counts.
-fn write_draws(fitted: &Fitted, split: &thiessen_bench::Split, chain: usize, path: &std::path::Path) {
+fn write_draws(
+    fitted: &Fitted,
+    split: &thiessen_bench::Split,
+    chain: usize,
+    path: &std::path::Path,
+) {
     let file = std::fs::File::create(path).expect("draws file");
     let mut out = std::io::BufWriter::new(file);
     writeln!(out, "chain,draw,quantity,value").unwrap();

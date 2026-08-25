@@ -45,22 +45,47 @@ BASE_SEED = 20260824
 STRIDE = 1_000_003
 
 
+MANIFEST = ROOT / "bench" / "Cargo.toml"
+
+
 def build(experimental: bool) -> Path:
-    """Build the suite binary in release and return its path."""
+    """Build the suite binary in release and return its path.
+
+    The bench crate is outside the root workspace and has a target
+    directory of its own, so the path is read from cargo rather than
+    assumed.
+    """
     command = [
         "cargo",
         "build",
         "--locked",
         "--release",
-        "-p",
-        "thiessen-bench",
+        "--manifest-path",
+        str(MANIFEST),
         "--bin",
         "suite",
     ]
     if experimental:
         command += ["--features", "experimental"]
-    subprocess.run(command, cwd=ROOT, check=True)
-    return ROOT / "target" / "release" / "suite"
+    subprocess.run(command, check=True)
+    metadata = json.loads(
+        subprocess.run(
+            [
+                "cargo",
+                "metadata",
+                "--locked",
+                "--no-deps",
+                "--format-version",
+                "1",
+                "--manifest-path",
+                str(MANIFEST),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    )
+    return Path(metadata["target_directory"]) / "release" / "suite"
 
 
 def list_cells(binary: Path) -> dict:
@@ -144,7 +169,9 @@ def main() -> None:
     for cell in cells:
         cards: list[pd.DataFrame] = []
         while len(cards) < args.reps_max:
-            cards.append(scorecard(repetition(binary, cell, len(cards), args.chains, args.out)))
+            cards.append(
+                scorecard(repetition(binary, cell, len(cards), args.chains, args.out))
+            )
             if len(cards) < args.reps_min:
                 continue
             rse = relative_standard_error(cards, "ess_bulk_min_per_second")
@@ -162,7 +189,9 @@ def main() -> None:
     table["draws"] = listing["draws"]
     table["burn_in"] = listing["burn_in"]
     table["core_version"] = json.loads(
-        (args.out / cells[0]["id"] / "rep0" / f"{cells[0]['id']}-chain0.json").read_text()
+        (
+            args.out / cells[0]["id"] / "rep0" / f"{cells[0]['id']}-chain0.json"
+        ).read_text()
     )["core_version"]
     destination = args.scorecard or args.out / "scorecard.csv"
     table.to_csv(destination, index=False)

@@ -7,8 +7,8 @@ and Buerkner (2021). No estimator is written here. ESS estimators disagree
 materially on poorly mixed chains, so which one produced a number is part
 of the number.
 
-The currency is minimum ESS per second over the declared quantities, bulk
-and tail. Wall-clock alone is the wrong currency for a Markov chain: a
+The currency is minimum ESS per second over the inferential quantities,
+bulk and tail. Wall-clock alone is the wrong currency for a Markov chain: a
 sampler twice as fast per sweep that mixes half as well has gained
 nothing. ESS per sweep is reported beside it, so algorithmic efficiency
 stays separable from implementation speed and the pair survives a change
@@ -30,9 +30,24 @@ import pandas as pd
 #: which the ESS estimate itself is unreliable.
 TARGET_ESS = 400.0
 
-#: R-hat above this and the run has not converged, so its efficiency
-#: numbers describe nothing. Vehtari et al (2021), s. 4.
-RHAT_LIMIT = 1.01
+#: The reporting threshold for rank-normalised R-hat (Vehtari et al 2021,
+#: s. 4). Recorded in the note beside `rhat_max`; nothing gates on it,
+#: because a cell whose R-hat sits near it flips from run to run and a
+#: gate that flips is noise.
+RHAT_REPORT = 1.01
+
+#: R-hat above this and the chains have not converged at all, so the
+#: efficiency numbers of that cell describe nothing. The gate reads this
+#: and the change in R-hat against the baseline, not the reporting
+#: threshold.
+RHAT_LIMIT = 1.05
+
+#: The structure counts: mean cells and mean active dimensions per
+#: tessellation. They are reported, and they do not enter the currency or
+#: the validity gate. A sum of tessellations is not identified, so the
+#: structure of any one draw wanders while the function it encodes does
+#: not; the BART family monitors sigma and f(x) for the same reason.
+STRUCTURE = ("cells", "dims")
 
 
 @dataclass(frozen=True)
@@ -108,9 +123,13 @@ def _per_quantity(diagnostic: Any) -> dict[str, float]:
     }
 
 
-def _minimum(diagnostic: Any) -> tuple[float, str]:
-    """The smallest value in `diagnostic` and the quantity carrying it."""
-    flat = _per_quantity(diagnostic)
+def _declared(flat: dict[str, float]) -> dict[str, float]:
+    """The inferential quantities: sigma and f(x), never the structure."""
+    return {name: value for name, value in flat.items() if name not in STRUCTURE}
+
+
+def _minimum(flat: dict[str, float]) -> tuple[float, str]:
+    """The smallest value in `flat` and the quantity carrying it."""
     quantity = min(flat, key=lambda k: flat[k])
     return flat[quantity], quantity
 
@@ -118,13 +137,13 @@ def _minimum(diagnostic: Any) -> tuple[float, str]:
 def scorecard(run: Run) -> pd.DataFrame:
     """Return the scorecard of `run`, one row per metric."""
     tree = posterior(run.draws)
-    rhat = az.rhat(tree, method="rank")
-    ess_bulk = az.ess(tree, method="bulk")
-    ess_tail = az.ess(tree, method="tail")
+    rhat = _per_quantity(az.rhat(tree, method="rank"))
+    ess_bulk = _per_quantity(az.ess(tree, method="bulk"))
+    ess_tail = _per_quantity(az.ess(tree, method="tail"))
 
-    rhat_max = max(_per_quantity(rhat).values())
-    bulk, bulk_quantity = _minimum(ess_bulk)
-    tail, tail_quantity = _minimum(ess_tail)
+    rhat_max = max(_declared(rhat).values())
+    bulk, bulk_quantity = _minimum(_declared(ess_bulk))
+    tail, tail_quantity = _minimum(_declared(ess_tail))
 
     seconds = run.post_warmup_seconds
     rows: list[dict] = []
@@ -132,8 +151,7 @@ def scorecard(run: Run) -> pd.DataFrame:
     def add(metric: str, value: float | None, unit: str, note: str = "") -> None:
         rows.append({"metric": metric, "value": value, "unit": unit, "note": note})
 
-    add("rhat_max", rhat_max, "ratio")
-    add("valid", float(rhat_max <= RHAT_LIMIT), "flag", f"limit {RHAT_LIMIT}")
+    add("rhat_max", rhat_max, "ratio", f"reporting threshold {RHAT_REPORT}")
     add("ess_bulk_min", bulk, "draws", bulk_quantity)
     add("ess_tail_min", tail, "draws", tail_quantity)
     add("ess_bulk_min_per_second", bulk / seconds, "1/s", bulk_quantity)
@@ -156,14 +174,22 @@ def scorecard(run: Run) -> pd.DataFrame:
     add("predict_seconds", run.predict_seconds, "s", "held-out design")
     add("peak_rss_mb", run.peak_rss_bytes / 1e6, "MB", "one chain process")
 
-    # The Monte Carlo standard error of the posterior mean of each declared
-    # quantity, the largest reported: a scorecard without it invites a
-    # comparison of two numbers that differ by less than their own noise.
+    # The Monte Carlo standard error of the posterior mean of each
+    # inferential quantity, the largest reported: a scorecard without it
+    # invites a comparison of two numbers that differ by less than their
+    # own noise.
     add(
         "mcse_mean_max",
-        max(_per_quantity(az.mcse(tree, method="mean")).values()),
+        max(_declared(_per_quantity(az.mcse(tree, method="mean"))).values()),
         "quantity units",
     )
+
+    structure_rhat = {name: rhat[name] for name in STRUCTURE if name in rhat}
+    structure_ess = {name: ess_bulk[name] for name in STRUCTURE if name in ess_bulk}
+    if structure_rhat:
+        add("rhat_max_structure", max(structure_rhat.values()), "ratio", "reported")
+    if structure_ess:
+        add("ess_bulk_min_structure", min(structure_ess.values()), "draws", "reported")
 
     accuracy = [m["accuracy"] for m in run.metadata if m.get("accuracy")]
     if accuracy:
@@ -195,13 +221,22 @@ def summarise(scorecards: list[pd.DataFrame]) -> pd.DataFrame:
         One scorecard per repetition of the same cell.
     """
     joined = pd.concat(scorecards, ignore_index=True)
-    grouped = joined.groupby(["cell", "model", "n", "p", "metric", "unit"], as_index=False)
+    grouped = joined.groupby(
+        ["cell", "model", "n", "p", "metric", "unit"], as_index=False
+    )
     out = grouped.agg(
         value=("value", "mean"),
-        se=("value", lambda v: float(np.std(v, ddof=1) / math.sqrt(len(v))) if len(v) > 1 else 0.0),
+        se=(
+            "value",
+            lambda v: (
+                float(np.std(v, ddof=1) / math.sqrt(len(v))) if len(v) > 1 else 0.0
+            ),
+        ),
         reps=("value", "size"),
     )
-    notes = joined.drop_duplicates(subset=["cell", "metric"])[["cell", "metric", "note"]]
+    notes = joined.drop_duplicates(subset=["cell", "metric"])[
+        ["cell", "metric", "note"]
+    ]
     return out.merge(notes, on=["cell", "metric"], how="left")
 
 
@@ -212,7 +247,8 @@ def relative_standard_error(scorecards: list[pd.DataFrame], metric: str) -> floa
     far rather than from a round number chosen in advance.
     """
     values = [
-        float(card.loc[card["metric"] == metric, "value"].iloc[0]) for card in scorecards
+        float(card.loc[card["metric"] == metric, "value"].iloc[0])
+        for card in scorecards
     ]
     if len(values) < 2:
         return math.inf

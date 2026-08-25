@@ -1,0 +1,56 @@
+cell,model,n,p,metric,unit,value,se,reps,note,chains,draws,burn_in,core_version
+gaussian-n200-p10,gaussian,200,10,coverage_95,share,0.9833333333333333,0.0022047927592204804,3,held-out,4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,ess_bulk_min,draws,575.0744547784228,17.33920326463508,3,f[1],4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,ess_bulk_min_per_second,1/s,29.95914540696569,1.3133655303727623,3,f[1],4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,ess_bulk_min_per_sweep,ratio,0.035942153423651424,0.0010837002040396933,3,f[1],4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,ess_bulk_min_structure,draws,180.19675143151395,18.330664690801044,3,reported,4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,ess_tail_min,draws,1235.9809704970585,31.631513950220537,3,f[1],4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,ess_tail_min_per_second,1/s,64.39581051749825,2.669098723695808,3,f[1],4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,ess_tail_min_per_sweep,ratio,0.07724881065606615,0.0019769696218887856,3,f[1],4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,fit_seconds,s,5.355812670750001,0.08287477222053387,3,per chain,4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,lpd,log density,-1.9456835701543636,0.001671238900431809,3,held-out,4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,mcse_mean_max,quantity units,0.07389765094235944,0.0004742592289131467,3,,4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,peak_rss_mb,MB,270.78792533333336,0.11566718502861982,3,one chain process,4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,predict_seconds,s,2.233655924,0.019209889608520873,3,held-out design,4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,rhat_max,ratio,1.009197848389144,0.0013815168574858885,3,reporting threshold 1.01,4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,rhat_max_structure,ratio,1.0333767838490449,0.00511502267287122,3,reported,4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,rmse,response units,1.637652752618066,0.003073146269100786,3,held-out,4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,seconds_per_sweep,s,0.0012011827576666667,1.917419380368736e-05,3,"post-warm-up, initialisation excluded",4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,seconds_to_target_ess,s,13.951953823979485,0.566815570737071,3,"bulk ESS 400, one chain at a time",4,4000,500,0.3.0
+gaussian-n200-p10,gaussian,200,10,width_95,response units,8.085523011882232,0.012624939054015322,3,held-out,4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,ess_bulk_min,draws,6923.086071670511,86.35215189738376,3,f[0],4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,ess_bulk_min_per_second,1/s,339.9522523131664,7.77236329776144,3,f[0],4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,ess_bulk_min_per_sweep,ratio,0.43269287947940693,0.005397009493586483,3,f[0],4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,ess_bulk_min_structure,draws,322.140138150942,19.724450208323614,3,reported,4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,ess_tail_min,draws,10374.092438002548,42.91124659394304,3,f[0],4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,ess_tail_min_per_second,1/s,509.2978232312353,6.464528908669322,3,f[0],4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,ess_tail_min_per_sweep,ratio,0.6483807773751592,0.00268195291212145,3,f[0],4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,fit_seconds,s,5.677637761333333,0.0792209001990078,3,per chain,4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,lpd,log density,-0.42267058640726624,0.0004015557133228213,3,held-out,4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,mcse_mean_max,quantity units,0.0021749660123824965,2.835906182221684e-05,3,,4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,peak_rss_mb,MB,271.5415893333333,0.10991569339776887,3,one chain process,4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,predict_seconds,s,2.391223223,0.019750475607876947,3,held-out design,4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,rhat_max,ratio,1.0008123826524653,9.316136028224631e-05,3,reporting threshold 1.01,4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,rhat_max_structure,ratio,1.0113789127550163,0.0044150687643623,3,reported,4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,rmse,response units,0.3620005400746251,0.000192915866906397,3,held-out,4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,seconds_per_sweep,s,0.0012735833942291667,2.0001810603911204e-05,3,"post-warm-up, initialisation excluded",4,4000,500,0.3.0
+probit-n200-p10,probit,200,10,seconds_to_target_ess,s,1.7611676859146144,0.021365859457247293,3,"bulk ESS 400, one chain at a time",4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,coverage_95,share,0.9810000000000001,0.000612372435695795,5,held-out,4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,ess_bulk_min,draws,625.9065751021699,27.63931555418857,5,f[0],4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,ess_bulk_min_per_second,1/s,29.12850216515153,1.2575669372717837,5,f[0],4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,ess_bulk_min_per_sweep,ratio,0.03911916094388562,0.0017274572221367853,5,f[0],4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,ess_bulk_min_structure,draws,149.7482857704238,11.01498488914934,5,reported,4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,ess_tail_min,draws,1301.6720293054016,64.18473515857823,5,f[1],4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,ess_tail_min_per_second,1/s,60.5889886150394,2.999859119344854,5,f[1],4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,ess_tail_min_per_sweep,ratio,0.08135450183158759,0.004011545947411138,5,f[1],4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,fit_seconds,s,6.0323441156,0.035109163647076655,5,per chain,4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,lpd,log density,-2.0744176959059843,0.0025234136738016303,5,held-out,4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,mcse_mean_max,quantity units,0.0828910594961087,0.0017604047297597547,5,,4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,peak_rss_mb,MB,298.0855808,0.20102724011397197,5,one chain process,4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,predict_seconds,s,2.3188307350999997,0.0038048708208286114,5,held-out design,4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,rhat_max,ratio,1.0092651807225663,0.0010128717336104567,5,reporting threshold 1.01,4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,rhat_max_structure,ratio,1.0229560429770275,0.0031372954429194975,5,reported,4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,rmse,response units,1.9050298849480396,0.006586743879788285,5,held-out,4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,seconds_per_sweep,s,0.0013427859450375,2.8205738406789817e-06,5,"post-warm-up, initialisation excluded",4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,seconds_to_target_ess,s,14.495457026893396,0.6022439759843112,5,"bulk ESS 400, one chain at a time",4,4000,500,0.3.0
+heteroscedastic-n200-p10,heteroscedastic,200,10,width_95,response units,8.84908297228335,0.009841693023684685,5,held-out,4,4000,500,0.3.0

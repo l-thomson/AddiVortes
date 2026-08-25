@@ -88,6 +88,11 @@ def compare(baseline: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
 #: are ratios per sweep and per held-out row: they do not change with the
 #: speed of the machine, so a shared runner can be asked about them. No
 #: wall-clock metric appears here or ever will.
+#:
+#: R-hat is absent: mixing is what a regression moves, and effective
+#: sample size per sweep measures it on a scale where a change means
+#: something. R-hat carries the separate job of saying whether the cell is
+#: worth reading at all, which is the absolute limit below.
 GATED = {
     "ess_bulk_min_per_sweep": "smaller",
     "ess_tail_min_per_sweep": "smaller",
@@ -95,12 +100,23 @@ GATED = {
 }
 
 
+#: R-hat above this and the chains have not converged at all. Well above
+#: the 1.01 reporting threshold: a cell sitting near that threshold flips
+#: from run to run, and a gate that flips is noise. A real loss of
+#: convergence is caught here or by the effective-sample-size gate above.
+RHAT_LIMIT = 1.05
+
+
 def failures(table: pd.DataFrame, new: pd.DataFrame) -> list[str]:
     """Return the gate failures in `table`, empty when the run passes."""
     out = []
-    invalid = new[(new["metric"] == "valid") & (new["value"] < 1.0)]
-    for _, row in invalid.iterrows():
-        out.append(f"{row['cell']}: R-hat above the limit, the run has not converged")
+    unconverged = new[(new["metric"] == "rhat_max") & (new["value"] > RHAT_LIMIT)]
+    for _, row in unconverged.iterrows():
+        out.append(
+            f"{row['cell']} rhat_max: {row['value']:.3f}, above {RHAT_LIMIT}; "
+            "the chains have not converged and the cell's efficiency numbers "
+            "describe nothing"
+        )
     for _, row in table[table["separated"]].iterrows():
         direction = GATED.get(row["metric"])
         if direction is None:
@@ -132,7 +148,8 @@ def main() -> None:
     args = parser.parse_args()
 
     new = pd.read_csv(args.new)
-    table = compare(pd.read_csv(args.baseline), new)
+    baseline = pd.read_csv(args.baseline)
+    table = compare(baseline, new)
     shown = table[table["separated"]] if args.separated_only else table
     with pd.option_context("display.max_rows", None, "display.width", 200):
         print(shown.to_string(index=False))

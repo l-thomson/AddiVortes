@@ -391,12 +391,15 @@ pub const HOLDOUT: usize = 100;
 /// estimator.
 pub const DECLARED_ROWS: usize = 5;
 
-/// Burn-in sweeps in a suite cell. The schedule is the shipped default, so
-/// the efficiency numbers describe the configuration a user gets.
-pub const CELL_BURN_IN: usize = 200;
+/// Burn-in sweeps in a suite cell.
+pub const CELL_BURN_IN: usize = 500;
 
-/// Kept draws in a suite cell.
-pub const CELL_DRAWS: usize = 1000;
+/// Kept draws in a suite cell. Longer than the shipped default of 1000,
+/// which leaves rank-normalised R-hat around 1.035 on held-out f(x) for
+/// the Gaussian model at these sizes: efficiency measured on a chain that
+/// has not converged describes nothing, so the suite pays for convergence
+/// and reports the cost as part of the measurement.
+pub const CELL_DRAWS: usize = 4000;
 
 /// One cell of the benchmark suite: a model, a size and a seed.
 pub struct Cell {

@@ -4,6 +4,20 @@ on:
   pull_request:
   push:
     branches: [dev]
+  # The deep benchmark-suite run, before a snapshot regeneration and at a
+  # release. Nothing here is scheduled: a run is earned by a change or by
+  # someone asking for it.
+  workflow_dispatch:
+    inputs:
+      suite_sizes:
+        description: Benchmark suite cell sizes
+        type: choice
+        options: [small, all]
+        default: small
+      suite_reps_max:
+        description: Benchmark suite repetitions per cell, at most
+        type: string
+        default: "8"
 
 permissions:
   contents: read
@@ -248,6 +262,65 @@ jobs:
         run: |
           cargo bench --manifest-path bench/Cargo.toml \
             --bench instructions -- --baseline=base
+
+  # The benchmark suite: the scorecard of every shipped model at the fixed
+  # cells, compared against the committed reference. The gate reads only
+  # the ratios that do not change with the speed of the machine, so a
+  # shared runner can be asked about them: effective sample size per sweep
+  # and held-out error. Wall-clock columns are reported and gate nothing.
+  suite:
+    name: suite
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      # Full history; the base revision is not in a shallow clone.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: kernel
+        run: |
+          hit=${{ github.event_name == 'workflow_dispatch' }}
+          if [ "${{ github.event_name }}" = pull_request ] && git diff --name-only \
+            ${{ github.event.pull_request.base.sha }}...HEAD -- \
+            crates/thiessen/src/sampler.rs \
+            crates/thiessen/src/moves.rs \
+            crates/thiessen/src/cells.rs \
+            crates/thiessen/src/outcome.rs \
+            'crates/thiessen/src/models/*' \
+            bench benchmarks/suite | grep -q .; then
+            hit=true
+          fi
+          echo "hit=$hit" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        if: steps.kernel.outputs.hit == 'true'
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        if: steps.kernel.outputs.hit == 'true'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: steps.kernel.outputs.hit == 'true'
+        with:
+          python-version: "3.12"
+      - if: steps.kernel.outputs.hit == 'true'
+        run: pip install -r benchmarks/suite/requirements.txt
+      - if: steps.kernel.outputs.hit == 'true'
+        run: |
+          python benchmarks/suite/run.py \
+            --sizes "${{ inputs.suite_sizes || 'small' }}" \
+            --reps-max "${{ inputs.suite_reps_max || '3' }}" \
+            --scorecard scorecard.csv
+      # The newest committed reference; they are named for the core
+      # version they were taken at and sort in version order.
+      - if: steps.kernel.outputs.hit == 'true'
+        run: |
+          baseline=$(ls benchmarks/suite/baselines/*.csv | sort -V | tail -1)
+          echo "comparing against $baseline"
+          python benchmarks/suite/compare.py --gate "$baseline" scorecard.csv
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.kernel.outputs.hit == 'true'
+        with:
+          name: suite-scorecard
+          path: scorecard.csv
 
   coverage:
     name: coverage
@@ -502,14 +575,14 @@ jobs:
     name: alls-green
     if: always()
     needs: [fmt, clippy, test, deny, doc, semver, calibration-full,
-            perf-instructions, coverage, cff,
+            perf-instructions, suite, coverage, cff,
             py-lint, py-test, py-coverage, py-docs, r-source, r-check, r-docs]
     runs-on: ubuntu-latest
     steps:
       - uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-          # semver, calibration-full and perf-instructions run on pull
-          # requests only; coverage is informational
-          allowed-skips: semver, calibration-full, perf-instructions
+          # semver, calibration-full, perf-instructions and suite run on
+          # pull requests only; coverage is informational
+          allowed-skips: semver, calibration-full, perf-instructions, suite
           allowed-failures: coverage, py-coverage
