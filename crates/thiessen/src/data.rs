@@ -1,14 +1,24 @@
 //! The design matrix (`Data`), fit-time warnings and boundary validation.
 
+use std::sync::OnceLock;
+
 use crate::error::{invalid, Error, Result};
 
 /// A row-major n by p matrix of finite or non-finite `f64` values. Callers
 /// pass raw, unscaled data; scaling is the sampler's.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Data {
     values: Vec<f64>,
     n_rows: usize,
     n_cols: usize,
+    /// Column-major mirror of `values`, built on first use.
+    columns: OnceLock<Vec<f64>>,
+}
+
+impl PartialEq for Data {
+    fn eq(&self, other: &Self) -> bool {
+        self.values == other.values && self.n_rows == other.n_rows && self.n_cols == other.n_cols
+    }
 }
 
 impl Data {
@@ -30,6 +40,7 @@ impl Data {
             values,
             n_rows,
             n_cols,
+            columns: OnceLock::new(),
         })
     }
 
@@ -54,6 +65,7 @@ impl Data {
             values,
             n_rows: rows.len(),
             n_cols,
+            columns: OnceLock::new(),
         })
     }
 
@@ -75,6 +87,22 @@ impl Data {
     /// The row-major buffer.
     pub fn values(&self) -> &[f64] {
         &self.values
+    }
+
+    /// The values column-major, `n_rows` per column, built on first use
+    /// and kept for the life of the matrix.
+    pub(crate) fn columns(&self) -> &[f64] {
+        self.columns.get_or_init(|| {
+            let mut columns = vec![0.0; self.values.len()];
+            if self.n_cols > 0 {
+                for (i, row) in self.values.chunks_exact(self.n_cols).enumerate() {
+                    for (j, &v) in row.iter().enumerate() {
+                        columns[j * self.n_rows + i] = v;
+                    }
+                }
+            }
+            columns
+        })
     }
 
     /// The buffer and shape.

@@ -233,10 +233,33 @@ pub(crate) struct Assignment {
     soft: Option<Vec<f64>>,
 }
 
+/// Add to `out[i]` the squared distance of row `i` of `x` to centre `k` of
+/// `t`, one active column at a time in `dims` order over the column-major
+/// design: the sums [`Geometry::key`] forms row by row, in the same order,
+/// for an all-Euclidean geometry.
+fn add_centre_keys(x: &Data, t: &Tessellation, k: usize, out: &mut [f64]) {
+    let n = x.n_rows();
+    let columns = x.columns();
+    for (&dim, &c) in t.dims.iter().zip(t.centre(k)) {
+        let column = &columns[dim * n..(dim + 1) * n];
+        for (o, &v) in out.iter_mut().zip(column) {
+            let diff = v - c;
+            *o += diff * diff;
+        }
+    }
+}
+
 impl Assignment {
     /// Assignment of every row of `x` under `t`, computed in full.
     pub(crate) fn full(x: &Data, t: &Tessellation, geometry: &Geometry) -> Self {
         let n = x.n_rows();
+        if t.tau.is_none() && geometry.is_plain() && n > 0 {
+            let mut all = vec![0.0; t.n_cells() * n];
+            for (k, out) in all.chunks_exact_mut(n).enumerate() {
+                add_centre_keys(x, t, k, out);
+            }
+            return Self::argmin(&all, n);
+        }
         let mut cells = Vec::with_capacity(n);
         let mut keys = Vec::with_capacity(n);
         if t.tau.is_none() {
@@ -272,6 +295,32 @@ impl Assignment {
             cells,
             keys,
             soft: Some(soft),
+        }
+    }
+
+    /// The winning cell and key of every row from column-major b by n
+    /// keys, the lowest index on ties as [`Tessellation::nearest`] picks.
+    fn argmin(all: &[f64], n: usize) -> Self {
+        let b = all.len() / n;
+        let mut cells = Vec::with_capacity(n);
+        let mut keys = Vec::with_capacity(n);
+        for i in 0..n {
+            let mut best = f64::INFINITY;
+            let mut best_cell = 0;
+            for k in 0..b {
+                let key = all[k * n + i];
+                if key < best {
+                    best = key;
+                    best_cell = k;
+                }
+            }
+            cells.push(best_cell);
+            keys.push(best);
+        }
+        Self {
+            cells,
+            keys,
+            soft: None,
         }
     }
 
@@ -316,6 +365,18 @@ impl Assignment {
             Delta::Full => Self::full(x, new, geometry),
             Delta::CentreAdded => {
                 let added = new.n_cells() - 1;
+                if self.soft.is_none() && geometry.is_plain() {
+                    let mut out = self.clone();
+                    let mut added_keys = vec![0.0; n];
+                    add_centre_keys(x, new, added, &mut added_keys);
+                    for (i, &key) in added_keys.iter().enumerate() {
+                        if key < out.keys[i] {
+                            out.keys[i] = key;
+                            out.cells[i] = added;
+                        }
+                    }
+                    return out;
+                }
                 let mut out = self.clone();
                 if let Some(soft) = &mut out.soft {
                     soft.reserve(n);
@@ -333,6 +394,24 @@ impl Assignment {
                 out
             }
             Delta::CentreMoved(moved) => {
+                if self.soft.is_none() && geometry.is_plain() {
+                    let mut out = self.clone();
+                    let mut moved_keys = vec![0.0; n];
+                    add_centre_keys(x, new, moved, &mut moved_keys);
+                    for (i, &key) in moved_keys.iter().enumerate() {
+                        if self.cells[i] == moved {
+                            let (cell, key) = new.nearest(x.row(i), geometry);
+                            out.cells[i] = cell;
+                            out.keys[i] = key;
+                        } else if key < self.keys[i]
+                            || (key == self.keys[i] && moved < self.cells[i])
+                        {
+                            out.cells[i] = moved;
+                            out.keys[i] = key;
+                        }
+                    }
+                    return out;
+                }
                 let mut out = self.clone();
                 for i in 0..n {
                     let row = x.row(i);
@@ -424,6 +503,24 @@ mod tests {
         assert_eq!(t.value_at(&[0.75], &g), 3.0);
         assert_eq!(t.n_cells(), 3);
         assert_eq!(t.n_dims(), 1);
+    }
+
+    #[test]
+    fn full_equals_the_row_by_row_search() {
+        let mut rng = chain_rng(23);
+        for _ in 0..300 {
+            let p = 1 + uniform_index(4, &mut rng);
+            let d = 1 + uniform_index(p, &mut rng);
+            let b = 1 + uniform_index(6, &mut rng);
+            let x = random_data(1 + uniform_index(40, &mut rng), p, &mut rng);
+            let g = Geometry::euclidean(p);
+            let t = random_tessellation(p, b, d, &mut rng);
+            let full = Assignment::full(&x, &t, &g);
+            for i in 0..x.n_rows() {
+                let (cell, key) = t.nearest(x.row(i), &g);
+                assert_eq!((full.cells[i], full.keys[i]), (cell, key));
+            }
+        }
     }
 
     #[test]
