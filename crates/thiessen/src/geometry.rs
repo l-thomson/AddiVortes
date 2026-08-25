@@ -467,6 +467,12 @@ impl Geometry {
         Ok(())
     }
 
+    /// Whether every column is Euclidean, so a key is the plain squared
+    /// distance over the active columns.
+    pub(crate) fn is_plain(&self) -> bool {
+        self.plain
+    }
+
     /// Squared distance from `row` (a full p-length row) to a centre with
     /// coordinates `centre` on the columns `dims`, in `dims` order.
     pub(crate) fn key(&self, row: &[f64], dims: &[usize], centre: &[f64]) -> f64 {
