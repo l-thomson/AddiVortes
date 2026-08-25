@@ -12,7 +12,7 @@
 
 use extendr_api::prelude::*;
 use extendr_api::Result;
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell, RefMut};
 
 fn core_error(error: thiessen::Error) -> Error {
     Error::Other(error.to_string())
@@ -237,6 +237,23 @@ fn finished() -> Error {
     Error::Other("the sampler is finished".to_string())
 }
 
+impl SamplerHandle {
+    /// The live sampler.
+    fn live(&self) -> Result<Ref<'_, thiessen::Sampler>> {
+        Ref::filter_map(self.inner.borrow(), Option::as_ref).map_err(|_| finished())
+    }
+
+    /// The live sampler, mutably.
+    fn live_mut(&self) -> Result<RefMut<'_, thiessen::Sampler>> {
+        RefMut::filter_map(self.inner.borrow_mut(), Option::as_mut).map_err(|_| finished())
+    }
+
+    /// The sampler itself, leaving the handle finished.
+    fn take(&self) -> Result<thiessen::Sampler> {
+        self.inner.borrow_mut().take().ok_or_else(finished)
+    }
+}
+
 /// Construct a sampler on the seed the core derives for chain `chain`, so
 /// driving the configured schedule by hand reproduces that chain of a fit
 /// bit for bit.
@@ -262,8 +279,7 @@ fn core_sampler_new(
 /// Run `n` sweeps of the Gibbs loop.
 #[extendr]
 fn core_sampler_step(sampler: ExternalPtr<SamplerHandle>, n: i32) -> Result<()> {
-    let mut inner = sampler.inner.borrow_mut();
-    let live = inner.as_mut().ok_or_else(finished)?;
+    let mut live = sampler.live_mut()?;
     for _ in 0..n.max(0) {
         live.step();
     }
@@ -306,36 +322,20 @@ fn core_samplers_advance(
 /// Record the current state as a posterior draw.
 #[extendr]
 fn core_sampler_keep(sampler: ExternalPtr<SamplerHandle>) -> Result<()> {
-    sampler
-        .inner
-        .borrow_mut()
-        .as_mut()
-        .ok_or_else(finished)?
-        .keep();
+    sampler.live_mut()?.keep();
     Ok(())
 }
 
 /// Number of draws kept so far.
 #[extendr]
 fn core_sampler_n_kept(sampler: ExternalPtr<SamplerHandle>) -> Result<i32> {
-    Ok(sampler
-        .inner
-        .borrow()
-        .as_ref()
-        .ok_or_else(finished)?
-        .n_kept() as i32)
+    Ok(sampler.live()?.n_kept() as i32)
 }
 
 /// Replace the response on the caller's scale.
 #[extendr]
 fn core_sampler_set_response(sampler: ExternalPtr<SamplerHandle>, y: &[f64]) -> Result<()> {
-    sampler
-        .inner
-        .borrow_mut()
-        .as_mut()
-        .ok_or_else(finished)?
-        .set_response(y)
-        .map_err(core_error)?;
+    sampler.live_mut()?.set_response(y).map_err(core_error)?;
     *sampler.y.borrow_mut() = y.to_vec();
     Ok(())
 }
@@ -343,23 +343,13 @@ fn core_sampler_set_response(sampler: ExternalPtr<SamplerHandle>, y: &[f64]) -> 
 /// The current mean function at the training rows, caller scale.
 #[extendr]
 fn core_sampler_fitted_values(sampler: ExternalPtr<SamplerHandle>) -> Result<Vec<f64>> {
-    Ok(sampler
-        .inner
-        .borrow()
-        .as_ref()
-        .ok_or_else(finished)?
-        .fitted_values())
+    Ok(sampler.live()?.fitted_values())
 }
 
 /// The current variance of y given f at each training row, caller scale.
 #[extendr]
 fn core_sampler_noise_variances(sampler: ExternalPtr<SamplerHandle>) -> Result<Vec<f64>> {
-    Ok(sampler
-        .inner
-        .borrow()
-        .as_ref()
-        .ok_or_else(finished)?
-        .noise_variances())
+    Ok(sampler.live()?.noise_variances())
 }
 
 /// The fitted model from the kept draws of every sampler, their chains
@@ -375,7 +365,7 @@ fn core_finish(samplers: List, threads: i32) -> Result<List> {
         .ok_or_else(|| Error::Other("a fit needs at least one chain".to_string()))?;
     let mut samplers = Vec::with_capacity(handles.len());
     for handle in &handles {
-        samplers.push(handle.inner.borrow_mut().take().ok_or_else(finished)?);
+        samplers.push(handle.take()?);
     }
     let n_chains = samplers.len() as i32;
     let y = first.y.borrow();

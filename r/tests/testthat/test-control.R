@@ -124,6 +124,39 @@ test_that("the parameter groups print as their calls", {
   expect_output(print(structure_params(omega = 2)), "omega = 2")
 })
 
+test_that("a formatted group parses back to the group", {
+  groups <- list(
+    gaussian_outcome(nu = 3),
+    probit_outcome(),
+    probit_outcome(offset = 0.5),
+    general_params(burn_in = 10, draws = 20, prior_only = TRUE),
+    geometry_params(
+      metric = list("euclidean", list(spherical = list(sphere = 0))),
+      sigma_c = 0.5
+    ),
+    term_params(
+      tessellations = 40,
+      geometry = geometry_params(metric = list("categorical")),
+      structure = structure_params(omega = 2)
+    )
+  )
+
+  for (group in groups) {
+    expect_identical(eval(parse(text = format(group))), group)
+  }
+})
+
+test_that("the scalar arguments reject a value of the wrong shape", {
+  expect_error(term_params(k = "3"), class = "thiessen_error")
+  expect_error(term_params(k = c(3, 4)), class = "thiessen_error")
+  expect_error(term_params(tessellations = 2.5), class = "thiessen_error")
+  expect_error(general_params(burn_in = -1), class = "thiessen_error")
+  expect_error(general_params(prior_only = NA), class = "thiessen_error")
+  expect_error(general_params(prior_only = "yes"), class = "thiessen_error")
+  expect_error(gaussian_outcome(nu = NULL), class = "thiessen_error")
+  expect_error(probit_outcome(offset = c(0, 1)), class = "thiessen_error")
+})
+
 test_that("printing a control reports each group", {
   expect_output(print(thiessen_control(tessellations = 50)),
                 "tessellations = 50")

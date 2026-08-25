@@ -62,6 +62,10 @@ test_that("the level must be a probability", {
     class = "thiessen_error"
   )
   expect_error(
+    predict(fit, fixture$x, interval = "credible", level = 0),
+    class = "thiessen_error"
+  )
+  expect_error(
     predict(fit, fixture$x, interval = "credible", level = c(0.5, 0.9)),
     class = "thiessen_error"
   )

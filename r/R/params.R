@@ -35,9 +35,9 @@
 #' @export
 term_params <- function(tessellations = NULL, k = 3, lambda_c = 5,
                         geometry = NULL, structure = NULL) {
-  if (!is.null(tessellations)) check_scalar(tessellations, "tessellations")
-  check_scalar(k, "k")
-  check_scalar(lambda_c, "lambda_c")
+  check_whole_number(tessellations, min = 0, allow_null = TRUE)
+  check_number(k)
+  check_number(lambda_c)
   check_group(geometry, "geometry", "geometry_params", null_ok = TRUE)
   check_group(structure, "structure", "structure_params", null_ok = TRUE)
   # The `structure` argument shadows `base::structure` in this body.
@@ -70,7 +70,7 @@ term_params <- function(tessellations = NULL, k = 3, lambda_c = 5,
 #' geometry_params(metric = list("euclidean", "categorical"))
 #' @export
 geometry_params <- function(metric = NULL, sigma_c = 0.8) {
-  check_scalar(sigma_c, "sigma_c")
+  check_number(sigma_c)
   if (!is.null(metric)) metric <- as.list(metric)
   structure(list(metric = metric, sigma_c = sigma_c),
             class = "geometry_params")
@@ -89,7 +89,7 @@ geometry_params <- function(metric = NULL, sigma_c = 0.8) {
 #' structure_params(omega = 2)
 #' @export
 structure_params <- function(omega = NULL) {
-  if (!is.null(omega)) check_scalar(omega, "omega")
+  check_number(omega, allow_null = TRUE)
   structure(list(omega = omega), class = "structure_params")
 }
 
@@ -110,13 +110,10 @@ structure_params <- function(omega = NULL) {
 #' @export
 general_params <- function(burn_in = 200, draws = 1000, thinning = 1,
                            prior_only = FALSE) {
-  check_scalar(burn_in, "burn_in")
-  check_scalar(draws, "draws")
-  check_scalar(thinning, "thinning")
-  if (!is.logical(prior_only) || length(prior_only) != 1L ||
-        is.na(prior_only)) {
-    thiessen_abort("`prior_only` must be `TRUE` or `FALSE`.")
-  }
+  check_whole_number(burn_in, min = 0)
+  check_whole_number(draws, min = 0)
+  check_whole_number(thinning, min = 0)
+  check_flag(prior_only)
   structure(
     list(burn_in = burn_in, draws = draws, thinning = thinning,
          prior_only = prior_only),
@@ -131,9 +128,7 @@ format.term_params <- function(x, ...) {
 
 #' @export
 format.geometry_params <- function(x, ...) {
-  fields <- compact(unclass(x))
-  if (!is.null(fields$metric)) fields$metric <- format_metric(fields$metric)
-  constructor_call("geometry_params", fields)
+  constructor_call("geometry_params", compact(unclass(x)))
 }
 
 #' @export
@@ -187,6 +182,9 @@ compact <- function(fields) {
 
 #' Render a constructor call from a group's set fields
 #'
+#' A nested group renders as its own call; every other value is deparsed,
+#' so the string parses back to the object.
+#'
 #' @param name The constructor's name.
 #' @param fields The non-`NULL` fields.
 #' @return A character string, `name(field = value, ...)`.
@@ -199,10 +197,8 @@ constructor_call <- function(name, fields) {
             inherits(value, "geometry_params") ||
             inherits(value, "structure_params")) {
         format(value)
-      } else if (is.character(value)) {
-        value
       } else {
-        paste(format(value), collapse = ", ")
+        deparse1(value)
       }
     },
     character(1)
@@ -210,41 +206,4 @@ constructor_call <- function(name, fields) {
   arguments <- paste(names(fields), "=", shown, collapse = ", ")
   if (length(fields) == 0L) arguments <- ""
   paste0(name, "(", arguments, ")")
-}
-
-#' Reject a value that is not a single finite-or-missing number
-#'
-#' @param value The value to check.
-#' @param name The argument name to report.
-#' @param call The calling environment to report.
-#' @noRd
-check_scalar <- function(value, name, call = rlang::caller_env()) {
-  if (!is.numeric(value) || length(value) != 1L || is.na(value)) {
-    thiessen_abort(
-      paste0("`", name, "` must be a single number."),
-      call = call
-    )
-  }
-}
-
-#' Reject a group argument of the wrong class
-#'
-#' @param value The value to check.
-#' @param name The argument name to report.
-#' @param constructor The constructor whose class is required.
-#' @param null_ok Whether `NULL` passes.
-#' @param call The calling environment to report.
-#' @noRd
-check_group <- function(value, name, constructor, null_ok = FALSE,
-                        call = rlang::caller_env()) {
-  if (null_ok && is.null(value)) {
-    return(invisible(NULL))
-  }
-  if (!inherits(value, constructor)) {
-    thiessen_abort(
-      paste0("`", name, "` must come from `", constructor, "()`."),
-      call = call
-    )
-  }
-  invisible(NULL)
 }
