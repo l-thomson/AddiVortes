@@ -35,12 +35,19 @@
 #'
 #' @section Progress:
 #'
-#' Progress over the sweep schedule is signalled with progressr, so a
-#' session reports it after `progressr::handlers()` and nothing is printed
-#' by default; `progressr::handlers(global = TRUE)` sets one for a whole
+#' Progress over the whole fit is signalled with progressr, so a session
+#' reports it after `progressr::handlers()` and nothing is printed by
+#' default; `progressr::handlers(global = TRUE)` sets one for a whole
 #' session. The schedule raises one progression per sweep, to a maximum of
-#' a hundred over the sweeps of every chain. The draws do not depend on
-#' whether a handler is set.
+#' a hundred over the sweeps of every chain, then pooling the draws and the
+#' convergence summary, so the report closes when the fit is complete
+#' rather than at the last sweep. Pooling predicts at every training row
+#' for every kept draw, so it costs about twice what the sweeps cost and
+#' carries their weight, and the bar is around a third of the way along
+#' when the sweeps end. Each phase names itself in a sticky message, which
+#' a terminal handler pushes above the bar rather than overwriting, so the
+#' phase that is running is named whatever handler is set. The draws do
+#' not depend on whether a handler is set.
 #'
 #' @section Persistence:
 #'
@@ -231,13 +238,19 @@ new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
   }
   chains <- resolve_chains(chains, call = call_env)
   resolved <- resolve_seed(seed, call = call_env)
+  # The progressor's life must span the whole fit, so the count never ends
+  # it: `auto_finish` would close the handler on the last step, and the
+  # frame this progressor belongs to exits when the fit is complete.
+  report <- progressr::progressor(
+    steps = progress_steps(control, chains), auto_finish = FALSE
+  )
   fit <- core_call(
-    run_schedule(control, design, y, resolved, chains),
+    run_schedule(control, design, y, resolved, chains, report),
     call = call_env
   )
   assemble_fit(fit, design, y, resolved, call,
                blueprint = blueprint, response_levels = response_levels,
-               call_env = call_env)
+               call_env = call_env, report = report)
 }
 
 #' Run the sweep schedule of every chain and pool the draws
@@ -254,16 +267,16 @@ new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
 #' @param y The numeric response.
 #' @param seed The resolved seed.
 #' @param chains The number of chains to run.
+#' @param report A progressr progressor.
 #' @return The list `core_finish()` returns.
 #' @noRd
-run_schedule <- function(control, design, y, seed, chains) {
+run_schedule <- function(control, design, y, seed, chains, report) {
   schedule <- control$general_params
   config <- config_json(control)
   thinning <- as.integer(schedule$thinning)
   sweeps <- schedule$burn_in + schedule$draws * thinning
   total <- chains * sweeps
   updates <- progress_updates(control, chains)
-  report <- progressr::progressor(steps = updates)
   emitted <- 0L
   done <- 0L
   # `updates` reports spread evenly over the sweeps of every chain, and the
@@ -280,6 +293,8 @@ run_schedule <- function(control, design, y, seed, chains) {
   }
   samplers <- vector("list", chains)
   for (index in seq_len(chains)) {
+    report(amount = 0, class = "sticky",
+           message = sweep_message(index, chains))
     handle <- core_sampler_new(config, design, y, seed, index - 1L)
     samplers[[index]] <- handle
     completed <- 0L
@@ -297,7 +312,10 @@ run_schedule <- function(control, design, y, seed, chains) {
     }
     done <- done + sweeps
   }
-  core_finish(samplers)
+  report(amount = 0, class = "sticky", message = "pooling the draws")
+  fit <- core_finish(samplers)
+  report(amount = POOLING_WEIGHT * updates)
+  fit
 }
 
 #' Assemble the object the methods return from the core's fit list
@@ -310,11 +328,16 @@ run_schedule <- function(control, design, y, seed, chains) {
 #' @param blueprint The hardhat blueprint, or `NULL` for a matrix fit.
 #' @param response_levels The response's factor levels, or `NULL`.
 #' @param call_env The calling environment to report.
+#' @param report A progressr progressor. The default is a disabled one,
+#'   for a caller with no report of its own to advance.
 #' @return An object of class `"thiessen"`.
 #' @noRd
 assemble_fit <- function(fit, design, y, seed, call, blueprint = NULL,
                          response_levels = NULL,
-                         call_env = rlang::caller_env()) {
+                         call_env = rlang::caller_env(),
+                         report = progressr::progressor(
+                           steps = 1L, enable = FALSE
+                         )) {
   for (warning in fit$warnings) {
     rlang::warn(warning, class = "thiessen_warning")
   }
@@ -347,7 +370,9 @@ assemble_fit <- function(fit, design, y, seed, call, blueprint = NULL,
     ),
     class = "thiessen"
   )
+  report(amount = 0, class = "sticky", message = "summarising the draws")
   fit_object$convergence <- convergence_of(fit_object)
   warn_convergence(fit_object, call = call_env)
+  report()
   fit_object
 }

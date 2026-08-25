@@ -115,8 +115,8 @@ adaptation. `vignette("posterior")` runs each of them.
 `saveRDS()` writes a fit and a later session reads it and predicts the
 same values; the sampler state travels in the object.
 
-Progress over the sweep schedule is signalled with progressr, so
-nothing is printed until a session chooses a handler:
+Progress over the whole fit is signalled with progressr, so nothing is
+printed until a session chooses a handler:
 
 ``` r
 progressr::handlers(global = TRUE)
@@ -124,7 +124,9 @@ progressr::handlers("txtprogressbar")
 fit <- thiessen(x, y, seed = 1)
 ```
 
-Reporting does not change the draws.
+The sweeps, pooling the draws and the convergence summary each report,
+so the bar stands until the fit is complete. Reporting does not change
+the draws.
 
 ## Covariate scaling
 
