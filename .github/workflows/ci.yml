@@ -203,10 +203,23 @@ jobs:
   # not its own: the comparison is of the library, so the harness has to be
   # held fixed, and a pull request that adds a benchmark has no counterpart
   # at the base to run.
+  #
+  # The comparison table goes to the run summary and to one comment on the
+  # pull request, edited in place on each push, whether or not the gate
+  # trips.
   perf-instructions:
     name: perf-instructions
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    # One target directory for both runs. gungraun keeps its output under
+    # `$CARGO_TARGET_DIR/gungraun`, and `bench/` is its own workspace, so
+    # without this the base revision's baseline and the pull request's run
+    # land in different directories and nothing is compared.
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       # Full history; the base revision is not in a shallow clone.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -248,20 +261,37 @@ jobs:
             ${{ github.event.pull_request.base.sha }}
           rm -rf "${{ runner.temp }}/base/bench"
           cp -r bench "${{ runner.temp }}/base/bench"
-      # One target directory for both runs, so the baseline the base
-      # revision saves is the one the pull request's run compares against.
       - if: steps.paths.outputs.hit == 'true'
         working-directory: ${{ runner.temp }}/base
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target
         run: |
           cargo bench --manifest-path bench/Cargo.toml \
             --bench instructions -- --save-baseline=base
-      # Fails on a soft-limit breach; the limits are in the bench file.
+      # Exits non-zero on a soft-limit breach; the limits are in the bench
+      # file. The outcome is read after the table is posted, so a breach
+      # is readable on the pull request. Summaries left by a cached target
+      # directory are removed first so only this run's benchmarks are read.
+      - id: bench
+        if: steps.paths.outputs.hit == 'true'
+        continue-on-error: true
+        run: |
+          find "$CARGO_TARGET_DIR/gungraun" -name summary.json -delete
+          cargo bench --manifest-path bench/Cargo.toml \
+            --bench instructions -- --baseline=base --save-summary=json
       - if: steps.paths.outputs.hit == 'true'
         run: |
-          cargo bench --manifest-path bench/Cargo.toml \
-            --bench instructions -- --baseline=base
+          python3 tools/perf-instructions-table.py "$CARGO_TARGET_DIR/gungraun" \
+            > perf-instructions.md
+          cat perf-instructions.md >> "$GITHUB_STEP_SUMMARY"
+      - if: steps.paths.outputs.hit == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tools/perf-instructions-comment.sh \
+            ${{ github.event.pull_request.number }} perf-instructions.md
+      - if: steps.paths.outputs.hit == 'true' && steps.bench.outcome == 'failure'
+        run: |
+          echo "instruction counts breached a soft limit; see the table" >&2
+          exit 1
 
   # The benchmark suite: the scorecard of every shipped model at the fixed
   # cells, compared against the committed reference. The gate reads only
@@ -282,10 +312,7 @@ jobs:
           hit=${{ github.event_name == 'workflow_dispatch' }}
           if [ "${{ github.event_name }}" = pull_request ] && git diff --name-only \
             ${{ github.event.pull_request.base.sha }}...HEAD -- \
-            crates/thiessen/src/sampler.rs \
-            crates/thiessen/src/moves.rs \
-            crates/thiessen/src/cells.rs \
-            crates/thiessen/src/outcome.rs \
+            'crates/thiessen/src/*' \
             'crates/thiessen/src/models/*' \
             bench benchmarks/suite | grep -q .; then
             hit=true
