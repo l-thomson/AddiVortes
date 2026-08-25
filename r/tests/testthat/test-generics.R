@@ -50,7 +50,7 @@ test_that("the sigma draws are the core's", {
 
   draws <- posterior::as_draws_df(fit)
 
-  expect_identical(as.double(draws$sigma), core_sigma(fit$state))
+  expect_identical(as.double(draws$sigma), core_sigma(fit_state(fit)))
 })
 
 test_that("the draws array has one chain", {

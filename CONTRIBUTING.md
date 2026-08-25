@@ -103,6 +103,12 @@ Refresh one at a release, or before a snapshot regeneration, by
 dispatching the CI workflow with the sizes and repetitions wanted and
 committing the scorecard artefact it uploads.
 
+Comparisons against other implementations (upstream AddiVortes, dbarts,
+BART, stochtree, an XGBoost baseline) live under
+`benchmarks/comparators/` and run by hand at releases, never in CI;
+[benchmarks/comparators/README.md](benchmarks/comparators/README.md) has
+the commands, the pinned environments and the claim policy.
+
 ## Reproducibility and snapshots
 
 The reproducibility contract is in the crate-root documentation

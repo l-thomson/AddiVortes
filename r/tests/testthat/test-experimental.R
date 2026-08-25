@@ -54,7 +54,10 @@ test_that("a gated field fails to deserialise in the core", {
 test_that("a saved fit naming a gated model fails to load", {
   fixture <- small_fixture()
   fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
-  fit$state <- sub('"gaussian"', '"soft"', fit$state, fixed = TRUE)
+  fit$state$payload <- swap_payload_name(
+    fit$state$payload, "gaussian", "robust_t"
+  )
+  fit <- unserialize(serialize(fit, NULL))
 
   expect_error(predict(fit), class = "thiessen_error")
 })

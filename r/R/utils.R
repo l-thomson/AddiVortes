@@ -24,6 +24,25 @@ core_call <- function(expr, call = rlang::caller_env()) {
   )
 }
 
+#' The live fitted-state pointer of a fit
+#'
+#' The state lives on the Rust side behind an external pointer, which
+#' `readRDS` deserialises with a null address. The pointer sits in an
+#' environment, so restoring it from the payload once serves every copy of
+#' the fit in the session.
+#'
+#' @param object An object of class `"thiessen"`.
+#' @param call The calling environment to report.
+#' @return An external pointer to the fitted state.
+#' @noRd
+fit_state <- function(object, call = rlang::caller_env()) {
+  state <- object$state
+  if (!core_state_is_live(state$handle)) {
+    state$handle <- core_call(core_state_restore(state$payload), call = call)
+  }
+  state$handle
+}
+
 #' Resolve the seed of a fit
 #'
 #' `NULL` draws from R's stream, so `set.seed` governs. An integer passes

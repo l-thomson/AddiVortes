@@ -32,24 +32,32 @@ core_defaults <- function() .Call(wrap__core_defaults)
 
 core_validate <- function(config_json) .Call(wrap__core_validate, config_json)
 
-core_predict <- function(state_json, x) .Call(wrap__core_predict, state_json, x)
+core_state_is_live <- function(state) .Call(wrap__core_state_is_live, state)
 
-core_predict_draws <- function(state_json, x, kind) {
-  .Call(wrap__core_predict_draws, state_json, x, kind)
+core_state_payload <- function(state) .Call(wrap__core_state_payload, state)
+
+core_state_restore <- function(payload) {
+  .Call(wrap__core_state_restore, payload)
 }
 
-core_interval <- function(state_json, x, kind, level) {
-  .Call(wrap__core_interval, state_json, x, kind, level)
+core_predict <- function(state, x) .Call(wrap__core_predict, state, x)
+
+core_predict_draws <- function(state, x, kind) {
+  .Call(wrap__core_predict_draws, state, x, kind)
 }
 
-core_sigma <- function(state_json) .Call(wrap__core_sigma, state_json)
-
-core_log_lik <- function(state_json, x, y) {
-  .Call(wrap__core_log_lik, state_json, x, y)
+core_interval <- function(state, x, kind, level) {
+  .Call(wrap__core_interval, state, x, kind, level)
 }
 
-core_diagnostics <- function(state_json) {
-  .Call(wrap__core_diagnostics, state_json)
+core_sigma <- function(state) .Call(wrap__core_sigma, state)
+
+core_log_lik <- function(state, x, y) {
+  .Call(wrap__core_log_lik, state, x, y)
+}
+
+core_diagnostics <- function(state) {
+  .Call(wrap__core_diagnostics, state)
 }
 
 core_sampler_new <- function(config_json, x, y, seed_value, chain) {

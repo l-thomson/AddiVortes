@@ -16,8 +16,11 @@ crate-type = ["staticlib"]
 
 [dependencies]
 extendr-api = "0.9"
-# `float_roundtrip` so a fit written by `saveRDS` reloads bit-exact; the
-# default parser is accurate to within one ULP, which moves the draws.
+# The fitted state persists as MessagePack with field names, so a double
+# survives bit for bit and the serde field names still guard evolution.
+rmp-serde = "1.3"
+# `float_roundtrip` so a configuration value parses to the nearest double;
+# the default parser is accurate to within one ULP, which moves the draws.
 serde_json = { version = "1.0.100", features = ["float_roundtrip"] }
 thiessen = { path = "core" }
 

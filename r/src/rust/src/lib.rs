@@ -1,12 +1,14 @@
 //! extendr bindings over the `thiessen` core: the configuration as JSON,
-//! the design as an R matrix, and the fitted model as the JSON of its serde
-//! representation.
+//! the design as an R matrix, and the fitted model as a live handle behind
+//! an external pointer.
 //!
 //! The configuration crosses the boundary as JSON so that the core's serde
 //! representation stays the single definition of the field names, their
-//! defaults and their validation. The fitted model crosses the same way, so
-//! an R fit is a plain R object that `saveRDS` writes and a later session
-//! reads.
+//! defaults and their validation. The fitted model stays on the Rust side:
+//! methods take the handle, and the state is encoded to bytes only for
+//! persistence, as MessagePack with field names, so the serde
+//! representation stays the single definition there too. A double survives
+//! the byte encoding bit for bit, which text cannot promise.
 
 use extendr_api::prelude::*;
 use extendr_api::Result;
@@ -24,8 +26,10 @@ fn config(json: &str) -> Result<thiessen::Config> {
     serde_json::from_str(json).map_err(json_error)
 }
 
-fn state(json: &str) -> Result<thiessen::Fitted> {
-    serde_json::from_str(json).map_err(json_error)
+/// The fitted model, alive behind an external pointer. R releases it
+/// through the pointer's finalizer.
+struct FittedHandle {
+    inner: thiessen::Fitted,
 }
 
 /// The design in row-major order; `RMatrix::data` is column-major.
@@ -81,17 +85,45 @@ fn core_validate(config_json: &str) -> Result<()> {
     config(config_json)?.validate().map_err(core_error)
 }
 
+/// Whether `state` is a fitted-model pointer with a live address. A
+/// pointer read back by `readRDS` deserialises with a null address, so a
+/// caller checks here and restores from the payload before using it.
+#[extendr]
+fn core_state_is_live(state: Robj) -> bool {
+    <&ExternalPtr<FittedHandle>>::try_from(&state).is_ok()
+}
+
+/// The fitted state as bytes, for persistence.
+#[extendr]
+fn core_state_payload(state: ExternalPtr<FittedHandle>) -> Result<Raw> {
+    let bytes = rmp_serde::encode::to_vec_named(&state.inner)
+        .map_err(|error| Error::Other(error.to_string()))?;
+    Ok(Raw::from_bytes(&bytes))
+}
+
+/// A live fitted-model pointer from the bytes of `core_state_payload`.
+#[extendr]
+fn core_state_restore(payload: &[u8]) -> Result<ExternalPtr<FittedHandle>> {
+    let inner: thiessen::Fitted =
+        rmp_serde::from_slice(payload).map_err(|error| Error::Other(error.to_string()))?;
+    Ok(ExternalPtr::new(FittedHandle { inner }))
+}
+
 /// The posterior mean at each row of `x`.
 #[extendr]
-fn core_predict(state_json: &str, x: RMatrix<f64>) -> Result<Vec<f64>> {
-    state(state_json)?.predict(&design(&x)?).map_err(core_error)
+fn core_predict(state: ExternalPtr<FittedHandle>, x: RMatrix<f64>) -> Result<Vec<f64>> {
+    state.inner.predict(&design(&x)?).map_err(core_error)
 }
 
 /// Per-draw predictions: `kind` selects the quantity of `predict`, the mean
 /// function, or the variance of y given f.
 #[extendr]
-fn core_predict_draws(state_json: &str, x: RMatrix<f64>, kind: &str) -> Result<RMatrix<f64>> {
-    let fitted = state(state_json)?;
+fn core_predict_draws(
+    state: ExternalPtr<FittedHandle>,
+    x: RMatrix<f64>,
+    kind: &str,
+) -> Result<RMatrix<f64>> {
+    let fitted = &state.inner;
     let data = design(&x)?;
     let draws = match kind {
         "draws" => fitted.predict_draws(&data),
@@ -106,12 +138,12 @@ fn core_predict_draws(state_json: &str, x: RMatrix<f64>, kind: &str) -> Result<R
 /// Central credible or posterior predictive interval, `n_rows` by 2.
 #[extendr]
 fn core_interval(
-    state_json: &str,
+    state: ExternalPtr<FittedHandle>,
     x: RMatrix<f64>,
     kind: &str,
     level: f64,
 ) -> Result<RMatrix<f64>> {
-    let fitted = state(state_json)?;
+    let fitted = &state.inner;
     let data = design(&x)?;
     let intervals = match kind {
         "credible" => fitted.credible_interval(&data, level),
@@ -130,8 +162,13 @@ fn core_interval(
 
 /// Pointwise log-likelihood, one row per draw.
 #[extendr]
-fn core_log_lik(state_json: &str, x: RMatrix<f64>, y: &[f64]) -> Result<RMatrix<f64>> {
-    let draws = state(state_json)?
+fn core_log_lik(
+    state: ExternalPtr<FittedHandle>,
+    x: RMatrix<f64>,
+    y: &[f64],
+) -> Result<RMatrix<f64>> {
+    let draws = state
+        .inner
         .log_likelihood(&design(&x)?, y)
         .map_err(core_error)?;
     Ok(draw_matrix(&draws))
@@ -139,14 +176,14 @@ fn core_log_lik(state_json: &str, x: RMatrix<f64>, y: &[f64]) -> Result<RMatrix<
 
 /// sigma per kept draw; empty outside the Gaussian model.
 #[extendr]
-fn core_sigma(state_json: &str) -> Result<Vec<f64>> {
-    Ok(state(state_json)?.sigma())
+fn core_sigma(state: ExternalPtr<FittedHandle>) -> Result<Vec<f64>> {
+    Ok(state.inner.sigma())
 }
 
 /// The per-draw ensemble summaries and the covariate inclusion shares.
 #[extendr]
-fn core_diagnostics(state_json: &str) -> Result<List> {
-    let fitted = state(state_json)?;
+fn core_diagnostics(state: ExternalPtr<FittedHandle>) -> Result<List> {
+    let fitted = &state.inner;
     Ok(list!(
         cell_count = fitted.cell_counts(),
         dimension_count = fitted.dimension_counts(),
@@ -279,14 +316,14 @@ fn core_finish(samplers: List) -> Result<List> {
     let fitted_values = fitted.predict(&first.data).map_err(core_error)?;
     let warnings: Vec<String> = fitted.warnings().iter().map(ToString::to_string).collect();
     Ok(list!(
-        state = serde_json::to_string(&fitted).map_err(json_error)?,
         config = serde_json::to_string(fitted.config()).map_err(json_error)?,
         model = fitted.model_name().to_string(),
         n_chains = fits.len() as i32,
         n_draws = fitted.n_draws() as i32,
         in_sample_rmse = fitted.in_sample_rmse(),
         warnings = warnings,
-        fitted_values = fitted_values
+        fitted_values = fitted_values,
+        state = ExternalPtr::new(FittedHandle { inner: fitted })
     ))
 }
 
@@ -296,6 +333,9 @@ extendr_module! {
     fn core_experimental;
     fn core_defaults;
     fn core_validate;
+    fn core_state_is_live;
+    fn core_state_payload;
+    fn core_state_restore;
     fn core_predict;
     fn core_predict_draws;
     fn core_interval;

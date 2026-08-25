@@ -29,11 +29,12 @@ convergence_of <- function(object, points = CONVERGENCE_POINTS) {
     return(NULL)
   }
   rows <- monitored_rows(nrow(object$x), points)
+  state <- fit_state(object)
   latent <- core_call(
-    core_predict_draws(object$state, object$x[rows, , drop = FALSE], "latent")
+    core_predict_draws(state, object$x[rows, , drop = FALSE], "latent")
   )
   colnames(latent) <- paste0("mu[", rows, "]")
-  sigma <- core_call(core_sigma(object$state))
+  sigma <- core_call(core_sigma(state))
   if (length(sigma) > 0L) {
     latent <- cbind(sigma = sigma, latent)
   }
