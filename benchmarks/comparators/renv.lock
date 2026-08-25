@@ -1,0 +1,356 @@
+{
+  "R": {
+    "Version": "4.6.1",
+    "Repositories": [
+      {
+        "Name": "CRAN",
+        "URL": "https://cloud.r-project.org"
+      }
+    ]
+  },
+  "Packages": {
+    "AddiVortes": {
+      "Package": "AddiVortes",
+      "Version": "0.6.9",
+      "Source": "Repository",
+      "Title": "(Bayesian) Additive Voronoi Tessellations",
+      "Authors@R": "c(person(\"Adam\", \"Stone\", , \"adam.stone2@durham.ac.uk\", role = c(\"aut\"), comment = c(ORCID = \"0009-0004-0058-6117\")), person(\"John Paul\", \"Gosling\", , \"john-paul.gosling@durham.ac.uk\", role = c(\"aut\", \"cre\"), comment = c(ORCID = \"0000-0002-4072-3022\")), person(\"Andrew\", \"Iskauskas\", ,\"andrew.iskauskas@durham.ac.uk\", role = c(\"aut\"), comment = c(ORCID = \"0000-0003-2825-3651\")))",
+      "Description": "Implements the Bayesian Additive Voronoi Tessellation  model for non-parametric regression and machine learning as introduced in Stone and Gosling (2025) <doi:10.1080/10618600.2024.2414104>. This package provides a flexible alternative to BART (Bayesian Additive  Regression Trees) using Voronoi tessellations instead of trees. Users can  fit Bayesian regression models (estimating the associated posterior  distributions and make predictions. It is particularly useful for spatial data analysis, machine learning regression, complex function approximation  and Bayesian modeling where the underlying structure is unknown. The method  is well-suited to capturing spatial patterns and non-linear relationships.",
+      "License": "GPL (>= 3)",
+      "Encoding": "UTF-8",
+      "Depends": [
+        "R (>= 4.0.0)"
+      ],
+      "Imports": [
+        "parallel",
+        "pbapply (>= 1.6)"
+      ],
+      "Suggests": [
+        "knitr",
+        "rmarkdown",
+        "testthat (>= 3.0.0)",
+        "withr",
+        "xml2"
+      ],
+      "SystemRequirements": "C++20",
+      "Config/testthat/edition": "3",
+      "URL": "https://johnpaulgosling.github.io/AddiVortes/",
+      "VignetteBuilder": "knitr",
+      "BugReports": "https://github.com/johnpaulgosling/AddiVortes/issues",
+      "LazyData": "true",
+      "Config/roxygen2/version": "8.0.0",
+      "RoxygenNote": "7.3.3",
+      "NeedsCompilation": "yes",
+      "Author": "Adam Stone [aut] (ORCID: <https://orcid.org/0009-0004-0058-6117>), John Paul Gosling [aut, cre] (ORCID: <https://orcid.org/0000-0002-4072-3022>), Andrew Iskauskas [aut] (ORCID: <https://orcid.org/0000-0003-2825-3651>)",
+      "Maintainer": "John Paul Gosling <john-paul.gosling@durham.ac.uk>",
+      "Repository": "CRAN"
+    },
+    "BART": {
+      "Package": "BART",
+      "Version": "2.9.10",
+      "Source": "Repository",
+      "Type": "Package",
+      "Title": "Bayesian Additive Regression Trees",
+      "Date": "2026-01-24",
+      "Authors@R": "c(person('Robert', 'McCulloch', role='aut'), person('Rodney', 'Sparapani', role=c('aut', 'cre'),  email='rsparapa@mcw.edu'), person('Robert', 'Gramacy', role='ctb'), person('Matthew', 'Pratola', role='ctb'), person('Charles', 'Spanbauer', role='ctb'), person('Martyn', 'Plummer', role='ctb'),  person('Nicky', 'Best', role='ctb'), person('Kate', 'Cowles', role='ctb'),  person('Karen', 'Vines', role='ctb'))",
+      "Author": "Robert McCulloch [aut], Rodney Sparapani [aut, cre], Robert Gramacy [ctb], Matthew Pratola [ctb], Charles Spanbauer [ctb], Martyn Plummer [ctb], Nicky Best [ctb], Kate Cowles [ctb], Karen Vines [ctb]",
+      "Maintainer": "Rodney Sparapani <rsparapa@mcw.edu>",
+      "Description": "Bayesian Additive Regression Trees (BART) provide flexible nonparametric modeling of covariates for continuous, binary, categorical and time-to-event outcomes.  For more information see Sparapani, Spanbauer and McCulloch <doi:10.18637/jss.v097.i01>.",
+      "License": "GPL (>= 2)",
+      "Depends": [
+        "R (>= 3.6)",
+        "nlme",
+        "survival"
+      ],
+      "Imports": [
+        "Rcpp (>= 0.12.3)",
+        "parallel",
+        "tools"
+      ],
+      "LinkingTo": [
+        "Rcpp"
+      ],
+      "Suggests": [
+        "MASS",
+        "knitr",
+        "rmarkdown",
+        "rpart",
+        "rpart.plot"
+      ],
+      "VignetteBuilder": "knitr",
+      "NeedsCompilation": "yes",
+      "Repository": "CRAN"
+    },
+    "Matrix": {
+      "Package": "Matrix",
+      "Version": "1.7-5",
+      "Source": "Repository",
+      "VersionNote": "do also bump src/version.h, inst/include/Matrix/version.h",
+      "Date": "2026-03-20",
+      "Priority": "recommended",
+      "Title": "Sparse and Dense Matrix Classes and Methods",
+      "Description": "A rich hierarchy of sparse and dense matrix classes, including general, symmetric, triangular, and diagonal matrices with numeric, logical, or pattern entries.  Efficient methods for operating on such matrices, often wrapping the 'BLAS', 'LAPACK', and 'SuiteSparse' libraries.",
+      "License": "GPL (>= 2) | file LICENCE",
+      "URL": "https://Matrix.R-forge.R-project.org",
+      "BugReports": "https://R-forge.R-project.org/tracker/?atid=294&group_id=61",
+      "Contact": "Matrix-authors@R-project.org",
+      "Authors@R": "c(person(\"Douglas\", \"Bates\", role = \"aut\", comment = c(ORCID = \"0000-0001-8316-9503\")), person(\"Martin\", \"Maechler\", role = c(\"aut\", \"cre\"), email = \"mmaechler+Matrix@gmail.com\", comment = c(ORCID = \"0000-0002-8685-9910\")), person(\"Mikael\", \"Jagan\", role = \"aut\", comment = c(ORCID = \"0000-0002-3542-2938\")), person(\"Timothy A.\", \"Davis\", role = \"ctb\", comment = c(ORCID = \"0000-0001-7614-6899\", \"SuiteSparse libraries\", \"collaborators listed in dir(system.file(\\\"doc\\\", \\\"SuiteSparse\\\", package=\\\"Matrix\\\"), pattern=\\\"License\\\", full.names=TRUE, recursive=TRUE)\")), person(\"George\", \"Karypis\", role = \"ctb\", comment = c(ORCID = \"0000-0003-2753-1437\", \"METIS library\", \"Copyright: Regents of the University of Minnesota\")), person(\"Jason\", \"Riedy\", role = \"ctb\", comment = c(ORCID = \"0000-0002-4345-4200\", \"GNU Octave's condest() and onenormest()\", \"Copyright: Regents of the University of California\")), person(\"Jens\", \"Oehlschlägel\", role = \"ctb\", comment = \"initial nearPD()\"), person(\"R Core Team\", role = \"ctb\", comment = c(ROR = \"02zz1nj61\", \"base R's matrix implementation\")))",
+      "Depends": [
+        "R (>= 4.4)",
+        "methods"
+      ],
+      "Imports": [
+        "grDevices",
+        "graphics",
+        "grid",
+        "lattice",
+        "stats",
+        "utils"
+      ],
+      "Suggests": [
+        "MASS",
+        "datasets",
+        "sfsmisc",
+        "tools"
+      ],
+      "Enhances": [
+        "SparseM",
+        "graph"
+      ],
+      "LazyData": "no",
+      "LazyDataNote": "not possible, since we use data/*.R and our S4 classes",
+      "BuildResaveData": "no",
+      "Encoding": "UTF-8",
+      "NeedsCompilation": "yes",
+      "Author": "Douglas Bates [aut] (ORCID: <https://orcid.org/0000-0001-8316-9503>), Martin Maechler [aut, cre] (ORCID: <https://orcid.org/0000-0002-8685-9910>), Mikael Jagan [aut] (ORCID: <https://orcid.org/0000-0002-3542-2938>), Timothy A. Davis [ctb] (ORCID: <https://orcid.org/0000-0001-7614-6899>, SuiteSparse libraries, collaborators listed in dir(system.file(\"doc\", \"SuiteSparse\", package=\"Matrix\"), pattern=\"License\", full.names=TRUE, recursive=TRUE)), George Karypis [ctb] (ORCID: <https://orcid.org/0000-0003-2753-1437>, METIS library, Copyright: Regents of the University of Minnesota), Jason Riedy [ctb] (ORCID: <https://orcid.org/0000-0002-4345-4200>, GNU Octave's condest() and onenormest(), Copyright: Regents of the University of California), Jens Oehlschlägel [ctb] (initial nearPD()), R Core Team [ctb] (ROR: <https://ror.org/02zz1nj61>, base R's matrix implementation)",
+      "Maintainer": "Martin Maechler <mmaechler+Matrix@gmail.com>",
+      "Repository": "CRAN"
+    },
+    "Rcpp": {
+      "Package": "Rcpp",
+      "Version": "1.1.2",
+      "Source": "Repository",
+      "Title": "Seamless R and C++ Integration",
+      "Date": "2026-07-01",
+      "Authors@R": "c(person(\"Dirk\", \"Eddelbuettel\", role = c(\"aut\", \"cre\"), email = \"edd@debian.org\", comment = c(ORCID = \"0000-0001-6419-907X\")), person(\"Romain\", \"Francois\", role = \"aut\", comment = c(ORCID = \"0000-0002-2444-4226\")), person(\"JJ\", \"Allaire\", role = \"aut\", comment = c(ORCID = \"0000-0003-0174-9868\")), person(\"Kevin\", \"Ushey\", role = \"aut\", comment = c(ORCID = \"0000-0003-2880-7407\")), person(\"Qiang\", \"Kou\", role = \"aut\", comment = c(ORCID = \"0000-0001-6786-5453\")), person(\"Nathan\", \"Russell\", role = \"aut\"), person(\"Iñaki\", \"Ucar\", role = \"aut\", comment = c(ORCID = \"0000-0001-6403-5550\")), person(\"Doug\", \"Bates\", role = \"aut\", comment = c(ORCID = \"0000-0001-8316-9503\")), person(\"John\", \"Chambers\", role = \"aut\"))",
+      "Description": "The 'Rcpp' package provides R functions as well as C++ classes which offer a seamless integration of R and C++. Many R data types and objects can be mapped back and forth to C++ equivalents which facilitates both writing of new code as well as easier integration of third-party libraries. Documentation about 'Rcpp' is provided by several vignettes included in this package, via the 'Rcpp Gallery' site at <https://gallery.rcpp.org>, the paper by Eddelbuettel and Francois (2011, <doi:10.18637/jss.v040.i08>), the book by Eddelbuettel (2013, <doi:10.1007/978-1-4614-6868-4>) and the paper by Eddelbuettel and Balamuta (2018, <doi:10.1080/00031305.2017.1375990>); see 'citation(\"Rcpp\")' for details.",
+      "Depends": [
+        "R (>= 3.5.0)"
+      ],
+      "Imports": [
+        "methods",
+        "utils"
+      ],
+      "Suggests": [
+        "tinytest",
+        "inline",
+        "rbenchmark",
+        "pkgKitten (>= 0.1.2)"
+      ],
+      "URL": "https://www.rcpp.org, https://dirk.eddelbuettel.com/code/rcpp.html, https://github.com/RcppCore/Rcpp",
+      "License": "GPL (>= 2)",
+      "BugReports": "https://github.com/RcppCore/Rcpp/issues",
+      "RoxygenNote": "6.1.1",
+      "Encoding": "UTF-8",
+      "VignetteBuilder": "Rcpp",
+      "NeedsCompilation": "yes",
+      "Author": "Dirk Eddelbuettel [aut, cre] (ORCID: <https://orcid.org/0000-0001-6419-907X>), Romain Francois [aut] (ORCID: <https://orcid.org/0000-0002-2444-4226>), JJ Allaire [aut] (ORCID: <https://orcid.org/0000-0003-0174-9868>), Kevin Ushey [aut] (ORCID: <https://orcid.org/0000-0003-2880-7407>), Qiang Kou [aut] (ORCID: <https://orcid.org/0000-0001-6786-5453>), Nathan Russell [aut], Iñaki Ucar [aut] (ORCID: <https://orcid.org/0000-0001-6403-5550>), Doug Bates [aut] (ORCID: <https://orcid.org/0000-0001-8316-9503>), John Chambers [aut]",
+      "Maintainer": "Dirk Eddelbuettel <edd@debian.org>",
+      "Repository": "RSPM"
+    },
+    "dbarts": {
+      "Package": "dbarts",
+      "Version": "0.9-34",
+      "Source": "Repository",
+      "Date": "2026-08-20",
+      "Title": "Discrete Bayesian Additive Regression Trees Sampler",
+      "Authors@R": "c( person(\"Vincent\", \"Dorie\", role = c(\"aut\", \"cre\"), email = \"vdorie@gmail.com\", comment = c(ORCID = \"0000-0002-9576-3064\")), person(\"Hugh\", \"Chipman\", role = \"aut\", email = \"hugh.chipman@gmail.com\"), person(\"Robert\", \"McCulloch\", role = \"aut\", email = \"robert.mcculloch1@gmail.com\"), person(\"Armon\", \"Dadgar\", role = \"ctb\", comment = \"adaptive radix tree\"), person(\"R Core Team\", role = \"ctb\", comment = \"basis of RNG\"), person(\"Guido U\", \"Draheim\", role = \"ctb\", comment = \"ax_check_compile_flag.m4\"), person(\"Maarten\", \"Bosmans\", role = \"ctb\", comment = \"ax_check_compile_flag.m4\"), person(\"Christophe\", \"Tournayre\", role = \"ctb\", comment = \"ax_compiler_ext.m4, ax_ext.m4\"), person(\"Michael\", \"Petch\", role = \"ctb\", comment = \"ax_compiler_ext.m4, ax_ext.m4, ax_gcc_x86_avx_xgetbv.m4, ax_gcc_x86_cpuid.m4\"), person(\"Rafael\", \"de Lucena Valle\", role = \"ctb\", comment = \"ax_compiler_ext.m4, ax_ext.m4\"), person(\"Steven G.\", \"Johnson\", role = \"ctb\", comment = c(\"ax_compiler_vendor.m4, ax_gcc_x86_cpuid.m4, ax_pthread.m4\", ORCID = \"0000-0001-7327-4967\")), person(\"Matteo\", \"Frigo\", role = \"ctb\", comment = \"ax_compiler_vendor.m4, ax_gcc_x86_cpuid.m4\"), person(\"John\", \"Zaitseff\", role = \"ctb\", comment = \"ax_compiler_vendor.m4\"), person(\"Todd\", \"Veldhuizen\", role = \"ctb\", comment = \"ax_cxx_namespace_std.m4\"), person(\"Luc\", \"Maisonobe\", role = \"ctb\", comment = \"ax_cxx_namespace_std.m4\"), person(\"Scott\", \"Pakin\", role = \"ctb\", comment = c(\"ax_func_posix_memalign.m4\", ORCID = \"0000-0002-5220-1985\")), person(\"Daniel\", \"Richard G.\", role = \"ctb\", comment = \"ax_pthread.m4\"))",
+      "Depends": [
+        "R (>= 3.1-0)"
+      ],
+      "Imports": [
+        "stats",
+        "methods",
+        "graphics",
+        "parallel"
+      ],
+      "Suggests": [
+        "knitr",
+        "rmarkdown",
+        "tinytest"
+      ],
+      "VignetteBuilder": "knitr, rmarkdown",
+      "Config/Needs/check": "rcmdcheck",
+      "Config/Needs/dev": "lintr, languageserver",
+      "Description": "Fits Bayesian additive regression trees (BART; Chipman, George, and McCulloch (2010) <doi:10.1214/09-AOAS285>) while allowing the updating of predictors or response so that BART can be incorporated as a conditional model in a Gibbs/Metropolis-Hastings sampler. Also serves as a drop-in replacement for package 'BayesTree'.",
+      "License": "GPL (>= 2)",
+      "NeedsCompilation": "yes",
+      "Biarch": "yes",
+      "URL": "https://github.com/vdorie/dbarts",
+      "BugReports": "https://github.com/vdorie/dbarts/issues",
+      "Author": "Vincent Dorie [aut, cre] (ORCID: <https://orcid.org/0000-0002-9576-3064>), Hugh Chipman [aut], Robert McCulloch [aut], Armon Dadgar [ctb] (adaptive radix tree), R Core Team [ctb] (basis of RNG), Guido U Draheim [ctb] (ax_check_compile_flag.m4), Maarten Bosmans [ctb] (ax_check_compile_flag.m4), Christophe Tournayre [ctb] (ax_compiler_ext.m4, ax_ext.m4), Michael Petch [ctb] (ax_compiler_ext.m4, ax_ext.m4, ax_gcc_x86_avx_xgetbv.m4, ax_gcc_x86_cpuid.m4), Rafael de Lucena Valle [ctb] (ax_compiler_ext.m4, ax_ext.m4), Steven G. Johnson [ctb] (ax_compiler_vendor.m4, ax_gcc_x86_cpuid.m4, ax_pthread.m4, ORCID: <https://orcid.org/0000-0001-7327-4967>), Matteo Frigo [ctb] (ax_compiler_vendor.m4, ax_gcc_x86_cpuid.m4), John Zaitseff [ctb] (ax_compiler_vendor.m4), Todd Veldhuizen [ctb] (ax_cxx_namespace_std.m4), Luc Maisonobe [ctb] (ax_cxx_namespace_std.m4), Scott Pakin [ctb] (ax_func_posix_memalign.m4, ORCID: <https://orcid.org/0000-0002-5220-1985>), Daniel Richard G. [ctb] (ax_pthread.m4)",
+      "Maintainer": "Vincent Dorie <vdorie@gmail.com>",
+      "Repository": "CRAN"
+    },
+    "jsonlite": {
+      "Package": "jsonlite",
+      "Version": "2.0.0",
+      "Source": "Repository",
+      "Title": "A Simple and Robust JSON Parser and Generator for R",
+      "License": "MIT + file LICENSE",
+      "Depends": [
+        "methods"
+      ],
+      "Authors@R": "c( person(\"Jeroen\", \"Ooms\", role = c(\"aut\", \"cre\"), email = \"jeroenooms@gmail.com\", comment = c(ORCID = \"0000-0002-4035-0289\")), person(\"Duncan\", \"Temple Lang\", role = \"ctb\"), person(\"Lloyd\", \"Hilaiel\", role = \"cph\", comment=\"author of bundled libyajl\"))",
+      "URL": "https://jeroen.r-universe.dev/jsonlite https://arxiv.org/abs/1403.2805",
+      "BugReports": "https://github.com/jeroen/jsonlite/issues",
+      "Maintainer": "Jeroen Ooms <jeroenooms@gmail.com>",
+      "VignetteBuilder": "knitr, R.rsp",
+      "Description": "A reasonably fast JSON parser and generator, optimized for statistical  data and the web. Offers simple, flexible tools for working with JSON in R, and is particularly powerful for building pipelines and interacting with a web API.  The implementation is based on the mapping described in the vignette (Ooms, 2014). In addition to converting JSON data from/to R objects, 'jsonlite' contains  functions to stream, validate, and prettify JSON data. The unit tests included  with the package verify that all edge cases are encoded and decoded consistently  for use with dynamic data in systems and applications.",
+      "Suggests": [
+        "httr",
+        "vctrs",
+        "testthat",
+        "knitr",
+        "rmarkdown",
+        "R.rsp",
+        "sf"
+      ],
+      "RoxygenNote": "7.3.2",
+      "Encoding": "UTF-8",
+      "NeedsCompilation": "yes",
+      "Author": "Jeroen Ooms [aut, cre] (<https://orcid.org/0000-0002-4035-0289>), Duncan Temple Lang [ctb], Lloyd Hilaiel [cph] (author of bundled libyajl)",
+      "Repository": "CRAN"
+    },
+    "lattice": {
+      "Package": "lattice",
+      "Version": "0.22-9",
+      "Source": "Repository",
+      "Date": "2026-02-03",
+      "Priority": "recommended",
+      "Title": "Trellis Graphics for R",
+      "Authors@R": "c(person(\"Deepayan\", \"Sarkar\", role = c(\"aut\", \"cre\"), email = \"deepayan.sarkar@r-project.org\", comment = c(ORCID = \"0000-0003-4107-1553\")), person(\"Felix\", \"Andrews\", role = \"ctb\"), person(\"Kevin\", \"Wright\", role = \"ctb\", comment = \"documentation\"), person(\"Neil\", \"Klepeis\", role = \"ctb\"), person(\"Johan\", \"Larsson\", role = \"ctb\", comment = \"miscellaneous improvements\"), person(\"Zhijian (Jason)\", \"Wen\", role = \"cph\", comment = \"filled contour code\"), person(\"Paul\", \"Murrell\", role = \"ctb\", email = \"paul@stat.auckland.ac.nz\"), person(\"Stefan\", \"Eng\", role = \"ctb\", comment = \"violin plot improvements\"), person(\"Achim\", \"Zeileis\", role = \"ctb\", comment = \"modern colors\"), person(\"Alexandre\", \"Courtiol\", role = \"ctb\", comment = \"generics for larrows, lpolygon, lrect and lsegments\") )",
+      "Description": "A powerful and elegant high-level data visualization system inspired by Trellis graphics, with an emphasis on multivariate data. Lattice is sufficient for typical graphics needs, and is also flexible enough to handle most nonstandard requirements. See ?Lattice for an introduction.",
+      "Depends": [
+        "R (>= 4.0.0)"
+      ],
+      "Suggests": [
+        "KernSmooth",
+        "MASS",
+        "latticeExtra",
+        "colorspace"
+      ],
+      "Imports": [
+        "grid",
+        "grDevices",
+        "graphics",
+        "stats",
+        "utils"
+      ],
+      "Enhances": [
+        "chron",
+        "zoo"
+      ],
+      "LazyLoad": "yes",
+      "LazyData": "yes",
+      "License": "GPL (>= 2)",
+      "URL": "https://lattice.r-forge.r-project.org/",
+      "BugReports": "https://github.com/deepayan/lattice/issues",
+      "NeedsCompilation": "yes",
+      "Author": "Deepayan Sarkar [aut, cre] (ORCID: <https://orcid.org/0000-0003-4107-1553>), Felix Andrews [ctb], Kevin Wright [ctb] (documentation), Neil Klepeis [ctb], Johan Larsson [ctb] (miscellaneous improvements), Zhijian (Jason) Wen [cph] (filled contour code), Paul Murrell [ctb], Stefan Eng [ctb] (violin plot improvements), Achim Zeileis [ctb] (modern colors), Alexandre Courtiol [ctb] (generics for larrows, lpolygon, lrect and lsegments)",
+      "Maintainer": "Deepayan Sarkar <deepayan.sarkar@r-project.org>",
+      "Repository": "CRAN"
+    },
+    "nlme": {
+      "Package": "nlme",
+      "Version": "3.1-170",
+      "Source": "Repository",
+      "Date": "2026-07-15",
+      "Priority": "recommended",
+      "Title": "Linear and Nonlinear Mixed Effects Models",
+      "Authors@R": "c(person(\"José\", \"Pinheiro\", role = \"aut\", comment = \"S version\"), person(\"Douglas\", \"Bates\", role = \"aut\", comment = \"up to 2007\"), person(\"Saikat\", \"DebRoy\", role = \"ctb\", comment = \"up to 2002\"), person(\"Deepayan\", \"Sarkar\", role = \"ctb\", comment = \"up to 2005\"), person(\"EISPACK authors\", role = \"ctb\", comment = \"src/rs.f\"), person(\"Siem\", \"Heisterkamp\", role = \"ctb\", comment = \"Author fixed sigma\"), person(\"Bert\", \"Van Willigen\",role = \"ctb\", comment = \"Programmer fixed sigma\"), person(\"Johannes\", \"Ranke\", role = \"ctb\", comment = \"varConstProp()\"), person(\"R Core Team\", email = \"R-core@R-project.org\", role = c(\"aut\", \"cre\"), comment = c(ROR = \"02zz1nj61\")))",
+      "Contact": "see 'MailingList'",
+      "Description": "Fit and compare Gaussian linear and nonlinear mixed-effects models.",
+      "Depends": [
+        "R (>= 3.6.0)"
+      ],
+      "Imports": [
+        "graphics",
+        "stats",
+        "utils",
+        "lattice"
+      ],
+      "Suggests": [
+        "MASS"
+      ],
+      "LazyData": "yes",
+      "Encoding": "UTF-8",
+      "License": "GPL (>= 2)",
+      "BugReports": "https://bugs.r-project.org",
+      "MailingList": "R-help@r-project.org",
+      "URL": "https://svn.r-project.org/R-packages/trunk/nlme/",
+      "NeedsCompilation": "yes",
+      "Author": "José Pinheiro [aut] (S version), Douglas Bates [aut] (up to 2007), Saikat DebRoy [ctb] (up to 2002), Deepayan Sarkar [ctb] (up to 2005), EISPACK authors [ctb] (src/rs.f), Siem Heisterkamp [ctb] (Author fixed sigma), Bert Van Willigen [ctb] (Programmer fixed sigma), Johannes Ranke [ctb] (varConstProp()), R Core Team [aut, cre] (ROR: <https://ror.org/02zz1nj61>)",
+      "Maintainer": "R Core Team <R-core@R-project.org>",
+      "Repository": "CRAN"
+    },
+    "pbapply": {
+      "Package": "pbapply",
+      "Version": "1.7-4",
+      "Source": "Repository",
+      "Type": "Package",
+      "Title": "Adding Progress Bar to '*apply' Functions",
+      "Date": "2025-07-19",
+      "Authors@R": "c(person(given = \"Peter\", family = \"Solymos\", comment = c(ORCID = \"0000-0001-7337-1740\"), role = c(\"aut\", \"cre\"), email = \"psolymos@gmail.com\"), person(given = \"Zygmunt\", family = \"Zawadzki\", role = \"aut\", email = \"zygmunt@zstat.pl\"), person(given = \"Henrik\",  family = \"Bengtsson\",  role = \"ctb\", email = \"henrikb@braju.com\"), person(\"R Core Team\", role = c(\"cph\", \"ctb\")))",
+      "Maintainer": "Peter Solymos <psolymos@gmail.com>",
+      "Description": "A lightweight package that adds progress bar to vectorized R functions ('*apply'). The implementation can easily be added to functions where showing the progress is useful (e.g. bootstrap). The type and style of the progress bar (with percentages or remaining time) can be set through options. Supports several parallel processing backends including mirai and future.",
+      "Depends": [
+        "R (>= 3.2.0)"
+      ],
+      "Imports": [
+        "parallel"
+      ],
+      "Suggests": [
+        "shiny",
+        "future",
+        "future.apply"
+      ],
+      "License": "GPL (>= 2)",
+      "URL": "https://github.com/psolymos/pbapply, https://peter.solymos.org/pbapply/",
+      "BugReports": "https://github.com/psolymos/pbapply/issues",
+      "NeedsCompilation": "no",
+      "Author": "Peter Solymos [aut, cre] (ORCID: <https://orcid.org/0000-0001-7337-1740>), Zygmunt Zawadzki [aut], Henrik Bengtsson [ctb], R Core Team [cph, ctb]",
+      "Repository": "CRAN"
+    },
+    "survival": {
+      "Package": "survival",
+      "Version": "3.8-9",
+      "Source": "Repository",
+      "Title": "Survival Analysis",
+      "Priority": "recommended",
+      "Date": "2026-07-07",
+      "Depends": [
+        "R (>= 4.1.0)"
+      ],
+      "Imports": [
+        "graphics",
+        "Matrix",
+        "methods",
+        "splines",
+        "stats",
+        "utils"
+      ],
+      "LazyData": "Yes",
+      "LazyDataCompression": "xz",
+      "ByteCompile": "Yes",
+      "Authors@R": "c(person(c(\"Terry\", \"M\"), \"Therneau\", email=\"terry.therneau@proton.me\", role=c(\"aut\", \"cre\")), person(\"Thomas\", \"Lumley\", role=c(\"ctb\", \"trl\"), comment=\"original S->R port and R maintainer until 2009\"), person(\"Atkinson\", \"Elizabeth\", role=\"ctb\"), person(\"Crowson\", \"Cynthia\", role=\"ctb\"))",
+      "Description": "Contains the core survival analysis routines, including definition of Surv objects,  Kaplan-Meier and Aalen-Johansen (multi-state) curves, Cox models, and parametric accelerated failure time models.",
+      "License": "LGPL (>= 2)",
+      "URL": "https://github.com/therneau/survival",
+      "NeedsCompilation": "yes",
+      "Author": "Terry M Therneau [aut, cre], Thomas Lumley [ctb, trl] (original S->R port and R maintainer until 2009), Atkinson Elizabeth [ctb], Crowson Cynthia [ctb]",
+      "Maintainer": "Terry M Therneau <terry.therneau@proton.me>",
+      "Repository": "CRAN"
+    }
+  }
+}
