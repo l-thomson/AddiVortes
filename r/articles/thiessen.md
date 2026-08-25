@@ -208,10 +208,10 @@ or a plot of your own. It is not for printing: a bare
 
 ## Progress
 
-Progress over the sweep schedule is signalled with progressr, and
-nothing is printed by default: the package raises the conditions and the
-session decides whether and how to report them. Choose a handler once
-and it applies to every fit afterwards.
+Progress over the whole fit is signalled with progressr, and nothing is
+printed by default: the package raises the conditions and the session
+decides whether and how to report them. Choose a handler once and it
+applies to every fit afterwards.
 
 ``` r
 
@@ -222,9 +222,20 @@ fit <- thiessen(y ~ ., d, control, seed = 1)
 
 [`progressr::with_progress()`](https://progressr.futureverse.org/reference/with_progress.html)
 scopes a handler to one expression instead. The chunks here are not
-evaluated because progressr renders nothing into a static document. The
-schedule raises one progression per sweep, to a maximum of a hundred
-over the sweeps of every chain, and reporting does not change the draws.
+evaluated because progressr renders nothing into a static document.
+
+The schedule raises one progression per sweep, to a maximum of a hundred
+over the sweeps of every chain, then pooling the draws and the
+convergence summary. Both run after the last sweep, and pooling predicts
+at every training row for every kept draw, so on a long schedule over
+many rows it costs about twice what the sweeps cost. It therefore
+carries their weight in the bar rather than a step of it: the bar is
+around a third of the way along when the sweeps end, and it stands until
+the fit is complete. Pooling is one call into the core, so the bar rests
+there rather than advancing through it. Each phase names itself in a
+sticky message, which a terminal handler pushes above the bar rather
+than overwriting, so the phase that is running is named whatever handler
+is set. Reporting does not change the draws.
 
 ## Troubleshooting
 

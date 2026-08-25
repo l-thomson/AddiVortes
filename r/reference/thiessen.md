@@ -114,13 +114,20 @@ where R-hat exceeds 1.01 or an effective sample size falls below 400
 
 ## Progress
 
-Progress over the sweep schedule is signalled with progressr, so a
-session reports it after
+Progress over the whole fit is signalled with progressr, so a session
+reports it after
 [`progressr::handlers()`](https://progressr.futureverse.org/reference/handlers.html)
 and nothing is printed by default; `progressr::handlers(global = TRUE)`
 sets one for a whole session. The schedule raises one progression per
-sweep, to a maximum of a hundred over the sweeps of every chain. The
-draws do not depend on whether a handler is set.
+sweep, to a maximum of a hundred over the sweeps of every chain, then
+pooling the draws and the convergence summary, so the report closes when
+the fit is complete rather than at the last sweep. Pooling predicts at
+every training row for every kept draw, so it costs about twice what the
+sweeps cost and carries their weight, and the bar is around a third of
+the way along when the sweeps end. Each phase names itself in a sticky
+message, which a terminal handler pushes above the bar rather than
+overwriting, so the phase that is running is named whatever handler is
+set. The draws do not depend on whether a handler is set.
 
 ## Persistence
 

@@ -125,8 +125,8 @@ runs each of them.
 later session reads it and predicts the same values; the sampler state
 travels in the object.
 
-Progress over the sweep schedule is signalled with progressr, so nothing
-is printed until a session chooses a handler:
+Progress over the whole fit is signalled with progressr, so nothing is
+printed until a session chooses a handler:
 
 ``` r
 
@@ -135,7 +135,9 @@ progressr::handlers("txtprogressbar")
 fit <- thiessen(x, y, seed = 1)
 ```
 
-Reporting does not change the draws.
+The sweeps, pooling the draws and the convergence summary each report,
+so the bar stands until the fit is complete. Reporting does not change
+the draws.
 
 ## Covariate scaling
 

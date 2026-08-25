@@ -244,19 +244,29 @@ every draw.</p>
 <div class="section level2">
 <h2 id="progress">Progress<a class="anchor" aria-label="anchor" href="#progress"></a>
 </h2>
-<p>Progress over the sweep schedule is signalled with progressr, and
-nothing is printed by default: the package raises the conditions and the
-session decides whether and how to report them. Choose a handler once
-and it applies to every fit afterwards.</p>
+<p>Progress over the whole fit is signalled with progressr, and nothing
+is printed by default: the package raises the conditions and the session
+decides whether and how to report them. Choose a handler once and it
+applies to every fit afterwards.</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">progressr</span><span class="fu">::</span><span class="fu"><a href="https://progressr.futureverse.org/reference/handlers.html" class="external-link">handlers</a></span><span class="op">(</span>global <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span><span class="fu">progressr</span><span class="fu">::</span><span class="fu"><a href="https://progressr.futureverse.org/reference/handlers.html" class="external-link">handlers</a></span><span class="op">(</span><span class="st">"txtprogressbar"</span><span class="op">)</span></span>
 <span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">.</span>, <span class="va">d</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></code></pre></div>
 <p><code><a href="https://progressr.futureverse.org/reference/with_progress.html" class="external-link">progressr::with_progress()</a></code> scopes a handler to one
 expression instead. The chunks here are not evaluated because progressr
-renders nothing into a static document. The schedule raises one
-progression per sweep, to a maximum of a hundred over the sweeps of
-every chain, and reporting does not change the draws.</p>
+renders nothing into a static document.</p>
+<p>The schedule raises one progression per sweep, to a maximum of a
+hundred over the sweeps of every chain, then pooling the draws and the
+convergence summary. Both run after the last sweep, and pooling predicts
+at every training row for every kept draw, so on a long schedule over
+many rows it costs about twice what the sweeps cost. It therefore
+carries their weight in the bar rather than a step of it: the bar is
+around a third of the way along when the sweeps end, and it stands until
+the fit is complete. Pooling is one call into the core, so the bar rests
+there rather than advancing through it. Each phase names itself in a
+sticky message, which a terminal handler pushes above the bar rather
+than overwriting, so the phase that is running is named whatever handler
+is set. Reporting does not change the draws.</p>
 </div>
 <div class="section level2">
 <h2 id="troubleshooting">Troubleshooting<a class="anchor" aria-label="anchor" href="#troubleshooting"></a>
