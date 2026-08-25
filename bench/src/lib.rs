@@ -379,6 +379,19 @@ pub fn spherical(n: usize) -> Workload {
     }
 }
 
+/// Sizes of the binding-overhead cases. Three, because a copy of the
+/// design shows as a slope and not as an offset: one baseline, one that
+/// grows in rows, one that grows in columns.
+pub const BINDING_SIZES: &[(usize, usize)] = &[(200, 10), (2000, 10), (200, 40)];
+
+/// Rows in the predict matrix of the binding-overhead cases, large enough
+/// that marshalling the return value is visible beside the traversal.
+pub const PREDICT_ROWS: usize = 5000;
+
+/// Sweeps in the per-call binding case: run behind one crossing and behind
+/// one crossing each, the difference being the boundary cost.
+pub const BINDING_SWEEPS: usize = 200;
+
 /// The suite cell sizes, small first. Two sizes so a cost that grows in n
 /// or p is separable from one that does not.
 pub const CELL_SIZES: &[(usize, usize)] = &[(200, 10), (1000, 20)];
