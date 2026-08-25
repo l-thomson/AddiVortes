@@ -12,10 +12,11 @@
 #' @return A double matrix, one row per kept draw.
 #' @noRd
 draws_matrix_of <- function(object) {
-  latent <- core_call(core_predict_draws(object$state, object$x, "latent"))
+  state <- fit_state(object)
+  latent <- core_call(core_predict_draws(state, object$x, "latent"))
   colnames(latent) <- paste0("mu[", seq_len(ncol(latent)), "]")
-  diagnostics <- core_call(core_diagnostics(object$state))
-  sigma <- core_call(core_sigma(object$state))
+  diagnostics <- core_call(core_diagnostics(state))
+  sigma <- core_call(core_sigma(state))
   blocks <- list(latent)
   if (length(sigma) > 0L) {
     blocks$sigma <- matrix(sigma, ncol = 1L, dimnames = list(NULL, "sigma"))

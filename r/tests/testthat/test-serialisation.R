@@ -30,10 +30,24 @@ test_that("a fit read in a new session predicts the same values", {
   expect_identical(predictions, predict(fit, fixture$x[1:5, ]))
 })
 
+test_that("a restored fit revives its state once and reuses it", {
+  fixture <- small_fixture()
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+
+  restored <- unserialize(serialize(fit, NULL))
+
+  expect_false(core_state_is_live(restored$state$handle))
+  expect_identical(predict(restored), predict(fit))
+  expect_true(core_state_is_live(restored$state$handle))
+})
+
 test_that("a state the build cannot read errors with the package's class", {
   fixture <- small_fixture()
   fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
-  fit$state <- sub('"gaussian"', '"crackle"', fit$state, fixed = TRUE)
+  fit$state$payload <- swap_payload_name(
+    fit$state$payload, "gaussian", "crackles"
+  )
+  fit <- unserialize(serialize(fit, NULL))
 
   expect_error(predict(fit), class = "thiessen_error")
 })

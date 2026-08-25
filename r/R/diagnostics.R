@@ -27,8 +27,9 @@
 #' @export
 thiessen_diagnostics <- function(object) {
   check_fit(object)
-  counts <- core_call(core_diagnostics(object$state))
-  sigma <- core_call(core_sigma(object$state))
+  state <- fit_state(object)
+  counts <- core_call(core_diagnostics(state))
+  sigma <- core_call(core_sigma(state))
   iterations <- object$n_draws / object$n_chains
   out <- data.frame(
     chain = rep(seq_len(object$n_chains), each = iterations),
@@ -80,7 +81,7 @@ thiessen_diagnostics <- function(object) {
 #' @export
 variable_inclusion <- function(object) {
   check_fit(object)
-  proportions <- core_call(core_diagnostics(object$state))$inclusion
+  proportions <- core_call(core_diagnostics(fit_state(object)))$inclusion
   names(proportions) <- colnames(object$x)
   proportions
 }

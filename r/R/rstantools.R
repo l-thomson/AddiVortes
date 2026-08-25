@@ -45,12 +45,13 @@ rstantools::predictive_interval
 #' @exportS3Method rstantools::posterior_predict
 posterior_predict.thiessen <- function(object, newdata = NULL, ...) {
   design <- predict_design(object, newdata)
-  draws <- core_call(core_predict_draws(object$state, design, "draws"))
+  state <- fit_state(object)
+  draws <- core_call(core_predict_draws(state, design, "draws"))
   if (object$model == "probit") {
     labels <- stats::rbinom(length(draws), 1L, pmin(pmax(draws, 0), 1))
     return(matrix(as.double(labels), nrow = nrow(draws)))
   }
-  variance <- core_call(core_predict_draws(object$state, design, "variance"))
+  variance <- core_call(core_predict_draws(state, design, "variance"))
   noise <- stats::rnorm(length(draws), 0, sqrt(as.vector(variance)))
   draws + matrix(noise, nrow = nrow(draws))
 }
@@ -79,7 +80,7 @@ posterior_predict.thiessen <- function(object, newdata = NULL, ...) {
 #' @exportS3Method rstantools::posterior_epred
 posterior_epred.thiessen <- function(object, newdata = NULL, ...) {
   design <- predict_design(object, newdata)
-  core_call(core_predict_draws(object$state, design, "draws"))
+  core_call(core_predict_draws(fit_state(object), design, "draws"))
 }
 
 #' Pointwise log-likelihood of a fitted model
@@ -111,7 +112,7 @@ posterior_epred.thiessen <- function(object, newdata = NULL, ...) {
 #' @exportS3Method rstantools::log_lik
 log_lik.thiessen <- function(object, newdata = NULL, y = NULL, ...) {
   if (is.null(newdata)) {
-    return(core_call(core_log_lik(object$state, object$x, object$y)))
+    return(core_call(core_log_lik(fit_state(object), object$x, object$y)))
   }
   design <- predict_design(object, newdata)
   response <- log_lik_response(object, newdata, y)
@@ -120,7 +121,7 @@ log_lik.thiessen <- function(object, newdata = NULL, y = NULL, ...) {
       "`y` must have one value per row of `newdata`."
     )
   }
-  core_call(core_log_lik(object$state, design, response))
+  core_call(core_log_lik(fit_state(object), design, response))
 }
 
 #' Central posterior predictive interval
@@ -152,7 +153,9 @@ predictive_interval.thiessen <- function(object, prob = 0.9, newdata = NULL,
     thiessen_abort("`prob` must be a single number in (0, 1).")
   }
   design <- predict_design(object, newdata)
-  bounds <- core_call(core_interval(object$state, design, "prediction", prob))
+  bounds <- core_call(
+    core_interval(fit_state(object), design, "prediction", prob)
+  )
   tail <- (1 - prob) / 2
   colnames(bounds) <- paste0(
     format(100 * c(tail, 1 - tail), trim = TRUE), "%"
