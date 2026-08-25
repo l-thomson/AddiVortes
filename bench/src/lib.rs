@@ -232,6 +232,11 @@ pub const CASES: &[Case] = &[
         name: "student_t",
         build: student_t,
     },
+    #[cfg(feature = "experimental")]
+    Case {
+        name: "laplace",
+        build: laplace,
+    },
 ];
 
 /// The schedule the predict benchmarks fit under; the sweep benchmarks
@@ -288,6 +293,23 @@ fn student_t(n: usize, p: usize) -> Workload {
         .collect();
     Workload {
         config: schedule(Config::new().with_outcome(Outcome::student_t(4.0))),
+        x,
+        response: Response::Numeric(y),
+    }
+}
+
+#[cfg(feature = "experimental")]
+fn laplace(n: usize, p: usize) -> Workload {
+    let (x, mean, noise) = friedman(n, p, SEED);
+    // The Student-t workload's outliers, under the Laplace model.
+    let y = mean
+        .iter()
+        .zip(&noise)
+        .enumerate()
+        .map(|(i, (m, e))| if i % 20 == 0 { m + 5.0 * e } else { m + e })
+        .collect();
+    Workload {
+        config: schedule(Config::new().with_outcome(Outcome::laplace())),
         x,
         response: Response::Numeric(y),
     }

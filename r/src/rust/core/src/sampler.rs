@@ -28,6 +28,8 @@ use crate::models::gaussian::GaussianOutcome;
 #[cfg(feature = "experimental")]
 use crate::models::interval_censored::IntervalCensoredOutcome;
 #[cfg(feature = "experimental")]
+use crate::models::laplace::LaplaceOutcome;
+#[cfg(feature = "experimental")]
 use crate::models::ordinal::OrdinalOutcome;
 use crate::models::probit::ProbitOutcome;
 #[cfg(feature = "experimental")]
@@ -57,6 +59,8 @@ enum Outcome {
     Ordinal(OrdinalOutcome),
     #[cfg(feature = "experimental")]
     StudentT(StudentTOutcome),
+    #[cfg(feature = "experimental")]
+    Laplace(LaplaceOutcome),
 }
 
 /// Dispatch one method over every variant.
@@ -75,6 +79,8 @@ macro_rules! each_outcome {
             Outcome::Ordinal($outcome) => $body,
             #[cfg(feature = "experimental")]
             Outcome::StudentT($outcome) => $body,
+            #[cfg(feature = "experimental")]
+            Outcome::Laplace($outcome) => $body,
         }
     };
 }
@@ -111,6 +117,8 @@ impl Outcome {
             Outcome::Gaussian(_) => None,
             #[cfg(feature = "experimental")]
             Outcome::StudentT(_) => None,
+            #[cfg(feature = "experimental")]
+            Outcome::Laplace(_) => None,
         }
     }
 
@@ -717,6 +725,8 @@ impl Sampler {
             OutcomeConfig::Ordinal(_) => OrdinalOutcome::CELL_PRIOR_HALF_WIDTH,
             #[cfg(feature = "experimental")]
             OutcomeConfig::StudentT(_) => StudentTOutcome::CELL_PRIOR_HALF_WIDTH,
+            #[cfg(feature = "experimental")]
+            OutcomeConfig::Laplace(_) => LaplaceOutcome::CELL_PRIOR_HALF_WIDTH,
         };
         let sigma_mu_sq = scaler::sigma_mu_sq(half_width, config.mean_params.k, m);
         // Both slots declare identical geometry and structure, so the
@@ -834,6 +844,12 @@ impl Sampler {
                     StudentTOutcome::new(params.df.initial(), params.df.grid().to_vec());
                 outcome.init(&y_scaled);
                 Outcome::StudentT(outcome)
+            }
+            #[cfg(feature = "experimental")]
+            OutcomeConfig::Laplace(_) => {
+                let mut outcome = LaplaceOutcome::default();
+                outcome.init(&y_scaled);
+                Outcome::Laplace(outcome)
             }
             // The bounds cross to the scaled response space by the same
             // frozen affine map as the working response; an infinite

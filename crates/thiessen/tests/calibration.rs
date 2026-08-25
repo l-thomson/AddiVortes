@@ -65,6 +65,8 @@ fn gaussian_prior(config: &Config) -> (f64, f64) {
         thiessen::Outcome::IntervalCensored(params) => (params.nu, params.q),
         #[cfg(feature = "experimental")]
         thiessen::Outcome::StudentT(params) => (params.nu, params.q),
+        #[cfg(feature = "experimental")]
+        thiessen::Outcome::Laplace(params) => (params.nu, params.q),
         _ => unreachable!("the tests read nu and q under a sampled sigma^2"),
     }
 }
@@ -130,6 +132,10 @@ enum Kind {
     StudentT {
         df: f64,
     },
+    /// Laplace errors: the generators draw sigma Laplace(0, 1) directly,
+    /// the weights marginalised.
+    #[cfg(feature = "experimental")]
+    Laplace,
 }
 
 /// The fixed inspection scheme of the interval-censored model, a
@@ -616,6 +622,18 @@ fn student_t_model() -> Model {
     }
 }
 
+/// The Laplace model at the calibration size: the Gaussian model's
+/// rows, structural prior and lambda, errors sigma Laplace(0, 1).
+#[cfg(feature = "experimental")]
+fn laplace_model() -> Model {
+    let gaussian = gaussian_model();
+    Model {
+        kind: Kind::Laplace,
+        config: gaussian.config.with_outcome(thiessen::Outcome::laplace()),
+        ..gaussian
+    }
+}
+
 /// The ordinal model at the calibration size: the Gaussian model's rows
 /// and structural prior, four categories, offset c = -0.1 fixed, the
 /// default cutpoint prior, no sigma^2.
@@ -670,6 +688,8 @@ impl Model {
             Kind::Ordinal => 3.0,
             #[cfg(feature = "experimental")]
             Kind::StudentT { .. } => 0.5,
+            #[cfg(feature = "experimental")]
+            Kind::Laplace => 0.5,
         };
         scale / (self.config.mean_params.k * (self.config.mean_tessellations() as f64).sqrt())
     }
@@ -1081,6 +1101,13 @@ impl Model {
                         let lambda = rng.gamma_any(0.5 * df) * 2.0 / df;
                         f + self.variance_at(draw, i).sqrt() * z / lambda.sqrt()
                     }
+                    // sigma Laplace(0, 1) as sigma times the difference of
+                    // two unit exponentials.
+                    #[cfg(feature = "experimental")]
+                    Kind::Laplace => {
+                        let e = (1.0 - rng.uniform()).ln() - (1.0 - rng.uniform()).ln();
+                        f + self.variance_at(draw, i).sqrt() * e
+                    }
                 }
             })
             .collect()
@@ -1205,6 +1232,11 @@ impl Model {
                     let lambda = rng.gamma_any(0.5 * df) * 2.0 / df;
                     f + v.sqrt() * z / lambda.sqrt()
                 }
+                #[cfg(feature = "experimental")]
+                Kind::Laplace => {
+                    let e = (1.0 - rng.uniform()).ln() - (1.0 - rng.uniform()).ln();
+                    f + v.sqrt() * e
+                }
             };
         }
     }
@@ -1224,6 +1256,8 @@ impl Model {
             Kind::Ordinal => false,
             #[cfg(feature = "experimental")]
             Kind::StudentT { .. } => true,
+            #[cfg(feature = "experimental")]
+            Kind::Laplace => true,
         }
     }
 
@@ -1472,6 +1506,14 @@ fn sbc_small_ranks_are_uniform_student_t() {
 
 #[cfg(feature = "experimental")]
 #[test]
+fn sbc_small_ranks_are_uniform_laplace() {
+    let model = laplace_model();
+    let ranks = sbc_ranks(&model, 160, 19, 15, 150, 420);
+    assert_uniform(&model, &ranks, 19);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
 fn sbc_small_ranks_are_uniform_tobit() {
     let model = tobit_model();
     let ranks = sbc_ranks(&model, 160, 19, 15, 150, 415);
@@ -1573,6 +1615,13 @@ fn sbc_full_ranks_are_uniform_linear() {
 #[ignore = "full size, nightly"]
 fn sbc_full_ranks_are_uniform_student_t() {
     sbc_full(&student_t_model(), "sbc_ranks_student_t.csv", 419);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "full size, nightly"]
+fn sbc_full_ranks_are_uniform_laplace() {
+    sbc_full(&laplace_model(), "sbc_ranks_laplace.csv", 420);
 }
 
 #[cfg(feature = "experimental")]
@@ -1852,6 +1901,14 @@ fn geweke_small_simulators_agree_student_t() {
 
 #[cfg(feature = "experimental")]
 #[test]
+fn geweke_small_simulators_agree_laplace() {
+    let model = laplace_model();
+    let (mc, sc) = geweke_samples(&model, 2000, 800, 45, 200, 920);
+    assert_simulators_agree(&model, &mc, &sc);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
 fn geweke_small_simulators_agree_tobit() {
     let model = tobit_model();
     let (mc, sc) = geweke_samples(&model, 2000, 800, 45, 200, 915);
@@ -1963,6 +2020,13 @@ fn geweke_full_simulators_agree_student_t() {
 #[cfg(feature = "experimental")]
 #[test]
 #[ignore = "full size, nightly"]
+fn geweke_full_simulators_agree_laplace() {
+    geweke_full(&laplace_model(), "geweke_samples_laplace.csv", 920);
+}
+
+#[cfg(feature = "experimental")]
+#[test]
+#[ignore = "full size, nightly"]
 fn geweke_full_simulators_agree_tobit() {
     geweke_full(&tobit_model(), "geweke_samples_tobit.csv", 915);
 }
@@ -2009,7 +2073,7 @@ fn write_csv(name: &str, lines: &[String]) {
 #[cfg(feature = "experimental")]
 #[test]
 fn calibrated_configuration_list_is_current() {
-    let entries: [(&str, Model); 18] = [
+    let entries: [(&str, Model); 19] = [
         ("gaussian", gaussian_model()),
         ("probit", probit_model()),
         ("heteroscedastic", heteroscedastic_model()),
@@ -2020,6 +2084,7 @@ fn calibrated_configuration_list_is_current() {
             interval_censored_model(),
         ),
         ("student_t (experimental)", student_t_model()),
+        ("laplace (experimental)", laplace_model()),
         ("spherical metric", spherical_model()),
         ("categorical metric", categorical_model()),
         ("minkowski metric (experimental)", minkowski_model()),

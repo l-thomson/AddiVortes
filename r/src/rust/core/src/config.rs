@@ -68,6 +68,12 @@ pub enum Outcome {
     /// discrete conditional. Experimental (`docs/experimental.md`).
     #[cfg(feature = "experimental")]
     StudentT(StudentTParams),
+    /// y = f(x) + e, e ~ Laplace(0, sigma): errors with exponential
+    /// tails, fitted as a scale mixture of normals with per-observation
+    /// inverse-Gaussian weights (Park and Casella 2008); no parameters
+    /// of its own. Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    Laplace(LaplaceParams),
 }
 
 /// The stable variants plus the gated names, so a build without the
@@ -84,6 +90,7 @@ enum StableOutcome {
     IntervalCensored(serde::de::IgnoredAny),
     Ordinal(serde::de::IgnoredAny),
     StudentT(serde::de::IgnoredAny),
+    Laplace(serde::de::IgnoredAny),
 }
 
 #[cfg(not(feature = "experimental"))]
@@ -112,6 +119,10 @@ impl TryFrom<StableOutcome> for Outcome {
             }),
             StableOutcome::StudentT(_) => Err(crate::error::Error::RequiresFeature {
                 item: "the `student_t` outcome".into(),
+                feature: "experimental",
+            }),
+            StableOutcome::Laplace(_) => Err(crate::error::Error::RequiresFeature {
+                item: "the `laplace` outcome".into(),
                 feature: "experimental",
             }),
         }
@@ -193,6 +204,12 @@ impl Outcome {
         })
     }
 
+    /// The Laplace outcome with the default sigma^2 prior. Experimental.
+    #[cfg(feature = "experimental")]
+    pub fn laplace() -> Self {
+        Outcome::Laplace(LaplaceParams::default())
+    }
+
     /// What the outcome does with sigma^2; scale validity derives from
     /// this value, never from a per-outcome table.
     pub(crate) fn sigma2_mode(&self) -> Sigma2Mode {
@@ -209,6 +226,8 @@ impl Outcome {
             Outcome::Ordinal(_) => Sigma2Mode::Fixed(1.0),
             #[cfg(feature = "experimental")]
             Outcome::StudentT(_) => Sigma2Mode::Sampled,
+            #[cfg(feature = "experimental")]
+            Outcome::Laplace(_) => Sigma2Mode::Sampled,
         }
     }
 
@@ -227,6 +246,8 @@ impl Outcome {
             Outcome::Ordinal(_) => RequiredData::Ordinal,
             #[cfg(feature = "experimental")]
             Outcome::StudentT(_) => RequiredData::Continuous,
+            #[cfg(feature = "experimental")]
+            Outcome::Laplace(_) => RequiredData::Continuous,
         }
     }
 }
@@ -464,6 +485,33 @@ impl Default for StudentTParams {
         let defaults = GaussianParams::default();
         Self {
             df: DegreesOfFreedom::Fixed(4.0),
+            nu: defaults.nu,
+            q: defaults.q,
+        }
+    }
+}
+
+/// The Laplace outcome's parameters: the sigma^2 prior, folded onto the
+/// outcome because it is a fact about the observation model; the model
+/// has no parameters of its own. Experimental (`docs/experimental.md`).
+#[cfg(feature = "experimental")]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LaplaceParams {
+    /// sigma^2 prior degrees of freedom nu, as the Gaussian outcome's.
+    /// Default 6.
+    pub nu: f64,
+    /// sigma^2 prior calibration quantile q, Pr(sigma < sigma_hat) = q.
+    /// Default 0.85.
+    pub q: f64,
+}
+
+#[cfg(feature = "experimental")]
+impl Default for LaplaceParams {
+    fn default() -> Self {
+        let defaults = GaussianParams::default();
+        Self {
             nu: defaults.nu,
             q: defaults.q,
         }
@@ -859,6 +907,8 @@ impl Config {
             Outcome::IntervalCensored(params) => params.nu = nu,
             #[cfg(feature = "experimental")]
             Outcome::StudentT(params) => params.nu = nu,
+            #[cfg(feature = "experimental")]
+            Outcome::Laplace(params) => params.nu = nu,
             _ => {}
         }
         self
@@ -878,6 +928,8 @@ impl Config {
             Outcome::IntervalCensored(params) => params.q = q,
             #[cfg(feature = "experimental")]
             Outcome::StudentT(params) => params.q = q,
+            #[cfg(feature = "experimental")]
+            Outcome::Laplace(params) => params.q = q,
             _ => {}
         }
         self
@@ -1031,6 +1083,8 @@ impl Config {
             (Outcome::Ordinal(_), _) => "ordinal",
             #[cfg(feature = "experimental")]
             (Outcome::StudentT(_), _) => "student_t",
+            #[cfg(feature = "experimental")]
+            (Outcome::Laplace(_), _) => "laplace",
         }
     }
 
@@ -1079,6 +1133,8 @@ impl Config {
             Outcome::IntervalCensored(params) => (params.nu, params.q),
             #[cfg(feature = "experimental")]
             Outcome::StudentT(params) => (params.nu, params.q),
+            #[cfg(feature = "experimental")]
+            Outcome::Laplace(params) => (params.nu, params.q),
             #[cfg(feature = "experimental")]
             Outcome::Ordinal(_) => {
                 let defaults = GaussianParams::default();
@@ -1133,6 +1189,16 @@ impl Config {
             ));
         }
         match &self.outcome {
+            #[cfg(feature = "experimental")]
+            Outcome::Laplace(params) => {
+                positive("nu", params.nu)?;
+                if !(params.q.is_finite() && params.q > 0.0 && params.q < 1.0) {
+                    return Err(invalid(
+                        "q",
+                        format!("must be in the open interval (0, 1), got {}", params.q),
+                    ));
+                }
+            }
             #[cfg(feature = "experimental")]
             Outcome::StudentT(params) => {
                 positive("nu", params.nu)?;
@@ -1274,12 +1340,12 @@ impl Config {
                 ));
             }
             #[cfg(feature = "experimental")]
-            if matches!(self.outcome, Outcome::StudentT(_)) {
+            if matches!(self.outcome, Outcome::StudentT(_) | Outcome::Laplace(_)) {
                 return Err(invalid(
                     "variance_params.tessellations",
-                    "the student_t weights and a variance ensemble both model \
-                     per-observation dispersion; the combination awaits its \
-                     identification argument",
+                    "a scale-mixture outcome's weights (student_t, laplace) and a \
+                     variance ensemble both model per-observation dispersion; the \
+                     combination awaits its identification argument",
                 ));
             }
             let (nu, _) = self.sigma2_prior();

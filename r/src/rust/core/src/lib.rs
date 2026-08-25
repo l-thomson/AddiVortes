@@ -130,8 +130,8 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg(feature = "experimental")]
 pub use config::{
-    AftParams, Basis, DegreesOfFreedom, Inclusion, IntervalCensoredParams, Membership,
-    OrdinalParams, StudentTParams, TobitParams,
+    AftParams, Basis, DegreesOfFreedom, Inclusion, IntervalCensoredParams, LaplaceParams,
+    Membership, OrdinalParams, StudentTParams, TobitParams,
 };
 pub use config::{
     CellParams, Config, GaussianParams, GeneralParams, GeometryParams, Outcome, ProbitParams,

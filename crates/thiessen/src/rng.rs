@@ -62,6 +62,15 @@ pub(crate) fn gamma(shape: f64, scale: f64, rng: &mut Rng) -> f64 {
         .sample(rng)
 }
 
+/// Inverse-Gaussian(mean, shape) draw, both positive: density
+/// sqrt(shape / (2 pi x^3)) exp(-shape (x - mean)^2 / (2 mean^2 x)).
+#[cfg(feature = "experimental")]
+pub(crate) fn inverse_gaussian(mean: f64, shape: f64, rng: &mut Rng) -> f64 {
+    rand_distr::InverseGaussian::new(mean, shape)
+        .expect("mean and shape are positive by construction")
+        .sample(rng)
+}
+
 /// One index drawn from unnormalised log weights, with one uniform.
 #[cfg(feature = "experimental")]
 pub(crate) fn draw_discrete(log_weights: &[f64], rng: &mut Rng) -> usize {
@@ -245,6 +254,26 @@ mod tests {
             assert!(uniform_index(3, &mut rng) < 3);
             assert_eq!(uniform_index(1, &mut rng), 0);
         }
+    }
+
+    /// E[X] = mean and Var[X] = mean^3 / shape.
+    #[cfg(feature = "experimental")]
+    #[test]
+    fn inverse_gaussian_moments() {
+        let mut rng = chain_rng(23);
+        let n = 100_000;
+        let (mean, shape) = (1.5, 2.0);
+        let (mut sum, mut sum_sq) = (0.0, 0.0);
+        for _ in 0..n {
+            let x = inverse_gaussian(mean, shape, &mut rng);
+            assert!(x > 0.0);
+            sum += x;
+            sum_sq += x * x;
+        }
+        let m = sum / n as f64;
+        let v = sum_sq / n as f64 - m * m;
+        assert!((m - mean).abs() < 0.02, "{m}");
+        assert!((v - mean * mean * mean / shape).abs() < 0.05, "{v}");
     }
 
     #[cfg(feature = "experimental")]

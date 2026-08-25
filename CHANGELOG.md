@@ -151,6 +151,17 @@ says "Sampled values changed" with the reason.
   t-likelihood quadrature known-answer test at fixed and grid df, and
   SBC and Geweke at both sizes. Outside the semver promise
   (docs/experimental.md).
+- (experimental) `Outcome::Laplace` with `LaplaceParams`: Laplace
+  errors as a scale mixture of normals with exponential mixing (Andrews
+  and Mallows 1974), the per-observation weights redrawn each sweep
+  from their inverse-Gaussian conditional (Park and Casella 2008)
+  through the scale-mixture refresh shared with the Student-t model; no
+  parameters of its own. `predict_variance` is 2 sigma^2,
+  `prediction_interval` the Laplace mixture, `log_likelihood` the
+  Laplace log density; a variance ensemble is rejected pending an
+  identification argument. Validated by a marginal Laplace-likelihood
+  quadrature known-answer test and SBC and Geweke at both sizes.
+  Outside the semver promise (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled

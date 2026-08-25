@@ -628,6 +628,53 @@ discrete df conditional and E[df]); SBC and Geweke at both sizes at
 df = 4; a large-df fit agrees with the Gaussian model within Monte
 Carlo error.
 
+### Laplace (`Outcome::Laplace`, experimental)
+
+    y_i = f(x_i) + e_i,   e_i ~ Laplace(0, sigma)
+
+Density (2 sigma)^-1 exp(-|e| / sigma): exponential tails, heavier
+than the Gaussian's and lighter than any low-df Student-t's, so a wild
+observation is discounted at rate 1 / |r| against the t model's
+1 / r^2. sigma is the Laplace scale; the error standard deviation is
+sigma sqrt 2. The model has no parameters of its own.
+
+Sampler: the scale mixture of normals with exponential mixing (Andrews
+and Mallows 1974), y_i | w_i ~ N(f(x_i), sigma^2 / w_i) with
+1 / w_i ~ Exp(rate 1 / 2), whose marginal is exactly
+Laplace(f(x_i), sigma). Each sweep redraws
+w_i | r_i, sigma^2 ~ Inverse-Gaussian(mean sigma / |r_i|, shape 1),
+the conditional of Park and Casella (2008) for the mixing precision,
+r_i = y_i - f(x_i); a residual small enough to overflow the draw takes
+the r = 0 limit 1 / w_i ~ chi^2_1. sigma^2 then follows
+Inv-Gamma((nu + n) / 2, (nu lambda + sum w_i r_i^2) / 2) and the cell
+means their Normal conditionals against the precisions w_i / sigma^2:
+the Student-t model's scan with the Gamma conditional replaced by the
+inverse-Gaussian one. Under prior-only sampling the weights come from
+their prior. No structural move gains an acceptance-ratio term. A
+variance ensemble is rejected at validation, as for every scale-mixture
+outcome.
+
+Priors: the Gaussian model's for the cells and sigma^2; the lambda
+calibration reads sigma_hat as a least-squares residual standard
+deviation, which under Laplace errors estimates sigma sqrt 2, and the
+prior's spread absorbs the overstatement. Configuration:
+`Outcome::laplace()`, nu and q on the Laplace parameters.
+
+Correspondence: with Park and Casella (2008), whose hierarchy and
+inverse-Gaussian conditional these are, applied to the errors rather
+than to regression coefficients. No maintained BART-family package
+ships a Laplace error model.
+
+Fitted model: `predict` is the posterior mean of f(x);
+`predict_variance` is 2 sigma_d^2 per draw; `prediction_interval` is
+the central interval of the equal-weight mixture over draws of
+Laplace(f_d(x), sigma_d); `log_likelihood` is the Laplace log density
+per draw; `sigma` is sigma_d on the caller's scale, the Laplace scale;
+`in_sample_rmse` is against the observed response. Validation:
+fixed-tessellation quadrature known-answer test against numerical
+integration of the marginal Laplace likelihood; SBC and Geweke at both
+sizes.
+
 ## References
 
 - Andrews, D. F. and Mallows, C. L. (1974). Scale mixtures of normal
@@ -660,6 +707,8 @@ Carlo error.
 - Linero, A. R. and Yang, Y. (2018). Bayesian regression tree ensembles
   that adapt to smoothness and sparsity. Journal of the Royal
   Statistical Society Series B 80(5), 1087-1110.
+- Park, T. and Casella, G. (2008). The Bayesian lasso. Journal of the
+  American Statistical Association 103(482), 681-686.
 - Polson, N. G., Scott, J. G. and Windle, J. (2013). Bayesian inference
   for logistic models using Polya-Gamma latent variables. Journal of the
   American Statistical Association 108(504), 1339-1349.

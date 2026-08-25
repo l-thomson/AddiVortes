@@ -560,7 +560,8 @@ impl Fitted {
     /// the Gaussian model (constant across rows); s_d^2(x), the product of
     /// the variance tessellations, under the heteroscedastic model (the
     /// square of `rbart`'s `sdraws`); the error variance
-    /// sigma_d^2 df_d / (df_d - 2) under the Student-t model.
+    /// sigma_d^2 df_d / (df_d - 2) under the Student-t model and
+    /// 2 sigma_d^2 under the Laplace model.
     ///
     /// # Errors
     ///
@@ -578,6 +579,15 @@ impl Fitted {
         #[cfg(feature = "experimental")]
         if matches!(self.config.outcome, Outcome::Ordinal(_)) {
             return Err(self.not_applicable("predict_variance"));
+        }
+        #[cfg(feature = "experimental")]
+        if matches!(self.config.outcome, Outcome::Laplace(_)) {
+            return Ok(self
+                .posterior
+                .sigma_sq()
+                .iter()
+                .map(|s| vec![2.0 * s * range_sq; n])
+                .collect());
         }
         #[cfg(feature = "experimental")]
         if let Outcome::StudentT(params) = &self.config.outcome {
@@ -680,8 +690,8 @@ impl Fitted {
     /// CDF. Under the tobit model the predictive is censored, so the ends
     /// are clamped to the limits (censoring is monotone, which makes the
     /// clamp the exact quantile). Under the Student-t model the mixture
-    /// components are f_d(x) + sigma_d t_{df_d}, the model's own
-    /// predictive.
+    /// components are f_d(x) + sigma_d t_{df_d}, and under the Laplace
+    /// model Laplace(f_d(x), sigma_d), the model's own predictive.
     ///
     /// # Errors
     ///
@@ -696,6 +706,32 @@ impl Fitted {
         #[cfg(feature = "experimental")]
         if matches!(self.config.outcome, Outcome::Ordinal(_)) {
             return Err(self.not_applicable("prediction_interval"));
+        }
+        #[cfg(feature = "experimental")]
+        if matches!(self.config.outcome, Outcome::Laplace(_)) {
+            let per_draw = self.predict_draws(x)?;
+            let range = self.scaler.y_range();
+            let sigmas: Vec<f64> = self
+                .posterior
+                .sigma_sq()
+                .iter()
+                .map(|s| s.sqrt() * range)
+                .collect();
+            let tail = 0.5 * (1.0 - level);
+            let n = x.n_rows();
+            let mut fits = vec![0.0; per_draw.len()];
+            let mut out = Vec::with_capacity(n);
+            for row in 0..n {
+                for (fit, draw) in fits.iter_mut().zip(&per_draw) {
+                    *fit = draw[row];
+                }
+                let cdf = |t: f64| laplace_mixture_cdf(&fits, &sigmas, t);
+                out.push(Interval {
+                    lower: heavy_mixture_quantile(&fits, &sigmas, tail, cdf),
+                    upper: heavy_mixture_quantile(&fits, &sigmas, 1.0 - tail, cdf),
+                });
+            }
+            return Ok(out);
         }
         #[cfg(feature = "experimental")]
         if let Outcome::StudentT(params) = &self.config.outcome {
@@ -718,9 +754,10 @@ impl Fitted {
                 for (fit, draw) in fits.iter_mut().zip(&per_draw) {
                     *fit = draw[row];
                 }
+                let cdf = |t: f64| student_mixture_cdf(&fits, &sigmas, &dfs, t);
                 out.push(Interval {
-                    lower: student_mixture_quantile(&fits, &sigmas, &dfs, tail),
-                    upper: student_mixture_quantile(&fits, &sigmas, &dfs, 1.0 - tail),
+                    lower: heavy_mixture_quantile(&fits, &sigmas, tail, cdf),
+                    upper: heavy_mixture_quantile(&fits, &sigmas, 1.0 - tail, cdf),
                 });
             }
             return Ok(out);
@@ -768,7 +805,9 @@ impl Fitted {
     /// ln(Phi(gamma_{y+1} - c - f_d) - Phi(gamma_y - c - f_d)) with the
     /// draw's own cutpoints. Under the Student-t model the term is the
     /// location-scale t log density with the draw's scale sigma_d and
-    /// degrees of freedom df_d. `NotApplicable` under the AFT model, whose
+    /// degrees of freedom df_d, and under the Laplace model the Laplace
+    /// log density with the draw's scale. `NotApplicable` under the AFT
+    /// model, whose
     /// pointwise likelihood needs the event indicator
     /// (`log_likelihood_survival`), and under the interval-censored
     /// model, whose pointwise likelihood needs the bounds
@@ -855,6 +894,23 @@ impl Fitted {
                                 maths::ln(1.0 - p)
                             }
                         })
+                        .collect()
+                })
+                .collect());
+        }
+        #[cfg(feature = "experimental")]
+        if matches!(self.config.outcome, Outcome::Laplace(_)) {
+            let per_draw = self.predict_draws(x)?;
+            let range = self.scaler.y_range();
+            return Ok(per_draw
+                .iter()
+                .enumerate()
+                .map(|(d, fits)| {
+                    let scale = self.posterior.sigma_sq()[d].sqrt() * range;
+                    let ln_norm = maths::ln(2.0 * scale);
+                    y.iter()
+                        .zip(fits)
+                        .map(|(&yi, &fit)| -ln_norm - (yi - fit).abs() / scale)
                         .collect()
                 })
                 .collect());
@@ -1129,8 +1185,9 @@ impl Fitted {
     }
 
     /// sigma per kept draw under a model with a global sampled sigma^2
-    /// (the Gaussian, tobit and Student-t models; under the Student-t
-    /// model the scale of the t, not the error standard deviation),
+    /// (the Gaussian, tobit, Student-t and Laplace models; under the
+    /// scale-mixture models the scale of the t or Laplace, not the error
+    /// standard deviation),
     /// caller scale: sqrt(sigma^2) times the training range of the
     /// response. Empty under the probit model (unit latent variance) and
     /// under a variance ensemble
@@ -1279,11 +1336,23 @@ fn student_mixture_cdf(fits: &[f64], sigmas: &[f64], dfs: &[f64], t: f64) -> f64
     sum / fits.len() as f64
 }
 
-/// Quantile `p` of the Student-t mixture by bisection on
-/// [`student_mixture_cdf`], the bracket doubled outward until it covers
-/// p: the polynomial tails outrun any fixed pad.
+/// CDF at `t` of the equal-weight mixture of Laplace(fit_d, sigma_d).
 #[cfg(feature = "experimental")]
-fn student_mixture_quantile(fits: &[f64], sigmas: &[f64], dfs: &[f64], p: f64) -> f64 {
+fn laplace_mixture_cdf(fits: &[f64], sigmas: &[f64], t: f64) -> f64 {
+    let sum: f64 = fits
+        .iter()
+        .zip(sigmas)
+        .map(|(&fit, &sigma)| maths::laplace_cdf((t - fit) / sigma))
+        .sum();
+    sum / fits.len() as f64
+}
+
+/// Quantile `p` of a mixture with heavier-than-Gaussian tails by
+/// bisection on its `cdf`, the bracket of the fits padded by sigma_max
+/// and doubled outward until it covers p: polynomial and exponential
+/// tails outrun any fixed pad.
+#[cfg(feature = "experimental")]
+fn heavy_mixture_quantile(fits: &[f64], sigmas: &[f64], p: f64, cdf: impl Fn(f64) -> f64) -> f64 {
     let mut lo = f64::INFINITY;
     let mut hi = f64::NEG_INFINITY;
     let mut sigma_max = 0.0_f64;
@@ -1293,15 +1362,15 @@ fn student_mixture_quantile(fits: &[f64], sigmas: &[f64], dfs: &[f64], p: f64) -
         sigma_max = sigma_max.max(sigma);
     }
     let (mut lo, mut hi) = (lo - sigma_max, hi + sigma_max);
-    while student_mixture_cdf(fits, sigmas, dfs, lo) > p {
+    while cdf(lo) > p {
         lo -= hi - lo;
     }
-    while student_mixture_cdf(fits, sigmas, dfs, hi) < p {
+    while cdf(hi) < p {
         hi += hi - lo;
     }
     for _ in 0..200 {
         let mid = 0.5 * (lo + hi);
-        if student_mixture_cdf(fits, sigmas, dfs, mid) < p {
+        if cdf(mid) < p {
             lo = mid;
         } else {
             hi = mid;
