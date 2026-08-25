@@ -267,6 +267,16 @@ says "Sampled values changed" with the reason.
 - Input-data contract in the crate-root documentation; a design matrix
   with no columns is rejected with `Error::NoFeatures`.
 - The crate readme is the repository README, so `cargo package` finds it.
+- The end of a fit makes no prediction pass. The sampler sums the mean
+  function at the training rows at each kept draw, from the cell
+  assignments it already holds and in the order `Fitted::predict`
+  evaluates a draw, so `Fitted::pool_samplers` and `fit_chains` take the
+  fitted values and the in-sample RMSE from those sums: bit-identical to
+  the pass for one chain, and within the last bit of it for several,
+  whose per-chain sums are added before the division. `Sampler::finish`
+  takes its per-chain RMSE from the same sums. A chain that kept a soft
+  draw (experimental) still predicts once. On a default Friedman fit at
+  n = 500 the pass was 2.5 to 3.7 s of a 6 to 10 s fit.
 - The end of a fit predicts the training set once. `Sampler::finish`
   computed a per-chain in-sample RMSE that `Fitted::pool` discarded and
   recomputed from its own prediction pass, and the R binding predicted a

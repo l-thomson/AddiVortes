@@ -227,6 +227,10 @@ pub struct Sampler {
     /// Calibrated scale of the prior sigma^2 ~ nu lambda / chi^2_nu.
     lambda: f64,
     kept: Posterior,
+    /// The mean function at every training row summed over the kept
+    /// draws, from the cached cell assignments at each `keep`; `None` once
+    /// a kept draw had a soft tessellation, whose value is not a cell's.
+    fit_sums: Option<FitSums>,
     /// The DART inclusion state, when the structure prior samples its
     /// weights.
     #[cfg(feature = "experimental")]
@@ -235,6 +239,17 @@ pub struct Sampler {
     /// sampler.
     #[cfg(test)]
     pub(crate) breakage: crate::broken::Breakage,
+}
+
+/// Running sums over the kept draws of the per-draw quantity two
+/// consumers average: `scaled` is what [`Sampler::finish`] averages for
+/// its in-sample RMSE (f, or the probit or ordinal response of f + c),
+/// and `response` is what [`Fitted::predict`] returns per draw at the
+/// training rows (the same on the caller's scale).
+#[derive(Debug, Clone)]
+struct FitSums {
+    scaled: Vec<f64>,
+    response: Vec<f64>,
 }
 
 /// The sampled state and fixed grid of the DART inclusion prior: the
@@ -927,6 +942,10 @@ impl Sampler {
             precision,
             lambda,
             kept: Posterior::empty(),
+            fit_sums: Some(FitSums {
+                scaled: vec![0.0; n],
+                response: vec![0.0; n],
+            }),
             #[cfg(feature = "experimental")]
             dart,
             #[cfg(test)]
@@ -1177,6 +1196,71 @@ impl Sampler {
             cutpoints,
             df,
         );
+        self.accumulate_fit();
+    }
+
+    /// Add this draw's mean function at every training row to the fit
+    /// sums, each row's value being the sum over the tessellations in
+    /// order of the cell the cached assignment places it in, which is the
+    /// evaluation `Fitted::predict` makes on the kept draw. A soft
+    /// tessellation's value is a kernel over every centre, so a kept soft
+    /// draw retires the sums.
+    fn accumulate_fit(&mut self) {
+        let Some(mut sums) = self.fit_sums.take() else {
+            return;
+        };
+        if self.mean.tessellations().iter().any(|t| t.tau.is_some()) {
+            return;
+        }
+        let offset = self.offset();
+        let probit = self.outcome.as_probit().is_some();
+        #[cfg(feature = "experimental")]
+        let ordinal = self.outcome.as_ordinal();
+        #[cfg(feature = "experimental")]
+        let free_cutpoints: &[f64] = ordinal.map_or(&[], OrdinalOutcome::free_cutpoints);
+        #[cfg(feature = "experimental")]
+        let ordinal = ordinal.is_some();
+        #[cfg(not(feature = "experimental"))]
+        let (ordinal, free_cutpoints): (bool, &[f64]) = (false, &[]);
+        let expected_category = |latent: f64| {
+            maths::normal_cdf(latent)
+                + free_cutpoints
+                    .iter()
+                    .map(|&g| maths::normal_cdf(latent - g))
+                    .sum::<f64>()
+        };
+        let tessellations = self.mean.tessellations();
+        let assignments = self.mean.assignments();
+        for i in 0..self.y.len() {
+            let row = self.x.row(i);
+            let mut f = 0.0;
+            for (t, a) in tessellations.iter().zip(assignments) {
+                f += t.value_in_cell(a.cells[i], row);
+            }
+            sums.scaled[i] += if ordinal {
+                expected_category(f + offset)
+            } else if probit {
+                maths::normal_cdf(f + offset)
+            } else {
+                f
+            };
+            let latent = self.scaler.unscale_y(f) + offset;
+            sums.response[i] += if ordinal {
+                expected_category(latent)
+            } else if probit {
+                maths::normal_cdf(latent)
+            } else {
+                latent
+            };
+        }
+        self.fit_sums = Some(sums);
+    }
+
+    /// The posterior mean of [`Fitted::predict`] at every training row
+    /// times the kept draw count, from the fit sums; `None` when a kept
+    /// draw retired them.
+    pub(crate) fn fit_sum_response(&self) -> Option<&[f64]> {
+        self.fit_sums.as_ref().map(|sums| sums.response.as_slice())
     }
 
     /// The current interior cutpoints of the ordinal model, increasing;
@@ -1447,6 +1531,30 @@ impl Sampler {
             return Err(crate::error::invalid("draws", "no draws were kept"));
         }
         let n = self.y.len();
+        let mean_prediction = match &self.fit_sums {
+            Some(sums) => sums.scaled.clone(),
+            None => self.evaluated_fit_sum(),
+        };
+        let n_draws = self.kept.n_draws() as f64;
+        let range = self.scaler.y_range();
+        let target: &[f64] = self.outcome.observed_response().unwrap_or(&self.y);
+        let in_sample_rmse = (mean_prediction
+            .iter()
+            .zip(target)
+            .map(|(f, y)| {
+                let r = (f / n_draws - y) * range;
+                r * r
+            })
+            .sum::<f64>()
+            / n as f64)
+            .sqrt();
+        self.into_fitted(in_sample_rmse)
+    }
+
+    /// The fit sum of [`FitSums::scaled`] by evaluating every kept draw at
+    /// every training row, for a chain whose sums were retired.
+    fn evaluated_fit_sum(&self) -> Vec<f64> {
+        let n = self.y.len();
         // The posterior-mean prediction on the response scale: f,
         // Phi(c + f) under the probit model, or the expected category
         // sum_k Phi(c + f - gamma_k) under the ordinal model.
@@ -1485,20 +1593,7 @@ impl Sampler {
                 };
             }
         }
-        let n_draws = self.kept.n_draws() as f64;
-        let range = self.scaler.y_range();
-        let target: &[f64] = self.outcome.observed_response().unwrap_or(&self.y);
-        let in_sample_rmse = (mean_prediction
-            .iter()
-            .zip(target)
-            .map(|(f, y)| {
-                let r = (f / n_draws - y) * range;
-                r * r
-            })
-            .sum::<f64>()
-            / n as f64)
-            .sqrt();
-        self.into_fitted(in_sample_rmse)
+        mean_prediction
     }
 
     /// The kept draws as a fitted model carrying `in_sample_rmse`.
