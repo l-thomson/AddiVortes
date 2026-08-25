@@ -23,6 +23,9 @@ experimental = ["thiessen/experimental"]
 
 [dependencies]
 thiessen = { path = "../crates/thiessen" }
+# `float_roundtrip` so a draw written by the suite binary and read by the
+# scorecard is the same double.
+serde_json = { version = "1.0.100", features = ["float_roundtrip"] }
 
 [dev-dependencies]
 # No plots and no rayon: deltas are read through critcmp, and a thread pool

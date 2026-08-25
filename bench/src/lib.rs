@@ -379,6 +379,132 @@ pub fn spherical(n: usize) -> Workload {
     }
 }
 
+/// The suite cell sizes, small first. Two sizes so a cost that grows in n
+/// or p is separable from one that does not.
+pub const CELL_SIZES: &[(usize, usize)] = &[(200, 10), (1000, 20)];
+
+/// Held-out rows per cell, for the accuracy metrics of the scorecard.
+pub const HOLDOUT: usize = 100;
+
+/// Held-out rows whose posterior f(x) draws are declared quantities of the
+/// scorecard. Kept small: each is a separate series through the diagnostic
+/// estimator.
+pub const DECLARED_ROWS: usize = 5;
+
+/// Burn-in sweeps in a suite cell.
+pub const CELL_BURN_IN: usize = 500;
+
+/// Kept draws in a suite cell. Longer than the shipped default of 1000,
+/// which leaves rank-normalised R-hat around 1.035 on held-out f(x) for
+/// the Gaussian model at these sizes: efficiency measured on a chain that
+/// has not converged describes nothing, so the suite pays for convergence
+/// and reports the cost as part of the measurement.
+pub const CELL_DRAWS: usize = 4000;
+
+/// One cell of the benchmark suite: a model, a size and a seed.
+pub struct Cell {
+    /// The registry model name.
+    pub model: &'static str,
+    /// Training rows.
+    pub n: usize,
+    /// Covariate columns.
+    pub p: usize,
+}
+
+impl Cell {
+    /// The cell's identifier, as the scorecard and the output files use it.
+    pub fn id(&self) -> String {
+        format!("{}-n{}-p{}", self.model, self.n, self.p)
+    }
+}
+
+/// Every cell of the suite: each registry model at each declared size.
+pub fn cells() -> Vec<Cell> {
+    CASES
+        .iter()
+        .flat_map(|case| {
+            CELL_SIZES.iter().map(move |&(n, p)| Cell {
+                model: case.name,
+                n,
+                p,
+            })
+        })
+        .collect()
+}
+
+/// A cell's training workload with the held-out rows kept back.
+pub struct Split {
+    /// The training workload, on the suite's schedule.
+    pub train: Workload,
+    /// The held-out design.
+    pub test_x: Data,
+    /// The held-out response, absent where the model's response is
+    /// censored and there is no value to score a prediction against.
+    pub test_y: Option<Vec<f64>>,
+}
+
+/// Build `cell`: the registry workload at `cell.n + HOLDOUT` rows, split
+/// into the training set and the held-out rows, on the suite's schedule.
+///
+/// # Panics
+///
+/// If the registry carries no model of that name.
+pub fn build_cell(cell: &Cell) -> Split {
+    let case = CASES
+        .iter()
+        .find(|c| c.name == cell.model)
+        .unwrap_or_else(|| panic!("no registry case named {}", cell.model));
+    let full = (case.build)(cell.n + HOLDOUT, cell.p);
+    let train_rows = cell.n;
+    let head = |x: &Data| rows_of(x, 0, train_rows);
+    let tail = |x: &Data| rows_of(x, train_rows, x.n_rows());
+    let (test_x, train_x) = (tail(&full.x), head(&full.x));
+    let (response, test_y) = match full.response {
+        Response::Numeric(y) => (
+            Response::Numeric(y[..train_rows].to_vec()),
+            Some(y[train_rows..].to_vec()),
+        ),
+        #[cfg(feature = "experimental")]
+        Response::Survival { times, events } => (
+            Response::Survival {
+                times: times[..train_rows].to_vec(),
+                events: events[..train_rows].to_vec(),
+            },
+            None,
+        ),
+        #[cfg(feature = "experimental")]
+        Response::Bounds { lower, upper } => (
+            Response::Bounds {
+                lower: lower[..train_rows].to_vec(),
+                upper: upper[..train_rows].to_vec(),
+            },
+            None,
+        ),
+    };
+    Split {
+        train: Workload {
+            config: full
+                .config
+                .with_burn_in(CELL_BURN_IN)
+                .with_draws(CELL_DRAWS),
+            x: train_x,
+            response,
+        },
+        test_x,
+        test_y,
+    }
+}
+
+/// Rows `start..end` of `x` as a design of their own.
+fn rows_of(x: &Data, start: usize, end: usize) -> Data {
+    let p = x.n_cols();
+    let mut values = Vec::with_capacity((end - start) * p);
+    for i in start..end {
+        values.extend_from_slice(x.row(i));
+    }
+    Data::new(values, end - start, p).expect("a row subset of a valid design is valid")
+}
+
 /// The type 7 quantile of `values`.
 fn quantile(values: &[f64], p: f64) -> f64 {
     let mut sorted = values.to_vec();

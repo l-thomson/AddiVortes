@@ -71,6 +71,34 @@ times runs them behind n crossings, so the pair measures the boundary cost
 with the sampling held identical. Nothing there asserts and nothing is
 stored: the pull request is the record.
 
+## Sampling efficiency
+
+Speed and mixing are one measurement, not two: a sampler twice as fast per
+sweep that mixes half as well has gained nothing. The suite under
+`benchmarks/suite/` scores every shipped model at a fixed set of cells in
+minimum effective sample size per second, bulk and tail, with R-hat as a
+validity gate and ESS per sweep beside it.
+
+    pip install -r benchmarks/suite/requirements.txt
+    python benchmarks/suite/run.py --sizes small
+    python benchmarks/suite/compare.py \
+        benchmarks/suite/baselines/core-v0.3.0.csv target/suite/scorecard.csv
+
+Every diagnostic comes from one pinned ArviZ; neither the crate nor the
+suite estimates an effective sample size for a benchmark. Deltas are
+ratios with confidence intervals, never bare point ratios.
+
+A pull request touching the sampler kernel, an outcome model or the suite
+runs it in CI against the newest committed baseline, and fails on an
+unconverged cell or a separated adverse move in ESS per sweep or held-out
+error. Those are the only metrics gated: they are ratios per sweep and per
+row, so they do not change with the speed of the runner.
+
+Baselines live in `benchmarks/suite/baselines/`, one per core release.
+Refresh one at a release, or before a snapshot regeneration, by
+dispatching the CI workflow with the sizes and repetitions wanted and
+committing the scorecard artefact it uploads.
+
 ## Reproducibility and snapshots
 
 The reproducibility contract is in the crate-root documentation

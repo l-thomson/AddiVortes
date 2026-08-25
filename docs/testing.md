@@ -122,6 +122,24 @@ tessellation reads a handful of columns. Wall-clock is not a gate
 anywhere; the same-machine A/B in [CONTRIBUTING.md](../CONTRIBUTING.md)
 is where it is read.
 
+### Mixing regressions
+
+In `benchmarks/suite/`, on pull requests touching the sampler kernel, an
+outcome model or the suite. Every shipped model at a fixed set of cells,
+scored in minimum effective sample size per sweep and per second, bulk
+and tail, over sigma and f(x) at held-out rows, with rank-normalised
+split-chain R-hat as a validity gate and held-out error beside it. One
+pinned ArviZ computes every diagnostic. The gate reads effective sample
+size per sweep and held-out error, which are ratios per sweep and per
+row and so do not change with the speed of the runner; the wall-clock
+columns are reported and gate nothing.
+
+This layer detects a change that leaves the sampler correct and slower to
+mix. The calibration gates above prove the kernel targets the right
+distribution and say nothing about how many sweeps it takes to explore
+it, and a change that halves the acceptance rate of a move passes all of
+them.
+
 ## Numbers
 
 Every size, alpha and critical value is stated next to the test that
