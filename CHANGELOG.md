@@ -275,6 +275,15 @@ says "Sampled values changed" with the reason.
   from the one pass that gives the pooled in-sample RMSE; both bindings
   use them. Sampled values, the pooled in-sample RMSE and the fitted
   values are unchanged for a fixed seed.
+- Cell assignment under an all-Euclidean geometry runs over a
+  column-major mirror of the scaled design, one active column at a time
+  for every row, in place of a per-row gather over the active columns:
+  the full reassignment a dimension move makes, and the one-centre keys
+  a centre move makes, stream over contiguous columns. Each row's sum
+  over its active columns is formed in the same order as before, so the
+  keys, the assignments and the sampled values are unchanged for a fixed
+  seed. The mirror is built once per fit and doubles the memory of the
+  scaled design.
 - The all-Euclidean distance path is chosen once per geometry rather
   than by a scan of every column at every distance evaluation, which
   made the default fit grow with the number of covariates: a Friedman
