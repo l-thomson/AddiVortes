@@ -61,6 +61,19 @@ pub enum Outcome {
     /// identification. Experimental (`docs/experimental.md`).
     #[cfg(feature = "experimental")]
     Ordinal(OrdinalParams),
+    /// y = f(x) + e, e ~ sigma t_df: the independent Student-t model of
+    /// Geweke (1993), fitted as a scale mixture of normals with
+    /// per-observation Gamma weights. The error degrees of freedom are
+    /// fixed (default 4) or drawn over a declared grid by their exact
+    /// discrete conditional. Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    StudentT(StudentTParams),
+    /// y = f(x) + e, e ~ Laplace(0, sigma): errors with exponential
+    /// tails, fitted as a scale mixture of normals with per-observation
+    /// inverse-Gaussian weights (Park and Casella 2008); no parameters
+    /// of its own. Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    Laplace(LaplaceParams),
 }
 
 /// The stable variants plus the gated names, so a build without the
@@ -76,6 +89,8 @@ enum StableOutcome {
     Aft(serde::de::IgnoredAny),
     IntervalCensored(serde::de::IgnoredAny),
     Ordinal(serde::de::IgnoredAny),
+    StudentT(serde::de::IgnoredAny),
+    Laplace(serde::de::IgnoredAny),
 }
 
 #[cfg(not(feature = "experimental"))]
@@ -100,6 +115,14 @@ impl TryFrom<StableOutcome> for Outcome {
             }),
             StableOutcome::Ordinal(_) => Err(crate::error::Error::RequiresFeature {
                 item: "the `ordinal` outcome".into(),
+                feature: "experimental",
+            }),
+            StableOutcome::StudentT(_) => Err(crate::error::Error::RequiresFeature {
+                item: "the `student_t` outcome".into(),
+                feature: "experimental",
+            }),
+            StableOutcome::Laplace(_) => Err(crate::error::Error::RequiresFeature {
+                item: "the `laplace` outcome".into(),
                 feature: "experimental",
             }),
         }
@@ -160,6 +183,33 @@ impl Outcome {
         })
     }
 
+    /// The Student-t outcome with the error degrees of freedom fixed at
+    /// `df` and the default sigma^2 prior. Experimental.
+    #[cfg(feature = "experimental")]
+    pub fn student_t(df: f64) -> Self {
+        Outcome::StudentT(StudentTParams {
+            df: DegreesOfFreedom::Fixed(df),
+            ..StudentTParams::default()
+        })
+    }
+
+    /// The Student-t outcome with the error degrees of freedom drawn
+    /// over `grid` (uniform prior, exact discrete conditional) and the
+    /// default sigma^2 prior. Experimental.
+    #[cfg(feature = "experimental")]
+    pub fn student_t_grid(grid: Vec<f64>) -> Self {
+        Outcome::StudentT(StudentTParams {
+            df: DegreesOfFreedom::Grid(grid),
+            ..StudentTParams::default()
+        })
+    }
+
+    /// The Laplace outcome with the default sigma^2 prior. Experimental.
+    #[cfg(feature = "experimental")]
+    pub fn laplace() -> Self {
+        Outcome::Laplace(LaplaceParams::default())
+    }
+
     /// What the outcome does with sigma^2; scale validity derives from
     /// this value, never from a per-outcome table.
     pub(crate) fn sigma2_mode(&self) -> Sigma2Mode {
@@ -174,6 +224,10 @@ impl Outcome {
             Outcome::IntervalCensored(_) => Sigma2Mode::Sampled,
             #[cfg(feature = "experimental")]
             Outcome::Ordinal(_) => Sigma2Mode::Fixed(1.0),
+            #[cfg(feature = "experimental")]
+            Outcome::StudentT(_) => Sigma2Mode::Sampled,
+            #[cfg(feature = "experimental")]
+            Outcome::Laplace(_) => Sigma2Mode::Sampled,
         }
     }
 
@@ -190,6 +244,10 @@ impl Outcome {
             Outcome::IntervalCensored(_) => RequiredData::Continuous,
             #[cfg(feature = "experimental")]
             Outcome::Ordinal(_) => RequiredData::Ordinal,
+            #[cfg(feature = "experimental")]
+            Outcome::StudentT(_) => RequiredData::Continuous,
+            #[cfg(feature = "experimental")]
+            Outcome::Laplace(_) => RequiredData::Continuous,
         }
     }
 }
@@ -347,6 +405,115 @@ impl Default for OrdinalParams {
             categories: 2,
             offset: None,
             cutpoint_sd: 1.0,
+        }
+    }
+}
+
+/// The error degrees of freedom of the Student-t outcome: a fixed value,
+/// or a grid carrying a uniform prior and drawn each sweep by its exact
+/// discrete conditional. Serialises untagged, so a JSON configuration
+/// reads `"df": 4.0` or `"df": [3.0, 6.0, 12.0]`. No continuous-df
+/// sampler exists: df is weakly identified and random-walk samplers over
+/// it mix poorly, while the grid conditional is exact. Experimental
+/// (`docs/experimental.md`).
+#[cfg(feature = "experimental")]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum DegreesOfFreedom {
+    /// df fixed at the value.
+    Fixed(f64),
+    /// df uniform over the grid a priori: at least two values, strictly
+    /// increasing.
+    Grid(Vec<f64>),
+}
+
+#[cfg(feature = "experimental")]
+impl DegreesOfFreedom {
+    /// The chain's initial df: the fixed value, or the grid's middle
+    /// entry. Called on a validated configuration, whose grid is
+    /// non-empty.
+    pub(crate) fn initial(&self) -> f64 {
+        match self {
+            DegreesOfFreedom::Fixed(df) => *df,
+            DegreesOfFreedom::Grid(grid) => grid[grid.len() / 2],
+        }
+    }
+
+    /// The smallest admissible df: the fixed value, or the grid's first
+    /// entry, the grid being increasing.
+    pub(crate) fn minimum(&self) -> f64 {
+        match self {
+            DegreesOfFreedom::Fixed(df) => *df,
+            DegreesOfFreedom::Grid(grid) => grid[0],
+        }
+    }
+
+    /// The grid; empty for a fixed df.
+    pub(crate) fn grid(&self) -> &[f64] {
+        match self {
+            DegreesOfFreedom::Fixed(_) => &[],
+            DegreesOfFreedom::Grid(grid) => grid,
+        }
+    }
+}
+
+/// The Student-t outcome's parameters: the error degrees of freedom and
+/// the sigma^2 prior, folded onto the outcome because they are facts
+/// about the observation model. `nu` and `q` are the sigma^2 prior as on
+/// the Gaussian outcome; the error degrees of freedom sit on `df`.
+/// Experimental (`docs/experimental.md`).
+#[cfg(feature = "experimental")]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct StudentTParams {
+    /// The error degrees of freedom: a fixed value (default 4), or a
+    /// grid of at least two strictly increasing values with a uniform
+    /// prior.
+    pub df: DegreesOfFreedom,
+    /// sigma^2 prior degrees of freedom nu, as the Gaussian outcome's.
+    /// Default 6.
+    pub nu: f64,
+    /// sigma^2 prior calibration quantile q, Pr(sigma < sigma_hat) = q.
+    /// Default 0.85.
+    pub q: f64,
+}
+
+#[cfg(feature = "experimental")]
+impl Default for StudentTParams {
+    fn default() -> Self {
+        let defaults = GaussianParams::default();
+        Self {
+            df: DegreesOfFreedom::Fixed(4.0),
+            nu: defaults.nu,
+            q: defaults.q,
+        }
+    }
+}
+
+/// The Laplace outcome's parameters: the sigma^2 prior, folded onto the
+/// outcome because it is a fact about the observation model; the model
+/// has no parameters of its own. Experimental (`docs/experimental.md`).
+#[cfg(feature = "experimental")]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LaplaceParams {
+    /// sigma^2 prior degrees of freedom nu, as the Gaussian outcome's.
+    /// Default 6.
+    pub nu: f64,
+    /// sigma^2 prior calibration quantile q, Pr(sigma < sigma_hat) = q.
+    /// Default 0.85.
+    pub q: f64,
+}
+
+#[cfg(feature = "experimental")]
+impl Default for LaplaceParams {
+    fn default() -> Self {
+        let defaults = GaussianParams::default();
+        Self {
+            nu: defaults.nu,
+            q: defaults.q,
         }
     }
 }
@@ -738,6 +905,10 @@ impl Config {
             Outcome::Aft(params) => params.nu = nu,
             #[cfg(feature = "experimental")]
             Outcome::IntervalCensored(params) => params.nu = nu,
+            #[cfg(feature = "experimental")]
+            Outcome::StudentT(params) => params.nu = nu,
+            #[cfg(feature = "experimental")]
+            Outcome::Laplace(params) => params.nu = nu,
             _ => {}
         }
         self
@@ -755,6 +926,10 @@ impl Config {
             Outcome::Aft(params) => params.q = q,
             #[cfg(feature = "experimental")]
             Outcome::IntervalCensored(params) => params.q = q,
+            #[cfg(feature = "experimental")]
+            Outcome::StudentT(params) => params.q = q,
+            #[cfg(feature = "experimental")]
+            Outcome::Laplace(params) => params.q = q,
             _ => {}
         }
         self
@@ -906,6 +1081,10 @@ impl Config {
             (Outcome::IntervalCensored(_), _) => "interval_censored",
             #[cfg(feature = "experimental")]
             (Outcome::Ordinal(_), _) => "ordinal",
+            #[cfg(feature = "experimental")]
+            (Outcome::StudentT(_), _) => "student_t",
+            #[cfg(feature = "experimental")]
+            (Outcome::Laplace(_), _) => "laplace",
         }
     }
 
@@ -952,6 +1131,10 @@ impl Config {
             Outcome::Aft(params) => (params.nu, params.q),
             #[cfg(feature = "experimental")]
             Outcome::IntervalCensored(params) => (params.nu, params.q),
+            #[cfg(feature = "experimental")]
+            Outcome::StudentT(params) => (params.nu, params.q),
+            #[cfg(feature = "experimental")]
+            Outcome::Laplace(params) => (params.nu, params.q),
             #[cfg(feature = "experimental")]
             Outcome::Ordinal(_) => {
                 let defaults = GaussianParams::default();
@@ -1006,6 +1189,54 @@ impl Config {
             ));
         }
         match &self.outcome {
+            #[cfg(feature = "experimental")]
+            Outcome::Laplace(params) => {
+                positive("nu", params.nu)?;
+                if !(params.q.is_finite() && params.q > 0.0 && params.q < 1.0) {
+                    return Err(invalid(
+                        "q",
+                        format!("must be in the open interval (0, 1), got {}", params.q),
+                    ));
+                }
+            }
+            #[cfg(feature = "experimental")]
+            Outcome::StudentT(params) => {
+                positive("nu", params.nu)?;
+                if !(params.q.is_finite() && params.q > 0.0 && params.q < 1.0) {
+                    return Err(invalid(
+                        "q",
+                        format!("must be in the open interval (0, 1), got {}", params.q),
+                    ));
+                }
+                match &params.df {
+                    DegreesOfFreedom::Fixed(df) => {
+                        if !(df.is_finite() && *df > 0.0) {
+                            return Err(invalid(
+                                "df",
+                                format!("must be finite and positive, got {df}"),
+                            ));
+                        }
+                    }
+                    DegreesOfFreedom::Grid(grid) => {
+                        if grid.len() < 2 {
+                            return Err(invalid(
+                                "df",
+                                "a grid needs at least two values; a single value is \
+                                 the fixed form",
+                            ));
+                        }
+                        if let Some(v) = grid.iter().find(|v| !(v.is_finite() && **v > 0.0)) {
+                            return Err(invalid(
+                                "df",
+                                format!("grid values must be finite and positive, got {v}"),
+                            ));
+                        }
+                        if grid.windows(2).any(|pair| pair[0] >= pair[1]) {
+                            return Err(invalid("df", "grid values must be strictly increasing"));
+                        }
+                    }
+                }
+            }
             #[cfg(feature = "experimental")]
             Outcome::Aft(params) => {
                 positive("nu", params.nu)?;
@@ -1106,6 +1337,15 @@ impl Config {
                     "variance_params.tessellations",
                     "a variance ensemble needs a sampled sigma^2 to carry, and the \
                      probit and ordinal latent scales are fixed at 1 for identification",
+                ));
+            }
+            #[cfg(feature = "experimental")]
+            if matches!(self.outcome, Outcome::StudentT(_) | Outcome::Laplace(_)) {
+                return Err(invalid(
+                    "variance_params.tessellations",
+                    "a scale-mixture outcome's weights (student_t, laplace) and a \
+                     variance ensemble both model per-observation dispersion; the \
+                     combination awaits its identification argument",
                 ));
             }
             let (nu, _) = self.sigma2_prior();

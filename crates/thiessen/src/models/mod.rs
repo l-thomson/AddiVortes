@@ -23,8 +23,16 @@ pub mod heteroscedastic;
 pub mod interval_censored;
 #[cfg(feature = "experimental")]
 #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+pub mod laplace;
+#[cfg(feature = "experimental")]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
 pub mod ordinal;
 pub mod probit;
+#[cfg(feature = "experimental")]
+pub(crate) mod scale_mixture;
+#[cfg(feature = "experimental")]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+pub mod student_t;
 #[cfg(feature = "experimental")]
 #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
 pub mod tobit;

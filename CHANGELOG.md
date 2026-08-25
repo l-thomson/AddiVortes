@@ -137,6 +137,31 @@ says "Sampled values changed" with the reason.
   ratio from the cutpoint acceptance, and a full-size cutpoint
   effective-sample-size check. Outside the semver promise
   (docs/experimental.md).
+- (experimental) `Outcome::StudentT` with `StudentTParams`,
+  `DegreesOfFreedom`, `Posterior::dfs` and `Sampler::student_df`: the
+  independent Student-t model (Geweke 1993) as a scale mixture of
+  normals, per-observation Gamma weights redrawn each sweep from their
+  conditional and entering the precisions, sigma^2 drawn from the
+  weighted inverse-gamma conditional. The error degrees of freedom are
+  fixed (default 4) or drawn over a declared grid by their exact
+  discrete conditional; no continuous-df sampler. `predict_variance` is
+  sigma^2 df / (df - 2), `prediction_interval` the t mixture,
+  `log_likelihood` the t log density; a variance ensemble is rejected
+  pending an identification argument. Validated by a marginal
+  t-likelihood quadrature known-answer test at fixed and grid df, and
+  SBC and Geweke at both sizes. Outside the semver promise
+  (docs/experimental.md).
+- (experimental) `Outcome::Laplace` with `LaplaceParams`: Laplace
+  errors as a scale mixture of normals with exponential mixing (Andrews
+  and Mallows 1974), the per-observation weights redrawn each sweep
+  from their inverse-Gaussian conditional (Park and Casella 2008)
+  through the scale-mixture refresh shared with the Student-t model; no
+  parameters of its own. `predict_variance` is 2 sigma^2,
+  `prediction_interval` the Laplace mixture, `log_likelihood` the
+  Laplace log density; a variance ensemble is rejected pending an
+  identification argument. Validated by a marginal Laplace-likelihood
+  quadrature known-answer test and SBC and Geweke at both sizes.
+  Outside the semver promise (docs/experimental.md).
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled

@@ -46,6 +46,18 @@ separately verified (`docs/models.md`, Validation).
 {"outcome":{"interval_censored":{"nu":6.0,"q":0.85}},"mean_params":{"tessellations":3,"k":3.0,"lambda_c":2.0,"geometry":{"metric":[],"sigma_c":0.8},"structure":{"omega":0.8},"cell":{}},"variance_params":{"tessellations":null,"k":3.0,"lambda_c":2.0,"geometry":{"metric":[],"sigma_c":0.8},"structure":{"omega":0.8},"cell":{}},"general_params":{"burn_in":200,"draws":1000,"thinning":1,"prior_only":false}}
 ```
 
+## student_t (experimental)
+
+```json
+{"outcome":{"student_t":{"df":4.0,"nu":6.0,"q":0.85}},"mean_params":{"tessellations":3,"k":3.0,"lambda_c":2.0,"geometry":{"metric":[],"sigma_c":0.8},"structure":{"omega":0.8},"cell":{}},"variance_params":{"tessellations":null,"k":3.0,"lambda_c":2.0,"geometry":{"metric":[],"sigma_c":0.8},"structure":{"omega":0.8},"cell":{}},"general_params":{"burn_in":200,"draws":1000,"thinning":1,"prior_only":false}}
+```
+
+## laplace (experimental)
+
+```json
+{"outcome":{"laplace":{"nu":6.0,"q":0.85}},"mean_params":{"tessellations":3,"k":3.0,"lambda_c":2.0,"geometry":{"metric":[],"sigma_c":0.8},"structure":{"omega":0.8},"cell":{}},"variance_params":{"tessellations":null,"k":3.0,"lambda_c":2.0,"geometry":{"metric":[],"sigma_c":0.8},"structure":{"omega":0.8},"cell":{}},"general_params":{"burn_in":200,"draws":1000,"thinning":1,"prior_only":false}}
+```
+
 ## spherical metric
 
 ```json

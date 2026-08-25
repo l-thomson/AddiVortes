@@ -570,8 +570,116 @@ acceptance, and a full-size cutpoint effective-sample-size check.
 Input: integer codes 0 to K - 1 (`Error::InvalidOrdinalLabel`); a
 constant response is `Error::DegenerateResponse`.
 
+### Student-t (`Outcome::StudentT`, experimental)
+
+    y_i = f(x_i) + e_i,   e_i ~ sigma t_df
+
+The independent Student-t model (Geweke 1993) with the ensemble in
+place of the linear predictor: polynomial tails, so a wild observation
+is discounted rather than fitted. sigma is the scale of the t; the
+error standard deviation is sigma sqrt(df / (df - 2)) for df > 2.
+
+Sampler: the scale mixture of normals (Andrews and Mallows 1974),
+y_i | w_i ~ N(f(x_i), sigma^2 / w_i) with w_i ~ Gamma(df / 2, rate
+df / 2), whose marginal is exactly sigma t_df. Each sweep redraws
+w_i | r_i, sigma^2 ~ Gamma((df + 1) / 2, rate (df + r_i^2 / sigma^2) / 2),
+r_i = y_i - f(x_i); sigma^2 then follows Inv-Gamma((nu + n) / 2,
+(nu lambda + sum w_i r_i^2) / 2) and the cell means their Normal
+conditionals against the precisions w_i / sigma^2. The scan
+w | f, sigma^2 then sigma^2 | w, f then f | w, sigma^2 is a valid Gibbs
+sampler; no structural move gains an acceptance-ratio term. Under
+prior-only sampling the weights come from their prior. With `df` a
+grid the degrees of freedom are drawn each sweep, before the weights,
+from the exact discrete conditional P(df = g | w) proportional to
+prod_i Gamma(w_i; g / 2, rate g / 2), uniform over the grid a priori.
+No continuous-df sampler exists: df is weakly identified and
+random-walk samplers over it mix poorly. A variance ensemble is
+rejected at validation: per-observation weights and a per-observation
+variance product both model dispersion, and their joint identification
+awaits its argument.
+
+Priors: the Gaussian model's for the cells and sigma^2. The lambda
+calibration reads sigma_hat as a least-squares residual standard
+deviation, which under t errors estimates sigma sqrt(df / (df - 2))
+rather than sigma; the prior's spread absorbs the overstatement.
+Configuration: `Outcome::student_t(df)` (default df 4) or
+`Outcome::student_t_grid(grid)`, at least two increasing positive
+values; nu and q on the Student-t parameters. As df grows the posterior
+converges to the Gaussian model's, in distribution rather than draw for
+draw, because the weight draws consume randomness.
+
+Correspondence: with Geweke (1993), whose Gibbs sampler this is with
+the ensemble in place of the linear predictor and the grid conditional
+in place of his continuous-df step. No maintained BART-family package
+ships a Student-t error model.
+
+Fitted model: `predict` is the posterior mean of f(x);
+`predict_variance` is sigma_d^2 df_d / (df_d - 2) per draw,
+`NotApplicable` where the configuration admits df <= 2;
+`prediction_interval` is the central interval of the equal-weight
+mixture over draws of f_d(x) + sigma_d t_{df_d}; `log_likelihood` is
+the location-scale t log density per draw; `sigma` is sigma_d on the
+caller's scale, the scale of the t; `in_sample_rmse` is against the
+observed response. Under a grid the fit stores one df per kept draw
+(`Posterior::dfs`). Validation: fixed-tessellation quadrature
+known-answer test against numerical integration of the marginal t
+likelihood, at fixed df and over a grid (the grid form checking the
+discrete df conditional and E[df]); SBC and Geweke at both sizes at
+df = 4; a large-df fit agrees with the Gaussian model within Monte
+Carlo error.
+
+### Laplace (`Outcome::Laplace`, experimental)
+
+    y_i = f(x_i) + e_i,   e_i ~ Laplace(0, sigma)
+
+Density (2 sigma)^-1 exp(-|e| / sigma): exponential tails, heavier
+than the Gaussian's and lighter than any low-df Student-t's, so a wild
+observation is discounted at rate 1 / |r| against the t model's
+1 / r^2. sigma is the Laplace scale; the error standard deviation is
+sigma sqrt 2. The model has no parameters of its own.
+
+Sampler: the scale mixture of normals with exponential mixing (Andrews
+and Mallows 1974), y_i | w_i ~ N(f(x_i), sigma^2 / w_i) with
+1 / w_i ~ Exp(rate 1 / 2), whose marginal is exactly
+Laplace(f(x_i), sigma). Each sweep redraws
+w_i | r_i, sigma^2 ~ Inverse-Gaussian(mean sigma / |r_i|, shape 1),
+the conditional of Park and Casella (2008) for the mixing precision,
+r_i = y_i - f(x_i); a residual small enough to overflow the draw takes
+the r = 0 limit 1 / w_i ~ chi^2_1. sigma^2 then follows
+Inv-Gamma((nu + n) / 2, (nu lambda + sum w_i r_i^2) / 2) and the cell
+means their Normal conditionals against the precisions w_i / sigma^2:
+the Student-t model's scan with the Gamma conditional replaced by the
+inverse-Gaussian one. Under prior-only sampling the weights come from
+their prior. No structural move gains an acceptance-ratio term. A
+variance ensemble is rejected at validation, as for every scale-mixture
+outcome.
+
+Priors: the Gaussian model's for the cells and sigma^2; the lambda
+calibration reads sigma_hat as a least-squares residual standard
+deviation, which under Laplace errors estimates sigma sqrt 2, and the
+prior's spread absorbs the overstatement. Configuration:
+`Outcome::laplace()`, nu and q on the Laplace parameters.
+
+Correspondence: with Park and Casella (2008), whose hierarchy and
+inverse-Gaussian conditional these are, applied to the errors rather
+than to regression coefficients. No maintained BART-family package
+ships a Laplace error model.
+
+Fitted model: `predict` is the posterior mean of f(x);
+`predict_variance` is 2 sigma_d^2 per draw; `prediction_interval` is
+the central interval of the equal-weight mixture over draws of
+Laplace(f_d(x), sigma_d); `log_likelihood` is the Laplace log density
+per draw; `sigma` is sigma_d on the caller's scale, the Laplace scale;
+`in_sample_rmse` is against the observed response. Validation:
+fixed-tessellation quadrature known-answer test against numerical
+integration of the marginal Laplace likelihood; SBC and Geweke at both
+sizes.
+
 ## References
 
+- Andrews, D. F. and Mallows, C. L. (1974). Scale mixtures of normal
+  distributions. Journal of the Royal Statistical Society Series B
+  36(1), 99-102.
 - Albert, J. H. and Chib, S. (1993). Bayesian analysis of binary and
   polychotomous response data. Journal of the American Statistical
   Association 88(422), 669-679.
@@ -599,6 +707,8 @@ constant response is `Error::DegenerateResponse`.
 - Linero, A. R. and Yang, Y. (2018). Bayesian regression tree ensembles
   that adapt to smoothness and sparsity. Journal of the Royal
   Statistical Society Series B 80(5), 1087-1110.
+- Park, T. and Casella, G. (2008). The Bayesian lasso. Journal of the
+  American Statistical Association 103(482), 681-686.
 - Polson, N. G., Scott, J. G. and Windle, J. (2013). Bayesian inference
   for logistic models using Polya-Gamma latent variables. Journal of the
   American Statistical Association 108(504), 1339-1349.

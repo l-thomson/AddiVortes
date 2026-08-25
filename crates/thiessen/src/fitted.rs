@@ -4,6 +4,8 @@
 
 use crate::config::Config;
 use crate::config::Outcome;
+#[cfg(feature = "experimental")]
+use crate::config::StudentTParams;
 use crate::data::{self, Data, Warning};
 use crate::error::{Error, Result};
 use crate::geometry::Geometry;
@@ -14,7 +16,9 @@ use crate::tessellation::Tessellation;
 /// The kept posterior draws, scaled space: the m mean tessellations per
 /// draw; sigma^2 per draw under the Gaussian model; the m' variance
 /// tessellations per draw under the heteroscedastic model; the interior
-/// cutpoints per draw under the ordinal model above two categories.
+/// cutpoints per draw under the ordinal model above two categories; the
+/// error degrees of freedom per draw under the Student-t model with a
+/// grid.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "PosteriorParts")]
 pub struct Posterior {
@@ -23,6 +27,8 @@ pub struct Posterior {
     variance_tessellations: Vec<Vec<Tessellation>>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     cutpoints: Vec<Vec<f64>>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    dfs: Vec<f64>,
 }
 
 impl Posterior {
@@ -32,6 +38,7 @@ impl Posterior {
             tessellations: Vec::new(),
             variance_tessellations: Vec::new(),
             cutpoints: Vec::new(),
+            dfs: Vec::new(),
         }
     }
 
@@ -41,11 +48,13 @@ impl Posterior {
         tessellations: Vec<Tessellation>,
         variance_tessellations: Option<Vec<Tessellation>>,
         cutpoints: Option<Vec<f64>>,
+        df: Option<f64>,
     ) {
         self.sigma_sq.extend(sigma_sq);
         self.tessellations.push(tessellations);
         self.variance_tessellations.extend(variance_tessellations);
         self.cutpoints.extend(cutpoints);
+        self.dfs.extend(df);
     }
 
     /// Number of kept draws.
@@ -75,12 +84,19 @@ impl Posterior {
         &self.cutpoints
     }
 
+    /// The error degrees of freedom of each draw; empty outside the
+    /// Student-t model with a grid, where none is sampled.
+    pub fn dfs(&self) -> &[f64] {
+        &self.dfs
+    }
+
     pub(crate) fn extend(&mut self, other: &Self) {
         self.sigma_sq.extend_from_slice(&other.sigma_sq);
         self.tessellations.extend_from_slice(&other.tessellations);
         self.variance_tessellations
             .extend_from_slice(&other.variance_tessellations);
         self.cutpoints.extend_from_slice(&other.cutpoints);
+        self.dfs.extend_from_slice(&other.dfs);
     }
 }
 
@@ -92,6 +108,8 @@ struct PosteriorParts {
     variance_tessellations: Vec<Vec<Tessellation>>,
     #[serde(default)]
     cutpoints: Vec<Vec<f64>>,
+    #[serde(default)]
+    dfs: Vec<f64>,
 }
 
 impl TryFrom<PosteriorParts> for Posterior {
@@ -165,11 +183,20 @@ impl TryFrom<PosteriorParts> for Posterior {
                 }
             }
         }
+        if !(parts.dfs.is_empty() || parts.dfs.len() == n_draws) {
+            return Err(bad(
+                "degrees-of-freedom draws must be absent or one per draw",
+            ));
+        }
+        if parts.dfs.iter().any(|df| !(df.is_finite() && *df > 0.0)) {
+            return Err(bad("degrees-of-freedom draws must be finite and positive"));
+        }
         Ok(Self {
             sigma_sq: parts.sigma_sq,
             tessellations: parts.tessellations,
             variance_tessellations: parts.variance_tessellations,
             cutpoints: parts.cutpoints,
+            dfs: parts.dfs,
         })
     }
 }
@@ -271,6 +298,19 @@ impl TryFrom<FittedParts> for Fitted {
             {
                 return Err(bad("each draw holds the K - 2 interior cutpoints"));
             }
+        }
+        #[cfg(feature = "experimental")]
+        let expects_dfs = matches!(
+            &parts.config.outcome,
+            Outcome::StudentT(params) if !params.df.grid().is_empty()
+        );
+        #[cfg(not(feature = "experimental"))]
+        let expects_dfs = false;
+        if (parts.posterior.dfs().len() == n_draws) != expects_dfs {
+            return Err(bad(
+                "degrees-of-freedom draws are present exactly under the student_t \
+                 model with a grid",
+            ));
         }
         if (parts.posterior.variance_tessellations().len() == n_draws) != has_ensemble {
             return Err(bad(
@@ -519,12 +559,16 @@ impl Fitted {
     /// draw-major (`n_draws` by `n_rows`), caller scale: sigma_d^2 under
     /// the Gaussian model (constant across rows); s_d^2(x), the product of
     /// the variance tessellations, under the heteroscedastic model (the
-    /// square of `rbart`'s `sdraws`).
+    /// square of `rbart`'s `sdraws`); the error variance
+    /// sigma_d^2 df_d / (df_d - 2) under the Student-t model and
+    /// 2 sigma_d^2 under the Laplace model.
     ///
     /// # Errors
     ///
-    /// `NotApplicable` under the probit model; `FeatureCountMismatch`,
-    /// `NonFiniteFeature`, `InvalidCategoryCode`.
+    /// `NotApplicable` under the probit model, and under the Student-t
+    /// model where the configuration admits df <= 2, whose t has no
+    /// variance; `FeatureCountMismatch`, `NonFiniteFeature`,
+    /// `InvalidCategoryCode`.
     pub fn predict_variance(&self, x: &Data) -> Result<Vec<Vec<f64>>> {
         data::validate_predict(x, self.scaler.n_cols())?;
         let n = x.n_rows();
@@ -535,6 +579,31 @@ impl Fitted {
         #[cfg(feature = "experimental")]
         if matches!(self.config.outcome, Outcome::Ordinal(_)) {
             return Err(self.not_applicable("predict_variance"));
+        }
+        #[cfg(feature = "experimental")]
+        if matches!(self.config.outcome, Outcome::Laplace(_)) {
+            return Ok(self
+                .posterior
+                .sigma_sq()
+                .iter()
+                .map(|s| vec![2.0 * s * range_sq; n])
+                .collect());
+        }
+        #[cfg(feature = "experimental")]
+        if let Outcome::StudentT(params) = &self.config.outcome {
+            if params.df.minimum() <= 2.0 {
+                return Err(self.not_applicable("predict_variance"));
+            }
+            return Ok(self
+                .posterior
+                .sigma_sq()
+                .iter()
+                .enumerate()
+                .map(|(d, s)| {
+                    let df = self.student_df(params, d);
+                    vec![s * range_sq * df / (df - 2.0); n]
+                })
+                .collect());
         }
         if self.has_variance_ensemble() {
             let geometry = self.geometry()?;
@@ -620,7 +689,9 @@ impl Fitted {
     /// kept draws of N(f_d(x), s_d^2(x)), found by bisection on the mixture
     /// CDF. Under the tobit model the predictive is censored, so the ends
     /// are clamped to the limits (censoring is monotone, which makes the
-    /// clamp the exact quantile).
+    /// clamp the exact quantile). Under the Student-t model the mixture
+    /// components are f_d(x) + sigma_d t_{df_d}, and under the Laplace
+    /// model Laplace(f_d(x), sigma_d), the model's own predictive.
     ///
     /// # Errors
     ///
@@ -635,6 +706,61 @@ impl Fitted {
         #[cfg(feature = "experimental")]
         if matches!(self.config.outcome, Outcome::Ordinal(_)) {
             return Err(self.not_applicable("prediction_interval"));
+        }
+        #[cfg(feature = "experimental")]
+        if matches!(self.config.outcome, Outcome::Laplace(_)) {
+            let per_draw = self.predict_draws(x)?;
+            let range = self.scaler.y_range();
+            let sigmas: Vec<f64> = self
+                .posterior
+                .sigma_sq()
+                .iter()
+                .map(|s| s.sqrt() * range)
+                .collect();
+            let tail = 0.5 * (1.0 - level);
+            let n = x.n_rows();
+            let mut fits = vec![0.0; per_draw.len()];
+            let mut out = Vec::with_capacity(n);
+            for row in 0..n {
+                for (fit, draw) in fits.iter_mut().zip(&per_draw) {
+                    *fit = draw[row];
+                }
+                let cdf = |t: f64| laplace_mixture_cdf(&fits, &sigmas, t);
+                out.push(Interval {
+                    lower: heavy_mixture_quantile(&fits, &sigmas, tail, cdf),
+                    upper: heavy_mixture_quantile(&fits, &sigmas, 1.0 - tail, cdf),
+                });
+            }
+            return Ok(out);
+        }
+        #[cfg(feature = "experimental")]
+        if let Outcome::StudentT(params) = &self.config.outcome {
+            let per_draw = self.predict_draws(x)?;
+            let range = self.scaler.y_range();
+            let sigmas: Vec<f64> = self
+                .posterior
+                .sigma_sq()
+                .iter()
+                .map(|s| s.sqrt() * range)
+                .collect();
+            let dfs: Vec<f64> = (0..per_draw.len())
+                .map(|d| self.student_df(params, d))
+                .collect();
+            let tail = 0.5 * (1.0 - level);
+            let n = x.n_rows();
+            let mut fits = vec![0.0; per_draw.len()];
+            let mut out = Vec::with_capacity(n);
+            for row in 0..n {
+                for (fit, draw) in fits.iter_mut().zip(&per_draw) {
+                    *fit = draw[row];
+                }
+                let cdf = |t: f64| student_mixture_cdf(&fits, &sigmas, &dfs, t);
+                out.push(Interval {
+                    lower: heavy_mixture_quantile(&fits, &sigmas, tail, cdf),
+                    upper: heavy_mixture_quantile(&fits, &sigmas, 1.0 - tail, cdf),
+                });
+            }
+            return Ok(out);
         }
         let per_draw = self.predict_draws(x)?;
         let variances = self.predict_variance(x)?;
@@ -677,7 +803,11 @@ impl Fitted {
     /// ln Phi((f_d - upper) / s_d), and the Normal log density otherwise.
     /// Under the ordinal model the term is the ordinal likelihood,
     /// ln(Phi(gamma_{y+1} - c - f_d) - Phi(gamma_y - c - f_d)) with the
-    /// draw's own cutpoints. `NotApplicable` under the AFT model, whose
+    /// draw's own cutpoints. Under the Student-t model the term is the
+    /// location-scale t log density with the draw's scale sigma_d and
+    /// degrees of freedom df_d, and under the Laplace model the Laplace
+    /// log density with the draw's scale. `NotApplicable` under the AFT
+    /// model, whose
     /// pointwise likelihood needs the event indicator
     /// (`log_likelihood_survival`), and under the interval-censored
     /// model, whose pointwise likelihood needs the bounds
@@ -763,6 +893,47 @@ impl Fitted {
                             } else {
                                 maths::ln(1.0 - p)
                             }
+                        })
+                        .collect()
+                })
+                .collect());
+        }
+        #[cfg(feature = "experimental")]
+        if matches!(self.config.outcome, Outcome::Laplace(_)) {
+            let per_draw = self.predict_draws(x)?;
+            let range = self.scaler.y_range();
+            return Ok(per_draw
+                .iter()
+                .enumerate()
+                .map(|(d, fits)| {
+                    let scale = self.posterior.sigma_sq()[d].sqrt() * range;
+                    let ln_norm = maths::ln(2.0 * scale);
+                    y.iter()
+                        .zip(fits)
+                        .map(|(&yi, &fit)| -ln_norm - (yi - fit).abs() / scale)
+                        .collect()
+                })
+                .collect());
+        }
+        #[cfg(feature = "experimental")]
+        if let Outcome::StudentT(params) = &self.config.outcome {
+            let per_draw = self.predict_draws(x)?;
+            let range_sq = self.scaler.y_range() * self.scaler.y_range();
+            let ln_pi = maths::ln(std::f64::consts::PI);
+            return Ok(per_draw
+                .iter()
+                .enumerate()
+                .map(|(d, fits)| {
+                    let sigma_sq = self.posterior.sigma_sq()[d] * range_sq;
+                    let df = self.student_df(params, d);
+                    let ln_c = maths::lgamma(0.5 * (df + 1.0))
+                        - maths::lgamma(0.5 * df)
+                        - 0.5 * (maths::ln(df) + ln_pi + maths::ln(sigma_sq));
+                    y.iter()
+                        .zip(fits)
+                        .map(|(&yi, &fit)| {
+                            let z_sq = (yi - fit) * (yi - fit) / (df * sigma_sq);
+                            ln_c - 0.5 * (df + 1.0) * maths::ln(1.0 + z_sq)
                         })
                         .collect()
                 })
@@ -1014,9 +1185,12 @@ impl Fitted {
     }
 
     /// sigma per kept draw under a model with a global sampled sigma^2
-    /// (the Gaussian and tobit models), caller scale: sqrt(sigma^2) times
-    /// the training range of the response. Empty under the probit model
-    /// (unit latent variance) and under a variance ensemble
+    /// (the Gaussian, tobit, Student-t and Laplace models; under the
+    /// scale-mixture models the scale of the t or Laplace, not the error
+    /// standard deviation),
+    /// caller scale: sqrt(sigma^2) times the training range of the
+    /// response. Empty under the probit model (unit latent variance) and
+    /// under a variance ensemble
     /// ([`predict_variance`](Self::predict_variance) gives s^2(x)).
     pub fn sigma(&self) -> Vec<f64> {
         let range = self.scaler.y_range();
@@ -1030,6 +1204,18 @@ impl Fitted {
     /// The probit offset c; 0 under the other models.
     fn offset(&self) -> f64 {
         self.config.offset().unwrap_or(0.0)
+    }
+
+    /// The error degrees of freedom of draw `d` under the Student-t
+    /// model: the draw's own value under a grid, the fixed value
+    /// otherwise.
+    #[cfg(feature = "experimental")]
+    fn student_df(&self, params: &StudentTParams, d: usize) -> f64 {
+        self.posterior
+            .dfs()
+            .get(d)
+            .copied()
+            .unwrap_or_else(|| params.df.initial())
     }
 
     /// Mean number of cells per mean tessellation, one value per kept draw.
@@ -1137,6 +1323,60 @@ fn mixture_cdf(fits: &[f64], sigmas: &[f64], t: f64) -> f64 {
         .map(|(&fit, &sigma)| maths::normal_cdf((t - fit) / sigma))
         .sum();
     sum / fits.len() as f64
+}
+
+/// CDF at `t` of the equal-weight mixture of fit_d + sigma_d t_{df_d}.
+#[cfg(feature = "experimental")]
+fn student_mixture_cdf(fits: &[f64], sigmas: &[f64], dfs: &[f64], t: f64) -> f64 {
+    let sum: f64 = fits
+        .iter()
+        .zip(sigmas.iter().zip(dfs))
+        .map(|(&fit, (&sigma, &df))| maths::student_t_cdf((t - fit) / sigma, df))
+        .sum();
+    sum / fits.len() as f64
+}
+
+/// CDF at `t` of the equal-weight mixture of Laplace(fit_d, sigma_d).
+#[cfg(feature = "experimental")]
+fn laplace_mixture_cdf(fits: &[f64], sigmas: &[f64], t: f64) -> f64 {
+    let sum: f64 = fits
+        .iter()
+        .zip(sigmas)
+        .map(|(&fit, &sigma)| maths::laplace_cdf((t - fit) / sigma))
+        .sum();
+    sum / fits.len() as f64
+}
+
+/// Quantile `p` of a mixture with heavier-than-Gaussian tails by
+/// bisection on its `cdf`, the bracket of the fits padded by sigma_max
+/// and doubled outward until it covers p: polynomial and exponential
+/// tails outrun any fixed pad.
+#[cfg(feature = "experimental")]
+fn heavy_mixture_quantile(fits: &[f64], sigmas: &[f64], p: f64, cdf: impl Fn(f64) -> f64) -> f64 {
+    let mut lo = f64::INFINITY;
+    let mut hi = f64::NEG_INFINITY;
+    let mut sigma_max = 0.0_f64;
+    for (&fit, &sigma) in fits.iter().zip(sigmas) {
+        lo = lo.min(fit);
+        hi = hi.max(fit);
+        sigma_max = sigma_max.max(sigma);
+    }
+    let (mut lo, mut hi) = (lo - sigma_max, hi + sigma_max);
+    while cdf(lo) > p {
+        lo -= hi - lo;
+    }
+    while cdf(hi) < p {
+        hi += hi - lo;
+    }
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        if cdf(mid) < p {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    0.5 * (lo + hi)
 }
 
 /// Quantile `p` of the mixture by bisection on [`mixture_cdf`] over a
