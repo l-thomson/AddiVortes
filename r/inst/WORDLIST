@@ -4,15 +4,21 @@ BART's
 bayesplot
 Buerkner
 build's
+Casella
 Chib
 Chipman
 dbarts
+df
 distributionally
 doi
+Econometrica
 Gabry
 Gelman
+Geweke
 hardhat
 HBART
+ln
+modeling
 pkgdown
 Poisson
 Polya
@@ -29,6 +35,7 @@ rstantools
 Rtools
 rustc
 rustup
+sd
 srr
 stochtree
 th
@@ -38,4 +45,5 @@ Vehtari
 vendored
 Voronoi
 WAIC
+Wei
 ybar

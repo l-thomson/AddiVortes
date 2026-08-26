@@ -74,14 +74,23 @@
   replaced.
 * `seed = NULL` draws the chain's seed from R's stream, so `set.seed()`
   governs; a whole number passes to the core unchanged.
-* The core is built without its `experimental` feature, so only the
-  published models are reachable: a gated outcome has no constructor and a
-  configuration naming a gated field or variant is rejected with the
-  core's message; `core_experimental()` reports the build's setting.
+* The core is built without its `experimental` feature by default, so a
+  released build reaches the published models only. The gated outcome
+  families have constructors here whatever the build carries
+  (`tobit_outcome()`, `aft_outcome()`, `interval_censored_outcome()`,
+  `ordinal_outcome()`, `student_t_outcome()` and `laplace_outcome()`), and
+  a build accepting them is installed from source with
+  `THIESSEN_EXPERIMENTAL=1` in the environment; `core_experimental()`
+  reports the build's setting. Such a build is outside semantic
+  versioning, and a fit saved from one does not load in a build without
+  the feature.
 * Errors carry the condition class `thiessen_error` and warnings
-  `thiessen_warning`. Scalar arguments are checked by rlang's input
-  checks, re-signalled under that class, so a rejected value is reported
-  with the argument's name and what was passed.
+  `thiessen_warning`; an error naming the core's `experimental` feature
+  carries `thiessen_requires_feature` before it, so a configuration
+  needing an opt-in build is handled apart from an invalid one. Scalar
+  arguments are checked by rlang's input checks, re-signalled under that
+  class, so a rejected value is reported with the argument's name and
+  what was passed.
 * `print()` and `format()` on an outcome family or a parameter group give
   the constructor call that builds it: the string parses back to the
   object.

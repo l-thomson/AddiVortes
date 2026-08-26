@@ -245,9 +245,10 @@ impl TryFrom<TessellationParts> for Tessellation {
             #[cfg(not(feature = "experimental"))]
             {
                 let _ = tau;
-                return Err(bad(
-                    "the soft-membership bandwidth needs the experimental feature",
-                ));
+                return Err(Error::RequiresFeature {
+                    item: "the soft-membership bandwidth".into(),
+                    feature: "experimental",
+                });
             }
             #[cfg(feature = "experimental")]
             if !(tau.is_finite() && tau > 0.0) {

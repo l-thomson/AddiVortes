@@ -436,15 +436,16 @@ impl Sampler {
     /// A sampler for the AFT model over raw data: `times` holds n
     /// positive event or censoring times and `events` one flag per row
     /// (true is an event, false right-censoring); the response the chain
-    /// runs on is ln t. Experimental (`docs/experimental.md`).
+    /// runs on is ln t. Experimental
+    /// (`docs/experimental.md`); `RequiresFeature` in a build without the
+    /// feature.
     ///
     /// # Errors
     ///
     /// [`Sampler::new`]; `InvalidHyperparameter` for an outcome other
-    /// than [`Outcome::Aft`](crate::Outcome::Aft),
+    /// than `Outcome::Aft`,
     /// `EventCountMismatch`, `InvalidSurvivalTime`.
-    #[cfg(feature = "experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    #[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
     pub fn aft(
         config: &Config,
         x: &Data,
@@ -452,9 +453,14 @@ impl Sampler {
         events: &[bool],
         seed: u64,
     ) -> Result<Self> {
-        require_aft(config)?;
-        let y = log_times(times, events)?;
-        Self::build(config, x, &y, seed, None, Extra::Events(events))
+        #[cfg(not(feature = "experimental"))]
+        return Err(crate::config::Gated::AFT.requires_feature());
+        #[cfg(feature = "experimental")]
+        {
+            require_aft(config)?;
+            let y = log_times(times, events)?;
+            Self::build(config, x, &y, seed, None, Extra::Events(events))
+        }
     }
 
     /// A sampler for the interval-censored model over raw data: `lower`
@@ -462,15 +468,15 @@ impl Sampler {
     /// scale (an equal pair is an exact value, an infinite endpoint
     /// one-sided censoring); the response the chain runs on is the
     /// working completion of each interval. Experimental
-    /// (`docs/experimental.md`).
+    /// (`docs/experimental.md`); `RequiresFeature` in a build without the
+    /// feature.
     ///
     /// # Errors
     ///
     /// [`Sampler::new`]; `InvalidHyperparameter` for an outcome other
-    /// than [`Outcome::IntervalCensored`](crate::Outcome::IntervalCensored),
+    /// than `Outcome::IntervalCensored`,
     /// `BoundCountMismatch`, `InvalidInterval`.
-    #[cfg(feature = "experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    #[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
     pub fn interval_censored(
         config: &Config,
         x: &Data,
@@ -478,9 +484,14 @@ impl Sampler {
         upper: &[f64],
         seed: u64,
     ) -> Result<Self> {
-        require_interval_censored(config)?;
-        let y = interval_working(lower, upper)?;
-        Self::build(config, x, &y, seed, None, Extra::Bounds { lower, upper })
+        #[cfg(not(feature = "experimental"))]
+        return Err(crate::config::Gated::INTERVAL_CENSORED.requires_feature());
+        #[cfg(feature = "experimental")]
+        {
+            require_interval_censored(config)?;
+            let y = interval_working(lower, upper)?;
+            Self::build(config, x, &y, seed, None, Extra::Bounds { lower, upper })
+        }
     }
 
     /// The interval-censored model under the pinned prior, as
@@ -730,6 +741,9 @@ impl Sampler {
         let half_width = match &config.outcome {
             OutcomeConfig::Probit(_) => ProbitOutcome::CELL_PRIOR_HALF_WIDTH,
             OutcomeConfig::Gaussian(_) => GaussianOutcome::CELL_PRIOR_HALF_WIDTH,
+            // `Config::validate`, called above, rejects a gated outcome.
+            #[cfg(not(feature = "experimental"))]
+            OutcomeConfig::Gated(_) => GaussianOutcome::CELL_PRIOR_HALF_WIDTH,
             #[cfg(feature = "experimental")]
             OutcomeConfig::Tobit(_) => TobitOutcome::CELL_PRIOR_HALF_WIDTH,
             #[cfg(feature = "experimental")]
@@ -809,6 +823,13 @@ impl Sampler {
         );
         let outcome = match &config.outcome {
             OutcomeConfig::Gaussian(_) => {
+                let mut outcome = GaussianOutcome;
+                outcome.init(&y_scaled);
+                Outcome::Gaussian(outcome)
+            }
+            // `Config::validate`, called above, rejects a gated outcome.
+            #[cfg(not(feature = "experimental"))]
+            OutcomeConfig::Gated(_) => {
                 let mut outcome = GaussianOutcome;
                 outcome.init(&y_scaled);
                 Outcome::Gaussian(outcome)
@@ -1033,12 +1054,17 @@ impl Sampler {
     }
 
     /// The DART inclusion state, (weights, concentration), when the
-    /// structure prior samples its weights.
-    #[cfg(feature = "experimental")]
+    /// structure prior samples its weights; `None` in a build without the
+    /// feature.
     pub fn inclusion_state(&self) -> Option<(&[f64], f64)> {
-        self.dart
-            .as_ref()
-            .map(|dart| (dart.s.as_slice(), dart.theta))
+        #[cfg(not(feature = "experimental"))]
+        return None;
+        #[cfg(feature = "experimental")]
+        {
+            self.dart
+                .as_ref()
+                .map(|dart| (dart.s.as_slice(), dart.theta))
+        }
     }
 
     /// The scale and working-response update; `structural` enables the
@@ -1288,24 +1314,30 @@ impl Sampler {
     }
 
     /// The current interior cutpoints of the ordinal model, increasing;
-    /// empty at K = 2 and under another outcome. Experimental
-    /// (`docs/experimental.md`).
-    #[cfg(feature = "experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    /// empty at K = 2 and under another outcome, and in a build without
+    /// the feature. Experimental (`docs/experimental.md`).
     pub fn cutpoints(&self) -> &[f64] {
-        self.outcome
-            .as_ordinal()
-            .map(OrdinalOutcome::free_cutpoints)
-            .unwrap_or(&[])
+        #[cfg(not(feature = "experimental"))]
+        return &[];
+        #[cfg(feature = "experimental")]
+        {
+            self.outcome
+                .as_ordinal()
+                .map(OrdinalOutcome::free_cutpoints)
+                .unwrap_or(&[])
+        }
     }
 
     /// The current error degrees of freedom of the Student-t outcome;
-    /// `None` under another outcome. Experimental
-    /// (`docs/experimental.md`).
-    #[cfg(feature = "experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    /// `None` under another outcome, and in a build without the feature.
+    /// Experimental (`docs/experimental.md`).
     pub fn student_df(&self) -> Option<f64> {
-        self.outcome.as_student_t().map(StudentTOutcome::df)
+        #[cfg(not(feature = "experimental"))]
+        return None;
+        #[cfg(feature = "experimental")]
+        {
+            self.outcome.as_student_t().map(StudentTOutcome::df)
+        }
     }
 
     /// Number of draws kept so far.
@@ -1386,75 +1418,85 @@ impl Sampler {
     /// tessellations, the cell values and sigma^2; the latents reset to
     /// the observed log times and the next sweep's refresh redraws the
     /// censored ones from their conditional. Experimental
-    /// (`docs/experimental.md`).
+    /// (`docs/experimental.md`); `RequiresFeature` in a build without the
+    /// feature.
     ///
     /// # Errors
     ///
     /// `InvalidHyperparameter` for an outcome other than
-    /// [`Outcome::Aft`](crate::Outcome::Aft); `RowCountMismatch`,
+    /// `Outcome::Aft`; `RowCountMismatch`,
     /// `EventCountMismatch`, `InvalidSurvivalTime`.
-    #[cfg(feature = "experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    #[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
     pub fn set_aft_response(&mut self, times: &[f64], events: &[bool]) -> Result<()> {
-        require_aft(&self.config)?;
-        if times.len() != self.y.len() {
-            return Err(Error::RowCountMismatch {
-                y_len: times.len(),
-                x_rows: self.y.len(),
-            });
+        #[cfg(not(feature = "experimental"))]
+        return Err(crate::config::Gated::AFT.requires_feature());
+        #[cfg(feature = "experimental")]
+        {
+            require_aft(&self.config)?;
+            if times.len() != self.y.len() {
+                return Err(Error::RowCountMismatch {
+                    y_len: times.len(),
+                    x_rows: self.y.len(),
+                });
+            }
+            let y = log_times(times, events)?;
+            for (slot, v) in self.y.iter_mut().zip(y) {
+                *slot = self.scaler.scale_y(v);
+            }
+            if let Some(outcome) = self.outcome.as_aft_mut() {
+                outcome.set_events(events);
+            }
+            self.outcome.init(&self.y);
+            Ok(())
         }
-        let y = log_times(times, events)?;
-        for (slot, v) in self.y.iter_mut().zip(y) {
-            *slot = self.scaler.scale_y(v);
-        }
-        if let Some(outcome) = self.outcome.as_aft_mut() {
-            outcome.set_events(events);
-        }
-        self.outcome.init(&self.y);
-        Ok(())
     }
 
     /// Replace the interval-censored model's bound pairs, keeping the
     /// tessellations, the cell values and sigma^2; the latents reset to
     /// the working completions and the next sweep's refresh redraws the
     /// censored ones from their conditional. Experimental
-    /// (`docs/experimental.md`).
+    /// (`docs/experimental.md`); `RequiresFeature` in a build without the
+    /// feature.
     ///
     /// # Errors
     ///
     /// `InvalidHyperparameter` for an outcome other than
-    /// [`Outcome::IntervalCensored`](crate::Outcome::IntervalCensored);
+    /// `Outcome::IntervalCensored`;
     /// `RowCountMismatch`, `BoundCountMismatch`, `InvalidInterval`.
-    #[cfg(feature = "experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    #[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
     pub fn set_interval_censored_response(&mut self, lower: &[f64], upper: &[f64]) -> Result<()> {
-        require_interval_censored(&self.config)?;
-        if lower.len() != self.y.len() {
-            return Err(Error::RowCountMismatch {
-                y_len: lower.len(),
-                x_rows: self.y.len(),
-            });
-        }
-        let y = interval_working(lower, upper)?;
-        for (slot, v) in self.y.iter_mut().zip(y) {
-            *slot = self.scaler.scale_y(v);
-        }
-        let map = |&v: &f64| {
-            if v.is_finite() {
-                self.scaler.scale_y(v)
-            } else {
-                v
+        #[cfg(not(feature = "experimental"))]
+        return Err(crate::config::Gated::INTERVAL_CENSORED.requires_feature());
+        #[cfg(feature = "experimental")]
+        {
+            require_interval_censored(&self.config)?;
+            if lower.len() != self.y.len() {
+                return Err(Error::RowCountMismatch {
+                    y_len: lower.len(),
+                    x_rows: self.y.len(),
+                });
             }
-        };
-        let (lower, upper) = (
-            lower.iter().map(map).collect(),
-            upper.iter().map(map).collect(),
-        );
-        if let Some(outcome) = self.outcome.as_interval_censored_mut() {
-            outcome.set_bounds(lower, upper);
+            let y = interval_working(lower, upper)?;
+            for (slot, v) in self.y.iter_mut().zip(y) {
+                *slot = self.scaler.scale_y(v);
+            }
+            let map = |&v: &f64| {
+                if v.is_finite() {
+                    self.scaler.scale_y(v)
+                } else {
+                    v
+                }
+            };
+            let (lower, upper) = (
+                lower.iter().map(map).collect(),
+                upper.iter().map(map).collect(),
+            );
+            if let Some(outcome) = self.outcome.as_interval_censored_mut() {
+                outcome.set_bounds(lower, upper);
+            }
+            self.outcome.init(&self.y);
+            Ok(())
         }
-        self.outcome.init(&self.y);
-        Ok(())
     }
 
     /// The current mean function at the training rows, caller scale: f(x_i),

@@ -20,9 +20,8 @@ from ._arrays import _as_design, _as_response
 from ._config import _config_json
 from ._convergence import _warn_convergence
 from ._inference import _to_inference_data
-from ._params import Params
+from ._params import Outcome, Params
 from ._seed import SeedLike, _resolve_seed
-from .families import Gaussian, Probit
 from .params import TermParams
 
 __all__ = ["FittedModel", "Model"]
@@ -38,8 +37,9 @@ class Model(Params):
 
     Parameters
     ----------
-    outcome : Gaussian or Probit, optional
-        The outcome family, from `gaussian` or `probit`. Default
+    outcome : Outcome, optional
+        The outcome family, from `gaussian`, `probit` or one of the
+        experimental constructors of `thiessen.families`. Default
         ``gaussian()``.
     mean_params : TermParams, optional
         The ensemble describing the average. Default ``TermParams()``,
@@ -91,7 +91,7 @@ class Model(Params):
     def __init__(
         self,
         *,
-        outcome: Gaussian | Probit | None = None,
+        outcome: Outcome | None = None,
         mean_params: TermParams | None = None,
         variance_params: TermParams | None = None,
         burn_in: int = 200,

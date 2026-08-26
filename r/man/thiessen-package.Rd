@@ -5,7 +5,7 @@
 \alias{thiessen-package}
 \title{thiessen: Bayesian Additive Voronoi Tessellations}
 \description{
-Bayesian regression on a sum of Voronoi tessellations (AddiVortes; Stone and Gosling, 2025, \doi{10.1080/10618600.2024.2414104}), a variant of BART (Chipman, George and McCulloch, 2010, \doi{10.1214/09-AOAS285}) in which a cell is a region of the covariate space rather than a box. Provides the Gaussian, binary probit and heteroscedastic models, with methods for prediction, posterior intervals and summaries. The sampler is the 'thiessen' Rust crate, built and linked from vendored sources.
+Bayesian regression on a sum of Voronoi tessellations (AddiVortes; Stone and Gosling, 2025, \doi{10.1080/10618600.2024.2414104}), a variant of BART (Chipman, George and McCulloch, 2010, \doi{10.1214/09-AOAS285}) in which a cell is a region of the covariate space rather than a box. Provides the Gaussian, binary probit and heteroscedastic models, with methods for prediction, posterior intervals and summaries. Further outcome families are experimental and reach a fit only in a source build made with the environment variable 'THIESSEN_EXPERIMENTAL' set to 1. The sampler is the 'thiessen' Rust crate, built and linked from vendored sources.
 }
 \references{
 Chipman, H. A., George, E. I. and McCulloch, R. E. (2010). BART: Bayesian

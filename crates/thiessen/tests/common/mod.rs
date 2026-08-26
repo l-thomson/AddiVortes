@@ -171,3 +171,85 @@ pub fn fixture() -> (Config, Data, Vec<f64>) {
     let config = Config::new().with_m(15).with_burn_in(50).with_draws(60);
     (config, x, y)
 }
+
+/// One configuration naming each gated item of `docs/experimental.md`,
+/// with the name the feature error gives it. A build without the feature
+/// reports each from `Config::validate` as `RequiresFeature`; a build
+/// with the feature accepts each. Shared between `experimental.rs` and
+/// `gated_surface.rs` so the two builds cannot disagree on the surface.
+///
+/// Fifteen entries, one per row of the table, plus `geometry.precision`,
+/// which the Mahalanobis row requires and which has no published value.
+#[allow(dead_code)]
+pub const GATED_CONFIGS: &[(&str, &str)] = &[
+    (r#"{"outcome": {"tobit": {"lower": 0.0}}}"#, "tobit"),
+    (r#"{"outcome": {"aft": {}}}"#, "aft"),
+    (
+        r#"{"outcome": {"interval_censored": {}}}"#,
+        "interval_censored",
+    ),
+    (r#"{"outcome": {"ordinal": {"categories": 3}}}"#, "ordinal"),
+    (r#"{"outcome": {"student_t": {"df": 4.0}}}"#, "student_t"),
+    (r#"{"outcome": {"laplace": {}}}"#, "laplace"),
+    (
+        r#"{"mean_params": {"geometry": {"metric": [{"minkowski": {"p": 1.5}}]}}}"#,
+        "minkowski",
+    ),
+    (
+        r#"{"mean_params": {"geometry": {"metric": [{"manhattan": {}}]}}}"#,
+        "manhattan",
+    ),
+    (
+        r#"{"mean_params": {"geometry": {"metric": [{"cosine": {}}]}}}"#,
+        "cosine",
+    ),
+    (
+        r#"{"mean_params": {"geometry": {"metric": [{"gower": {"kind": "numeric"}}]}}}"#,
+        "gower",
+    ),
+    (
+        r#"{"mean_params": {"geometry": {"metric": ["mahalanobis"],
+            "precision": [1.0, 0.0, 0.0, 1.0]}}}"#,
+        "mahalanobis",
+    ),
+    (
+        r#"{"mean_params": {"geometry": {"precision": [1.0, 0.0, 0.0, 1.0]}}}"#,
+        "precision",
+    ),
+    (
+        r#"{"mean_params": {"structure": {"inclusion": {"weighted": {"weights": [1.0, 1.0]}}}}}"#,
+        "weighted",
+    ),
+    (
+        r#"{"mean_params": {"structure": {"inclusion": {"dart": {}}}}}"#,
+        "dart",
+    ),
+    (
+        r#"{"mean_params": {"geometry": {"membership": {"soft": {}}}}}"#,
+        "soft",
+    ),
+    (
+        r#"{"mean_params": {"cell": {"basis": "linear"}}}"#,
+        "linear",
+    ),
+];
+
+/// The published default of each gated field: what the model does when
+/// the field is absent, so a build without the feature accepts it. The
+/// second entry is the field name, which must stay out of the
+/// serialised form.
+#[allow(dead_code)]
+pub const PUBLISHED_DEFAULTS: &[(&str, &str)] = &[
+    (
+        r#"{"mean_params": {"geometry": {"membership": "hard"}}}"#,
+        "membership",
+    ),
+    (
+        r#"{"mean_params": {"structure": {"inclusion": "uniform"}}}"#,
+        "inclusion",
+    ),
+    (
+        r#"{"mean_params": {"cell": {"basis": "constant"}}}"#,
+        "basis",
+    ),
+];

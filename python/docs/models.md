@@ -118,11 +118,22 @@ can carry, observation models with an exact conditionally Gaussian
 augmentation, is the section of that name in the repository's
 `docs/models.md`.
 Everything else the core crate adds sits behind its `experimental` Cargo
-feature, which this package does not enable, so a configuration or a saved
-model naming such an option is rejected with the core's message naming the
-feature. The table of experimental items and their status is
-`docs/experimental.md` in the repository. A graduated item is exposed here as
-any other option, with no separate opt-in.
+feature, which a released wheel does not enable, so a configuration or a
+saved model naming such an option is rejected with `RequiresFeatureError`.
+The further outcome families each have a constructor in
+`thiessen.families`, so naming one is portable, and an extension accepting
+them is built from source:
+
+```sh
+pip install ./python --config-settings build-args="--features experimental"
+```
+
+`thiessen._native.EXPERIMENTAL` reports the setting of the extension in
+use. Such a build is outside semantic versioning: the configuration and
+the drawn values of a gated item may change in any release. The table of
+experimental items and their status is `docs/experimental.md` in the
+repository. A graduated item is exposed here as any other option, with no
+separate opt-in.
 
 ## References
 

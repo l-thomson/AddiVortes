@@ -14,7 +14,9 @@ $(SHLIB): $(STATLIB)
 # Offline from the vendored third-party crates, unpacking rust/vendor.tar.xz
 # when the unpacked copy is absent; the core ships as source, and only what
 # this rule unpacked is removed afterwards. Two jobs and a package-local
-# CARGO_HOME, as the CRAN policy on Rust requires.
+# CARGO_HOME, as the CRAN policy on Rust requires. THIESSEN_EXPERIMENTAL=1
+# builds the core with its `experimental` feature, which pulls no further
+# crate, so the vendored set and the offline build are unchanged.
 $(STATLIB):
 	if [ ! -d rust/vendor ] && [ -f rust/vendor.tar.xz ]; then \
 	  tar xf rust/vendor.tar.xz -C rust; \
@@ -27,9 +29,14 @@ $(STATLIB):
 	else \
 	  offline=""; \
 	fi; \
+	if [ "$$THIESSEN_EXPERIMENTAL" = "1" ]; then \
+	  features="--features experimental"; \
+	else \
+	  features=""; \
+	fi; \
 	export CARGO_HOME="$(CARGOTMP)" && \
 	export PATH="$(PATH):$(HOME)/.cargo/bin" && \
-	cargo build --jobs 2 $$offline --lib --release \
+	cargo build --jobs 2 $$offline $$features --lib --release \
 	  --manifest-path=./rust/Cargo.toml --target-dir="$(TARGET_DIR)"
 	rm -Rf "$(CARGOTMP)"
 

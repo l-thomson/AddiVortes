@@ -4,10 +4,12 @@
 #' Signal an error of the package's condition class
 #'
 #' @param message The message, as `rlang::abort` takes it.
+#' @param class A class to place before `thiessen_error`, or `NULL`.
 #' @param call The calling environment to report.
 #' @noRd
-thiessen_abort <- function(message, call = rlang::caller_env()) {
-  rlang::abort(message, class = "thiessen_error", call = call)
+thiessen_abort <- function(message, class = NULL,
+                           call = rlang::caller_env()) {
+  rlang::abort(message, class = c(class, "thiessen_error"), call = call)
 }
 
 #' Re-signal an rlang input check under the package's condition class
@@ -117,7 +119,16 @@ check_group <- function(value, name, constructor, null_ok = FALSE,
   invisible(NULL)
 }
 
+# Leads the message of a core error naming the `experimental` feature.
+# The extendr error channel carries a string, so the condition class
+# travels as this prefix; `r/src/rust/src/lib.rs` writes it.
+REQUIRES_FEATURE <- "thiessen_requires_feature: "
+
 #' Call the core, re-signalling its errors with the package's class
+#'
+#' An error naming the core's `experimental` feature also carries the
+#' class `thiessen_requires_feature` and the instruction for opting in,
+#' so a caller can handle it apart from an invalid configuration.
 #'
 #' @param expr The call to the compiled core.
 #' @param call The calling environment to report.
@@ -126,7 +137,21 @@ core_call <- function(expr, call = rlang::caller_env()) {
   tryCatch(
     expr,
     error = function(condition) {
-      thiessen_abort(conditionMessage(condition), call = call)
+      message <- conditionMessage(condition)
+      if (!startsWith(message, REQUIRES_FEATURE)) {
+        thiessen_abort(message, call = call)
+      }
+      thiessen_abort(
+        c(
+          substring(message, nchar(REQUIRES_FEATURE) + 1L),
+          i = paste0(
+            "Install the package from source with `THIESSEN_EXPERIMENTAL=1` ",
+            "in the environment to build the core with the feature."
+          )
+        ),
+        class = "thiessen_requires_feature",
+        call = call
+      )
     }
   )
 }

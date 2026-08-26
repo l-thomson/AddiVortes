@@ -13,11 +13,13 @@ the \code{experimental} feature.
 \description{
 The outcome families and options the core crate keeps behind its
 \code{experimental} Cargo feature are absent from a build without it, so a
-configuration or a saved fit naming one is rejected with the core's
-message naming the feature. This package enables the feature in no
-build, so the answer is \code{FALSE} in every released version; report it with
-\code{\link[=core_version]{core_version()}} in a bug report, since a fit rejected for naming a gated
-option looks the same either way.
+configuration or a saved fit naming one is rejected with the condition
+class \code{thiessen_requires_feature}. Every released build has the feature
+off; a build with it on is installed from source with
+\code{THIESSEN_EXPERIMENTAL=1} in the environment, is outside semantic
+versioning, and reads a fit the other build cannot. Report this with
+\code{\link[=core_version]{core_version()}} in a bug report, since a fit rejected for naming a
+gated option looks the same either way.
 }
 \examples{
 core_experimental()

@@ -1182,61 +1182,66 @@ impl Fitted {
     /// s_d^2(x_i)) at an event and ln Phi((f_d(x_i) - ln t_i) / s_d(x_i))
     /// at a censored row, the log-time density and the survival
     /// probability of the lognormal AFT model. Experimental
-    /// (`docs/experimental.md`).
+    /// (`docs/experimental.md`); `RequiresFeature` in a build without the
+    /// feature.
     ///
     /// # Errors
     ///
     /// `NotApplicable` under another model; `RowCountMismatch`,
     /// `EventCountMismatch`, `InvalidSurvivalTime`; the predict errors.
-    #[cfg(feature = "experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    #[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
     pub fn log_likelihood_survival(
         &self,
         x: &Data,
         times: &[f64],
         events: &[bool],
     ) -> Result<Vec<Vec<f64>>> {
-        if !matches!(self.config.outcome, Outcome::Aft(_)) {
-            return Err(self.not_applicable("log_likelihood_survival"));
+        #[cfg(not(feature = "experimental"))]
+        return Err(crate::config::Gated::AFT.requires_feature());
+        #[cfg(feature = "experimental")]
+        {
+            if !matches!(self.config.outcome, Outcome::Aft(_)) {
+                return Err(self.not_applicable("log_likelihood_survival"));
+            }
+            if times.len() != x.n_rows() {
+                return Err(Error::RowCountMismatch {
+                    y_len: times.len(),
+                    x_rows: x.n_rows(),
+                });
+            }
+            if events.len() != times.len() {
+                return Err(Error::EventCountMismatch {
+                    events: events.len(),
+                    times: times.len(),
+                });
+            }
+            if let Some(row) = times.iter().position(|&t| !(t.is_finite() && t > 0.0)) {
+                return Err(Error::InvalidSurvivalTime { row });
+            }
+            let per_draw = self.predict_draws(x)?;
+            let variances = self.predict_variance(x)?;
+            let ln_2pi = maths::ln(2.0 * std::f64::consts::PI);
+            let log_times: Vec<f64> = times.iter().map(|&t| maths::ln(t)).collect();
+            Ok(per_draw
+                .iter()
+                .zip(&variances)
+                .map(|(fits, variance)| {
+                    log_times
+                        .iter()
+                        .zip(events)
+                        .zip(fits.iter().zip(variance))
+                        .map(|((&v, &event), (&fit, &var))| {
+                            if event {
+                                let z = (v - fit) * (v - fit) / var;
+                                -0.5 * (ln_2pi + maths::ln(var) + z)
+                            } else {
+                                maths::ln(maths::normal_cdf((fit - v) / var.sqrt()))
+                            }
+                        })
+                        .collect()
+                })
+                .collect())
         }
-        if times.len() != x.n_rows() {
-            return Err(Error::RowCountMismatch {
-                y_len: times.len(),
-                x_rows: x.n_rows(),
-            });
-        }
-        if events.len() != times.len() {
-            return Err(Error::EventCountMismatch {
-                events: events.len(),
-                times: times.len(),
-            });
-        }
-        if let Some(row) = times.iter().position(|&t| !(t.is_finite() && t > 0.0)) {
-            return Err(Error::InvalidSurvivalTime { row });
-        }
-        let per_draw = self.predict_draws(x)?;
-        let variances = self.predict_variance(x)?;
-        let ln_2pi = maths::ln(2.0 * std::f64::consts::PI);
-        let log_times: Vec<f64> = times.iter().map(|&t| maths::ln(t)).collect();
-        Ok(per_draw
-            .iter()
-            .zip(&variances)
-            .map(|(fits, variance)| {
-                log_times
-                    .iter()
-                    .zip(events)
-                    .zip(fits.iter().zip(variance))
-                    .map(|((&v, &event), (&fit, &var))| {
-                        if event {
-                            let z = (v - fit) * (v - fit) / var;
-                            -0.5 * (ln_2pi + maths::ln(var) + z)
-                        } else {
-                            maths::ln(maths::normal_cdf((fit - v) / var.sqrt()))
-                        }
-                    })
-                    .collect()
-            })
-            .collect())
     }
 
     /// Pointwise interval log-likelihood per draw under the
@@ -1244,132 +1249,141 @@ impl Fitted {
     /// ln N(l_i; f_d(x_i), s_d^2(x_i)) at an exact row (l_i = u_i) and
     /// ln(Phi((u_i - f_d) / s_d) - Phi((l_i - f_d) / s_d)) at a censored
     /// one, an infinite endpoint dropping its term. Experimental
-    /// (`docs/experimental.md`).
+    /// (`docs/experimental.md`); `RequiresFeature` in a build without the
+    /// feature.
     ///
     /// # Errors
     ///
     /// `NotApplicable` under another model; `RowCountMismatch`,
     /// `BoundCountMismatch`, `InvalidInterval`; the predict errors.
-    #[cfg(feature = "experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    #[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
     pub fn log_likelihood_interval_censored(
         &self,
         x: &Data,
         lower: &[f64],
         upper: &[f64],
     ) -> Result<Vec<Vec<f64>>> {
-        if !matches!(self.config.outcome, Outcome::IntervalCensored(_)) {
-            return Err(self.not_applicable("log_likelihood_interval_censored"));
-        }
-        if lower.len() != x.n_rows() {
-            return Err(Error::RowCountMismatch {
-                y_len: lower.len(),
-                x_rows: x.n_rows(),
-            });
-        }
-        if upper.len() != lower.len() {
-            return Err(Error::BoundCountMismatch {
-                lower: lower.len(),
-                upper: upper.len(),
-            });
-        }
-        if let Some(row) = lower.iter().zip(upper).position(|(&lo, &hi)| {
-            lo.is_nan()
-                || hi.is_nan()
-                || lo > hi
-                || (lo == hi && !lo.is_finite())
-                || (lo == f64::NEG_INFINITY && hi == f64::INFINITY)
-        }) {
-            return Err(Error::InvalidInterval { row });
-        }
-        let per_draw = self.predict_draws(x)?;
-        let variances = self.predict_variance(x)?;
-        let ln_2pi = maths::ln(2.0 * std::f64::consts::PI);
-        Ok(per_draw
-            .iter()
-            .zip(&variances)
-            .map(|(fits, variance)| {
-                lower
-                    .iter()
-                    .zip(upper)
-                    .zip(fits.iter().zip(variance))
-                    .map(|((&lo, &hi), (&fit, &var))| {
-                        if lo == hi {
-                            let z = (lo - fit) * (lo - fit) / var;
-                            -0.5 * (ln_2pi + maths::ln(var) + z)
-                        } else {
-                            let sd = var.sqrt();
-                            let above = if hi == f64::INFINITY {
-                                1.0
+        #[cfg(not(feature = "experimental"))]
+        return Err(crate::config::Gated::INTERVAL_CENSORED.requires_feature());
+        #[cfg(feature = "experimental")]
+        {
+            if !matches!(self.config.outcome, Outcome::IntervalCensored(_)) {
+                return Err(self.not_applicable("log_likelihood_interval_censored"));
+            }
+            if lower.len() != x.n_rows() {
+                return Err(Error::RowCountMismatch {
+                    y_len: lower.len(),
+                    x_rows: x.n_rows(),
+                });
+            }
+            if upper.len() != lower.len() {
+                return Err(Error::BoundCountMismatch {
+                    lower: lower.len(),
+                    upper: upper.len(),
+                });
+            }
+            if let Some(row) = lower.iter().zip(upper).position(|(&lo, &hi)| {
+                lo.is_nan()
+                    || hi.is_nan()
+                    || lo > hi
+                    || (lo == hi && !lo.is_finite())
+                    || (lo == f64::NEG_INFINITY && hi == f64::INFINITY)
+            }) {
+                return Err(Error::InvalidInterval { row });
+            }
+            let per_draw = self.predict_draws(x)?;
+            let variances = self.predict_variance(x)?;
+            let ln_2pi = maths::ln(2.0 * std::f64::consts::PI);
+            Ok(per_draw
+                .iter()
+                .zip(&variances)
+                .map(|(fits, variance)| {
+                    lower
+                        .iter()
+                        .zip(upper)
+                        .zip(fits.iter().zip(variance))
+                        .map(|((&lo, &hi), (&fit, &var))| {
+                            if lo == hi {
+                                let z = (lo - fit) * (lo - fit) / var;
+                                -0.5 * (ln_2pi + maths::ln(var) + z)
                             } else {
-                                maths::normal_cdf((hi - fit) / sd)
-                            };
-                            let below = if lo == f64::NEG_INFINITY {
-                                0.0
-                            } else {
-                                maths::normal_cdf((lo - fit) / sd)
-                            };
-                            maths::ln(above - below)
-                        }
-                    })
-                    .collect()
-            })
-            .collect())
+                                let sd = var.sqrt();
+                                let above = if hi == f64::INFINITY {
+                                    1.0
+                                } else {
+                                    maths::normal_cdf((hi - fit) / sd)
+                                };
+                                let below = if lo == f64::NEG_INFINITY {
+                                    0.0
+                                } else {
+                                    maths::normal_cdf((lo - fit) / sd)
+                                };
+                                maths::ln(above - below)
+                            }
+                        })
+                        .collect()
+                })
+                .collect())
+        }
     }
 
     /// Posterior-mean category probabilities under the ordinal model,
     /// row-major (`n_rows` by `categories`): the average over kept draws
     /// of P(y = k | x) = Phi(gamma_{k+1} - c - f_d(x)) -
     /// Phi(gamma_k - c - f_d(x)) with the draw's own cutpoints.
-    /// Experimental (`docs/experimental.md`).
+    /// Experimental
+    /// (`docs/experimental.md`); `RequiresFeature` in a build without the
+    /// feature.
     ///
     /// # Errors
     ///
     /// `NotApplicable` under another model; the predict errors.
-    #[cfg(feature = "experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    #[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
     pub fn predict_category_probabilities(&self, x: &Data) -> Result<Vec<Vec<f64>>> {
-        let Outcome::Ordinal(params) = &self.config.outcome else {
-            return Err(self.not_applicable("predict_category_probabilities"));
-        };
-        let categories = params.categories;
-        let latent = self.predict_latent(x)?;
-        let mut out = vec![vec![0.0; categories]; x.n_rows()];
-        for (d, fits) in latent.iter().enumerate() {
-            let free = self
-                .posterior
-                .cutpoints()
-                .get(d)
-                .map_or(&[][..], Vec::as_slice);
-            for (row, &l) in fits.iter().enumerate() {
-                let mut previous = 0.0;
-                for (k, slot) in out[row].iter_mut().enumerate() {
-                    let cumulative = if k == categories - 1 {
-                        1.0
-                    } else {
-                        let g = if k == 0 { 0.0 } else { free[k - 1] };
-                        maths::normal_cdf(g - l)
-                    };
-                    *slot += cumulative - previous;
-                    previous = cumulative;
+        #[cfg(not(feature = "experimental"))]
+        return Err(crate::config::Gated::ORDINAL.requires_feature());
+        #[cfg(feature = "experimental")]
+        {
+            let Outcome::Ordinal(params) = &self.config.outcome else {
+                return Err(self.not_applicable("predict_category_probabilities"));
+            };
+            let categories = params.categories;
+            let latent = self.predict_latent(x)?;
+            let mut out = vec![vec![0.0; categories]; x.n_rows()];
+            for (d, fits) in latent.iter().enumerate() {
+                let free = self
+                    .posterior
+                    .cutpoints()
+                    .get(d)
+                    .map_or(&[][..], Vec::as_slice);
+                for (row, &l) in fits.iter().enumerate() {
+                    let mut previous = 0.0;
+                    for (k, slot) in out[row].iter_mut().enumerate() {
+                        let cumulative = if k == categories - 1 {
+                            1.0
+                        } else {
+                            let g = if k == 0 { 0.0 } else { free[k - 1] };
+                            maths::normal_cdf(g - l)
+                        };
+                        *slot += cumulative - previous;
+                        previous = cumulative;
+                    }
                 }
             }
-        }
-        let n_draws = latent.len() as f64;
-        for row in &mut out {
-            for p in row {
-                *p /= n_draws;
+            let n_draws = latent.len() as f64;
+            for row in &mut out {
+                for p in row {
+                    *p /= n_draws;
+                }
             }
+            Ok(out)
         }
-        Ok(out)
     }
 
     /// The interior cutpoints of each kept draw under the ordinal model,
     /// increasing, latent scale; empty under another model and at two
-    /// categories, where none is sampled. Experimental
-    /// (`docs/experimental.md`).
-    #[cfg(feature = "experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    /// categories, where none is sampled, and in a build without the
+    /// feature. Experimental (`docs/experimental.md`).
     pub fn cutpoint_draws(&self) -> &[Vec<f64>] {
         self.posterior.cutpoints()
     }

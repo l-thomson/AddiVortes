@@ -1,18 +1,27 @@
 # The exposure policy for items behind the core's `experimental` feature.
-# The package builds the core without the feature, so only the published
-# models are reachable: a gated outcome has no constructor here, and a
-# configuration naming a gated field or variant is rejected by the core, so
-# the policy holds without a change here when an item is added or graduates.
+# A constructor exists in every build and the core reports a gated item
+# with the condition class `thiessen_requires_feature`, so the tests read
+# the families from the core and hold no list of their own: an item added
+# or graduated needs no change here.
 
-# Names reserved for items behind the feature; none is accepted here.
-GATED <- c("soft", "robust_t", "dart", "minkowski", "manhattan",
-           "mahalanobis", "gower", "cosine", "weighted", "composite")
+# The outcome families the core in use carries, by their stored names.
+core_families <- function() {
+  catalogue <- jsonlite::fromJSON(core_outcome_defaults(), simplifyVector = FALSE)
+  vapply(catalogue, function(family) names(family)[[1L]], character(1))
+}
 
-test_that("the package builds the core without the feature", {
-  expect_false(core_experimental())
-})
+# The families this package constructs, by their stored names.
+surface_families <- function() {
+  exports <- grep("_outcome$", getNamespaceExports("thiessen"), value = TRUE)
+  sub("_outcome$", "", exports)
+}
 
-test_that("the published models are accepted", {
+# A family's constructor, called at its defaults.
+outcome_of <- function(kind) {
+  do.call(paste0(kind, "_outcome"), list())
+}
+
+test_that("the published models are accepted in either build", {
   expect_s3_class(
     thiessen_control(outcome = gaussian_outcome()), "thiessen_control"
   )
@@ -25,37 +34,92 @@ test_that("the published models are accepted", {
   )
 })
 
-test_that("a gated outcome fails to deserialise in the core", {
-  for (name in GATED) {
-    config <- sprintf('{"outcome": {"%s": {}}}', name)
-    expect_error(core_validate(config), "unknown variant")
+test_that("every family the core carries has a constructor", {
+  expect_true(all(core_families() %in% surface_families()))
+})
+
+test_that("a build with the feature turns no family away", {
+  skip_if_not(core_experimental())
+
+  expect_setequal(surface_families(), core_families())
+  # A family may still be rejected on its own terms, the tobit outcome
+  # needing a censoring limit; none is rejected for the feature.
+  for (kind in surface_families()) {
+    condition <- rlang::catch_cnd(thiessen_control(outcome = outcome_of(kind)))
+
+    expect_false(inherits(condition, "thiessen_requires_feature"), label = kind)
   }
 })
 
-test_that("no constructor exists for a gated outcome", {
-  exposed <- tolower(getNamespaceExports("thiessen"))
+test_that("a build without the feature reports each gated family", {
+  skip_if(core_experimental())
 
-  expect_length(intersect(exposed, GATED), 0L)
-  expect_false("experimental" %in% exposed)
+  gated <- setdiff(surface_families(), core_families())
+  expect_gt(length(gated), 0L)
+  for (kind in gated) {
+    expect_error(
+      thiessen_control(outcome = outcome_of(kind)),
+      class = "thiessen_requires_feature"
+    )
+  }
 })
 
-test_that("a gated field fails to deserialise in the core", {
-  gated_fields <- list(
-    '{"mean_params": {"geometry": {"membership": "soft"}}}',
-    '{"mean_params": {"geometry": {"precision": [1.0]}}}',
-    '{"mean_params": {"structure": {"inclusion": "uniform"}}}',
-    '{"mean_params": {"cell": {"basis": "linear"}}}'
+test_that("a degrees-of-freedom grid crosses as an array", {
+  skip_if_not(core_experimental())
+
+  expect_s3_class(
+    thiessen_control(outcome = student_t_outcome(df = c(3, 6, 12))),
+    "thiessen_control"
   )
-  for (config in gated_fields) {
-    expect_error(core_validate(config))
+})
+
+test_that("a gated component option reports the feature", {
+  skip_if(core_experimental())
+  config <- '{"mean_params": {"geometry": {"membership": {"soft": {}}}}}'
+
+  expect_error(
+    core_call(core_validate(config)),
+    class = "thiessen_requires_feature"
+  )
+})
+
+test_that("the published default of a gated field is accepted", {
+  published <- c(
+    '{"mean_params": {"geometry": {"membership": "hard"}}}',
+    '{"mean_params": {"structure": {"inclusion": "uniform"}}}',
+    '{"mean_params": {"cell": {"basis": "constant"}}}'
+  )
+  for (config in published) {
+    expect_no_error(core_call(core_validate(config)))
   }
 })
 
-test_that("a saved fit naming a gated model fails to load", {
+test_that("an invalid configuration keeps the plain condition class", {
+  config <- '{"mean_params": {"geometry": {"sigma_c": -1}}}'
+
+  condition <- rlang::catch_cnd(core_call(core_validate(config)))
+
+  expect_s3_class(condition, "thiessen_error")
+  expect_false(inherits(condition, "thiessen_requires_feature"))
+})
+
+test_that("a saved fit naming a gated model reports the feature", {
+  skip_if(core_experimental())
   fixture <- small_fixture()
   fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
   fit$state$payload <- swap_payload_name(
-    fit$state$payload, "gaussian", "robust_t"
+    fit$state$payload, "gaussian", "laplace"
+  )
+  fit <- unserialize(serialize(fit, NULL))
+
+  expect_error(predict(fit), class = "thiessen_requires_feature")
+})
+
+test_that("a saved fit naming an unknown model fails to load", {
+  fixture <- small_fixture()
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit$state$payload <- swap_payload_name(
+    fit$state$payload, "gaussian", "robust"
   )
   fit <- unserialize(serialize(fit, NULL))
 

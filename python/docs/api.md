@@ -6,6 +6,24 @@
 
 ::: thiessen.probit
 
+## Experimental outcome families
+
+Compiled only into an extension built with the core's `experimental`
+feature; a configuration naming one otherwise raises
+`RequiresFeatureError`.
+
+::: thiessen.tobit
+
+::: thiessen.aft
+
+::: thiessen.interval_censored
+
+::: thiessen.ordinal
+
+::: thiessen.student_t
+
+::: thiessen.laplace
+
 ## Parameter groups
 
 ::: thiessen.TermParams

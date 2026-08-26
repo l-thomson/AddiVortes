@@ -82,15 +82,19 @@ def test_every_core_option_is_reachable_from_the_surface():
 def test_every_outcome_family_option_is_a_constructor_argument():
     import inspect
 
-    constructors: dict[str, Any] = {"gaussian": gaussian, "probit": probit}
+    from thiessen import families
+
     for family in json.loads(_native.outcome_defaults()):
         (name, params) = next(iter(family.items()))
-        arguments = set(inspect.signature(constructors[name]).parameters)
+        arguments = set(inspect.signature(getattr(families, name)).parameters)
         assert set(params) == arguments, name
 
 
 @pytest.mark.skipif(
     not (ROOT / "docs" / "parity.md").is_file(), reason="not in the source tree"
+)
+@pytest.mark.skipif(
+    _native.EXPERIMENTAL, reason="the table lists the published surface"
 )
 def test_the_parity_table_is_what_the_generator_renders():
     spec = importlib.util.spec_from_file_location(

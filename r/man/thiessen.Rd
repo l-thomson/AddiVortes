@@ -140,8 +140,8 @@ A fit is a plain R object holding the sampler state, so \code{\link[=saveRDS]{sa
 writes one and a later session reads it and predicts the same values,
 with no refit. A fit written by a build with the core's \code{experimental}
 feature and read by a build without it errors with the condition class
-\code{thiessen_error}, naming the feature, at the first call that needs the
-state.
+\code{thiessen_requires_feature}, naming the item and the feature, at the
+first call that needs the state.
 }
 
 \section{Conditions}{
@@ -149,7 +149,10 @@ state.
 
 Errors raised by this package and by the core carry the condition class
 \code{thiessen_error}, and its warnings carry \code{thiessen_warning}, so either
-can be handled or silenced by class rather than by message. The
+can be handled or silenced by class rather than by message. An error
+naming the core's \code{experimental} feature carries
+\code{thiessen_requires_feature} before it, so a configuration needing an
+opt-in build is told apart from an invalid one. The
 convergence warning fires on any short schedule, so silencing it
 deliberately is a routine need:
 

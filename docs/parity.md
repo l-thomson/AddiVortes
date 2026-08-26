@@ -6,9 +6,13 @@ defaults. The Python suite renders it again and fails on any difference,
 and each binding's parity test proves every listed option constructible,
 so this file is regenerated, never edited.
 
-Every name is identical across the three surfaces but for the two outcome
+The rows are the published surface: an extension built with the core's
+`experimental` feature carries the further outcome families of
+`docs/experimental.md`, which this table does not list.
+
+Every name is identical across the three surfaces but for the outcome
 constructors, which carry an `_outcome` suffix in R: `gaussian()` there
-would mask the exported `stats::gaussian()`, and both families take the
+would mask the exported `stats::gaussian()`, and every family takes the
 suffix rather than only the one that clashes. The serialised name is
 unchanged, so the stored configuration is the same on every surface. Python
 groups run-length settings flat on the estimator and `Model`; R groups them

@@ -98,8 +98,16 @@ the core crate version the package builds against, which
 - `numpy.integer` accepted for `random_state`, which already worked at
   runtime.
 - `_native.EXPERIMENTAL`, whether the extension was built with the core's
-  `experimental` feature. It is off in every wheel of this release, so the
-  published models are the only ones reachable: a gated outcome has no
-  constructor in the package and a configuration naming a gated field or
-  variant is rejected by the core, so an item added to or graduated from
-  the feature needs no change here.
+  `experimental` feature. It is off in every wheel, so a released wheel
+  reaches the published models only. The gated outcome families have
+  constructors whatever the build carries (`tobit`, `aft`,
+  `interval_censored`, `ordinal`, `student_t` and `laplace`), and an
+  extension accepting them is built from source with
+  `pip install ./python --config-settings build-args="--features
+  experimental"`. Such a build is outside semantic versioning, and a model
+  saved from one does not load in a build without the feature.
+- `RequiresFeatureError`, a subclass of `ThiessenError` raised where a
+  configuration or a saved model names an item the extension gates, so it
+  is caught apart from an invalid configuration.
+- `thiessen.families.Outcome`, the base of the family objects, which
+  `Model` and `Sampler` take in place of the two published classes.

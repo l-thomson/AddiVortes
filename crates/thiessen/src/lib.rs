@@ -58,9 +58,14 @@
 //! on docs.rs with a feature banner, tested to the same standard, and
 //! outside the semver promise, whether gated here or badged in a binding.
 //! A configuration naming an experimental field or outcome variant fails
-//! to deserialise in a build without the feature; for a variant the error
-//! names the feature. The table of experimental items and their status is
-//! `docs/experimental.md` in the repository.
+//! [`Config::validate`] in a build without the feature with
+//! [`Error::RequiresFeature`], naming the item and the feature; the
+//! entry points of the experimental models ([`fit_aft`],
+//! [`fit_interval_censored`], [`Sampler::aft`],
+//! [`Fitted::predict_category_probabilities`] and their siblings) are
+//! present in every build and return the same error without it, so a
+//! binding compiles against one surface. The table of experimental items
+//! and their status is `docs/experimental.md` in the repository.
 //!
 //! An experimental item is stabilised when it has met its acceptance
 //! criteria (the component conformance tests, or the model-grade battery
@@ -144,9 +149,9 @@ pub use fitted::{Fitted, Interval, IntervalKind, Posterior};
 #[cfg(feature = "experimental")]
 pub use geometry::GowerKind;
 pub use geometry::Metric;
-pub use models::{fit, fit_chains, fit_chains_with_threads, fit_with_progress};
-#[cfg(feature = "experimental")]
-pub use models::{fit_aft, fit_interval_censored};
+pub use models::{
+    fit, fit_aft, fit_chains, fit_chains_with_threads, fit_interval_censored, fit_with_progress,
+};
 pub use rng::chain_seed;
 pub use sampler::Sampler;
 pub use scaler::Scaler;

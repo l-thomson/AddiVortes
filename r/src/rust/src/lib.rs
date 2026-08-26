@@ -14,8 +14,18 @@ use extendr_api::prelude::*;
 use extendr_api::Result;
 use std::cell::{Ref, RefCell, RefMut};
 
+/// Leads the message of a feature error. The extendr error channel
+/// carries a string, so the condition class travels as this prefix and
+/// `core_call()` in R takes the class from it.
+const REQUIRES_FEATURE: &str = "thiessen_requires_feature: ";
+
 fn core_error(error: thiessen::Error) -> Error {
-    Error::Other(error.to_string())
+    match error {
+        thiessen::Error::RequiresFeature { .. } => {
+            Error::Other(format!("{REQUIRES_FEATURE}{error}"))
+        }
+        _ => Error::Other(error.to_string()),
+    }
 }
 
 fn json_error(error: serde_json::Error) -> Error {
@@ -79,6 +89,13 @@ fn core_defaults() -> Result<String> {
     serde_json::to_string(&thiessen::Config::new()).map_err(json_error)
 }
 
+/// The default parameters of each outcome family the build carries, as
+/// JSON.
+#[extendr]
+fn core_outcome_defaults() -> Result<String> {
+    serde_json::to_string(&thiessen::Outcome::catalogue()).map_err(json_error)
+}
+
 /// Validate a configuration without data.
 #[extendr]
 fn core_validate(config_json: &str) -> Result<()> {
@@ -101,12 +118,28 @@ fn core_state_payload(state: ExternalPtr<FittedHandle>) -> Result<Raw> {
     Ok(Raw::from_bytes(&bytes))
 }
 
+/// The configuration of a saved fit, the rest of the payload ignored.
+#[derive(serde::Deserialize)]
+struct SavedConfig {
+    config: thiessen::Config,
+}
+
+/// The error of a payload that failed to load. Loading validates the
+/// saved configuration, and serde reports a failure as text, so the
+/// configuration is validated again here to recover its type.
+fn saved_error(payload: &[u8], error: rmp_serde::decode::Error) -> Error {
+    match rmp_serde::from_slice::<SavedConfig>(payload).map(|saved| saved.config.validate()) {
+        Ok(Err(typed)) => core_error(typed),
+        _ => Error::Other(error.to_string()),
+    }
+}
+
 /// A live fitted-model pointer from the bytes of `core_state_payload`,
 /// predicting on `threads` threads.
 #[extendr]
 fn core_state_restore(payload: &[u8], threads: i32) -> Result<ExternalPtr<FittedHandle>> {
     let mut inner: thiessen::Fitted =
-        rmp_serde::from_slice(payload).map_err(|error| Error::Other(error.to_string()))?;
+        rmp_serde::from_slice(payload).map_err(|error| saved_error(payload, error))?;
     inner.set_threads(threads.max(1) as usize);
     Ok(ExternalPtr::new(FittedHandle { inner }))
 }
@@ -390,6 +423,7 @@ extendr_module! {
     fn core_version;
     fn core_experimental;
     fn core_defaults;
+    fn core_outcome_defaults;
     fn core_validate;
     fn core_state_is_live;
     fn core_state_payload;

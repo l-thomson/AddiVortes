@@ -15,11 +15,13 @@ core_version <- function() .Call(wrap__core_version)
 #'
 #' The outcome families and options the core crate keeps behind its
 #' `experimental` Cargo feature are absent from a build without it, so a
-#' configuration or a saved fit naming one is rejected with the core's
-#' message naming the feature. This package enables the feature in no
-#' build, so the answer is `FALSE` in every released version; report it with
-#' [core_version()] in a bug report, since a fit rejected for naming a gated
-#' option looks the same either way.
+#' configuration or a saved fit naming one is rejected with the condition
+#' class `thiessen_requires_feature`. Every released build has the feature
+#' off; a build with it on is installed from source with
+#' `THIESSEN_EXPERIMENTAL=1` in the environment, is outside semantic
+#' versioning, and reads a fit the other build cannot. Report this with
+#' [core_version()] in a bug report, since a fit rejected for naming a
+#' gated option looks the same either way.
 #'
 #' @return A logical of length one: whether the core in use was built with
 #'   the `experimental` feature.
@@ -29,6 +31,8 @@ core_version <- function() .Call(wrap__core_version)
 core_experimental <- function() .Call(wrap__core_experimental)
 
 core_defaults <- function() .Call(wrap__core_defaults)
+
+core_outcome_defaults <- function() .Call(wrap__core_outcome_defaults)
 
 core_validate <- function(config_json) .Call(wrap__core_validate, config_json)
 
