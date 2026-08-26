@@ -7,8 +7,10 @@ and each binding's parity test proves every listed option constructible,
 so this file is regenerated, never edited.
 
 The rows are the published surface: an extension built with the core's
-`experimental` feature carries the further outcome families of
-`docs/experimental.md`, which this table does not list.
+`experimental` feature carries the further outcome families and component
+options of `docs/experimental.md`, whose table names the entry point of
+each; this table does not list them. R's `outcome` defaults to `NULL`
+and Python's to `None`, the family then taken from the response.
 
 Every name is identical across the three surfaces but for the outcome
 constructors, which carry an `_outcome` suffix in R: `gaussian()` there
@@ -42,8 +44,8 @@ in `general_params()`. The one R shortcut,
 | `general_params.prior_only` | `prior_only=` on `Model` and the estimators | `general_params(prior_only = )` |
 
 Groups without a row: `mean_params.cell` and `variance_params.cell` carry
-no field on the stable surface; the within-cell basis is experimental and
-core-only (`docs/experimental.md`).
+no field on the stable surface; the within-cell basis is experimental,
+`cell_params(basis = )` in R (`docs/experimental.md`).
 
 The seed is not part of the configuration: it is `random_state` in Python
 and `seed` in R, resolved by each language's rule and passed to the core
