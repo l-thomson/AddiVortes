@@ -129,3 +129,20 @@ fn the_outcome_serialises_in_snake_case_and_round_trips() {
     let back: Config = serde_json::from_str(&json).unwrap();
     assert_eq!(config, back);
 }
+
+/// The response the in-sample fit is measured against is the observed
+/// log time of every row, censored rows included, not the latent the
+/// chain runs on.
+#[test]
+fn the_training_response_is_the_observed_log_times() {
+    let (config, x, times, events) = aft_fixture();
+    let mut sampler = Sampler::aft(&config, &x, &times, &events, SEED).unwrap();
+    sampler.step();
+    let expected: Vec<f64> = times.iter().map(|&t| libm::log(t)).collect();
+    for (observed, expected) in sampler.training_response().iter().zip(&expected) {
+        assert!(
+            (observed - expected).abs() < 1e-12,
+            "{observed} vs {expected}"
+        );
+    }
+}
