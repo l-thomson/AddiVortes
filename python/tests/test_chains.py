@@ -126,3 +126,42 @@ def test_the_monitored_rows_are_a_subsample():
     assert _monitored_rows(1000, 20).shape == (20,)
     assert _monitored_rows(1000, 20)[0] == 0
     assert _monitored_rows(1000, 20)[-1] == 999
+
+
+def test_threaded_chains_draw_what_the_chains_run_in_turn_draw(gaussian_fixture):
+    x, y = gaussian_fixture
+    serial = fit_chains(gaussian_fixture, n_chains=3)
+
+    for n_threads in (2, 3, 8):
+        with pytest.warns(UserWarning):
+            threaded = Model(**SMALL).fit(
+                x, y, random_state=1, n_chains=3, n_threads=n_threads
+            )
+
+        assert threaded.n_threads == n_threads
+        np.testing.assert_array_equal(threaded.sigma(), serial.sigma())
+        np.testing.assert_array_equal(
+            threaded.predict_draws(x), serial.predict_draws(x)
+        )
+        np.testing.assert_array_equal(
+            threaded.prediction_interval(x), serial.prediction_interval(x)
+        )
+    assert serial.n_threads == 1
+
+
+def test_the_thread_count_survives_a_pickle(gaussian_fixture):
+    x, y = gaussian_fixture
+    with pytest.warns(UserWarning):
+        threaded = Model(**SMALL).fit(x, y, random_state=1, n_chains=2, n_threads=2)
+
+    loaded = pickle.loads(pickle.dumps(threaded))
+
+    assert loaded.n_threads == 2
+    np.testing.assert_array_equal(loaded.predict(x), threaded.predict(x))
+
+
+@pytest.mark.parametrize("n_threads", [0, -1, 1.5, "two"])
+def test_the_thread_count_must_be_a_positive_integer(gaussian_fixture, n_threads):
+    x, y = gaussian_fixture
+    with pytest.raises((ValueError, TypeError)):
+        Model(**SMALL).fit(x, y, random_state=1, n_threads=n_threads)

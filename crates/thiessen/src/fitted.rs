@@ -205,7 +205,7 @@ impl TryFrom<PosteriorParts> for Posterior {
 /// A fitted model: the configuration, the scaling, the kept draws and the
 /// fit-time warnings. Serialises through serde; loading validates the
 /// payload against the model.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "FittedParts")]
 pub struct Fitted {
     config: Config,
@@ -215,6 +215,21 @@ pub struct Fitted {
     in_sample_rmse: f64,
     /// Levels of each categorical column; empty for the other columns.
     categories: Vec<Vec<f64>>,
+    /// The thread count of the predictions; an execution setting, not
+    /// part of the model, so not persisted.
+    #[serde(skip)]
+    threads: usize,
+}
+
+impl PartialEq for Fitted {
+    fn eq(&self, other: &Self) -> bool {
+        self.config == other.config
+            && self.scaler == other.scaler
+            && self.posterior == other.posterior
+            && self.warnings == other.warnings
+            && self.in_sample_rmse == other.in_sample_rmse
+            && self.categories == other.categories
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -345,6 +360,7 @@ impl TryFrom<FittedParts> for Fitted {
             warnings: parts.warnings,
             in_sample_rmse: parts.in_sample_rmse,
             categories,
+            threads: 1,
         })
     }
 }
@@ -386,7 +402,66 @@ impl Fitted {
             warnings,
             in_sample_rmse,
             categories,
+            threads: 1,
         }
+    }
+
+    /// The number of threads the predictions run on: the rows of a design
+    /// are split into as many contiguous chunks, each evaluated on a
+    /// thread of its own. One unless [`set_threads`](Self::set_threads) or
+    /// [`fit_chains_with_threads`](crate::fit_chains_with_threads) set it;
+    /// not persisted with the model. The predicted values do not depend on
+    /// it: every row is evaluated by the same operations in the same
+    /// order whichever chunk holds it.
+    pub fn threads(&self) -> usize {
+        self.threads
+    }
+
+    /// Set the thread count of the predictions; zero counts as one.
+    pub fn set_threads(&mut self, threads: usize) {
+        self.threads = threads.max(1);
+    }
+
+    /// Run `fill` over the rows of `x` in at most [`threads`](Self::threads)
+    /// contiguous chunks, each on a thread of its own, with `out[d]`
+    /// split at the chunk boundaries: `fill(chunk, pieces)` receives the
+    /// chunk's rows and, per draw, its slice of `out[d]`.
+    fn over_row_chunks(
+        &self,
+        x: &Data,
+        out: &mut [Vec<f64>],
+        fill: impl Fn(&Data, &mut [&mut [f64]]) + Sync,
+    ) {
+        let n = x.n_rows();
+        let threads = self.threads.clamp(1, n.max(1));
+        if threads == 1 {
+            let mut pieces: Vec<&mut [f64]> = out.iter_mut().map(Vec::as_mut_slice).collect();
+            fill(x, &mut pieces);
+            return;
+        }
+        let per = n.div_ceil(threads);
+        let chunks: Vec<Data> = (0..n)
+            .step_by(per)
+            .map(|start| x.rows(start..(start + per).min(n)))
+            .collect();
+        let mut pieces: Vec<Vec<&mut [f64]>> = chunks
+            .iter()
+            .map(|_| Vec::with_capacity(out.len()))
+            .collect();
+        for row in out.iter_mut() {
+            let mut rest = row.as_mut_slice();
+            for (chunk, piece) in chunks.iter().zip(&mut pieces) {
+                let (head, tail) = rest.split_at_mut(chunk.n_rows());
+                piece.push(head);
+                rest = tail;
+            }
+        }
+        let fill = &fill;
+        std::thread::scope(|scope| {
+            for (chunk, mut piece) in chunks.iter().zip(pieces) {
+                scope.spawn(move || fill(chunk, &mut piece));
+            }
+        });
     }
 
     /// The fitted model's name: "gaussian", "probit", or "heteroscedastic"
@@ -602,22 +677,20 @@ impl Fitted {
         let x_scaled = self.scaler.scale_x(x);
         let n = x.n_rows();
         let offset = self.offset();
-        let mut keys = Vec::new();
-        Ok(self
-            .posterior
-            .tessellations()
-            .iter()
-            .map(|draw| {
-                let mut sums = vec![0.0; n];
+        let draws = self.posterior.tessellations();
+        let mut out = vec![vec![0.0; n]; draws.len()];
+        self.over_row_chunks(&x_scaled, &mut out, |chunk, pieces| {
+            let mut keys = Vec::new();
+            for (draw, sums) in draws.iter().zip(pieces.iter_mut()) {
                 for t in draw {
-                    t.for_each_value(&x_scaled, &geometry, &mut keys, |i, v| sums[i] += v);
+                    t.for_each_value(chunk, &geometry, &mut keys, |i, v| sums[i] += v);
                 }
-                for sum in &mut sums {
+                for sum in sums.iter_mut() {
                     *sum = self.scaler.unscale_y(*sum) + offset;
                 }
-                sums
-            })
-            .collect())
+            }
+        });
+        Ok(out)
     }
 
     /// The column structure of the fit, from the configuration and the
@@ -688,22 +761,20 @@ impl Fitted {
             let geometry = self.geometry()?;
             geometry.check_codes(x)?;
             let x_scaled = self.scaler.scale_x(x);
-            let mut keys = Vec::new();
-            return Ok(self
-                .posterior
-                .variance_tessellations()
-                .iter()
-                .map(|draw| {
-                    let mut products = vec![1.0; n];
+            let draws = self.posterior.variance_tessellations();
+            let mut out = vec![vec![1.0; n]; draws.len()];
+            self.over_row_chunks(&x_scaled, &mut out, |chunk, pieces| {
+                let mut keys = Vec::new();
+                for (draw, products) in draws.iter().zip(pieces.iter_mut()) {
                     for t in draw {
-                        t.for_each_value(&x_scaled, &geometry, &mut keys, |i, v| products[i] *= v);
+                        t.for_each_value(chunk, &geometry, &mut keys, |i, v| products[i] *= v);
                     }
-                    for p in &mut products {
+                    for p in products.iter_mut() {
                         *p *= range_sq;
                     }
-                    products
-                })
-                .collect());
+                }
+            });
+            return Ok(out);
         }
         Ok(self
             .posterior

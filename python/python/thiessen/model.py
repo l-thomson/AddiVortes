@@ -137,6 +137,7 @@ class Model(Params):
         y: Any,
         random_state: SeedLike = None,
         n_chains: int = 1,
+        n_threads: int = 1,
     ) -> FittedModel:
         """Fit the model to `X` and `y`.
 
@@ -156,6 +157,11 @@ class Model(Params):
             The number of chains to run. Each chain has its own seed,
             derived from the resolved seed in the core, and the draws of
             the chains are pooled.
+        n_threads : int, default=1
+            The number of threads. The chains are spread over at most this
+            many threads, each chain on one thread with its own generator,
+            so the draws do not depend on it; the returned model splits
+            the rows of a prediction over the same number.
 
         Returns
         -------
@@ -176,16 +182,17 @@ class Model(Params):
             missing or non-finite values, a constant response, a constant
             column, fewer than two rows, or a row-count mismatch.
         ValueError
-            If `n_chains` is not a positive integer.
+            If `n_chains` or `n_threads` is not a positive integer.
         """
         design = _as_design(X)
         response = _as_response(y)
         seed = _resolve_seed(random_state)
         chains = _resolve_chains(n_chains)
-        fitted = _native.fit(self._json(), design, response, seed, chains)
+        threads = _resolve_threads(n_threads)
+        fitted = _native.fit(self._json(), design, response, seed, chains, threads)
         _emit_warnings(fitted, stacklevel=3)
         _warn_convergence(fitted, chains, design, stacklevel=3)
-        return FittedModel(fitted, seed, chains)
+        return FittedModel(fitted, seed, chains, threads)
 
 
 def _emit_warnings(fitted: _native.Fitted, stacklevel: int) -> None:
@@ -202,9 +209,21 @@ def _resolve_chains(n_chains: Any) -> int:
     return chains
 
 
-def _rebuild(payload: str, seed: int, n_chains: int = 1) -> FittedModel:
+def _resolve_threads(n_threads: Any) -> int:
+    """Return `n_threads` as a positive integer."""
+    threads = int(n_threads)
+    if threads != n_threads or threads < 1:
+        raise ValueError(f"n_threads must be a positive integer; got {n_threads!r}")
+    return threads
+
+
+def _rebuild(
+    payload: str, seed: int, n_chains: int = 1, n_threads: int = 1
+) -> FittedModel:
     """Reconstruct a `FittedModel` from its pickled state."""
-    return FittedModel(_native.fitted_from_json(payload), seed, n_chains)
+    return FittedModel(
+        _native.fitted_from_json(payload, n_threads), seed, n_chains, n_threads
+    )
 
 
 class FittedModel:
@@ -224,15 +243,27 @@ class FittedModel:
     Model : The configuration.
     """
 
-    def __init__(self, fitted: _native.Fitted, seed: int, n_chains: int = 1) -> None:
+    def __init__(
+        self,
+        fitted: _native.Fitted,
+        seed: int,
+        n_chains: int = 1,
+        n_threads: int = 1,
+    ) -> None:
         self._fitted = fitted
         self.random_state = seed
         self._n_chains = n_chains
+        self._n_threads = n_threads
 
     @property
     def n_chains(self) -> int:
         """int: The number of chains the draws were pooled from."""
         return self._n_chains
+
+    @property
+    def n_threads(self) -> int:
+        """int: The number of threads a prediction splits its rows over."""
+        return self._n_threads
 
     @property
     def model(self) -> str:
@@ -526,6 +557,7 @@ class FittedModel:
         path: str | os.PathLike[str],
         random_state: int = 0,
         n_chains: int = 1,
+        n_threads: int = 1,
     ) -> FittedModel:
         """Read a fitted model from `path`.
 
@@ -539,6 +571,9 @@ class FittedModel:
         n_chains : int, default=1
             The number of chains the draws were pooled from, which the file
             does not carry.
+        n_threads : int, default=1
+            The number of threads a prediction splits its rows over, which
+            the file does not carry.
 
         Returns
         -------
@@ -554,10 +589,18 @@ class FittedModel:
         """
         with open(os.fspath(path), encoding="utf-8") as handle:
             payload = handle.read()
-        return cls(_native.fitted_from_json(payload), random_state, n_chains)
+        threads = _resolve_threads(n_threads)
+        return cls(
+            _native.fitted_from_json(payload, threads), random_state, n_chains, threads
+        )
 
-    def __reduce__(self) -> tuple[Any, tuple[str, int, int]]:
-        return _rebuild, (self._fitted.to_json(), self.random_state, self._n_chains)
+    def __reduce__(self) -> tuple[Any, tuple[str, int, int, int]]:
+        return _rebuild, (
+            self._fitted.to_json(),
+            self.random_state,
+            self._n_chains,
+            self._n_threads,
+        )
 
     def __repr__(self) -> str:
         return (

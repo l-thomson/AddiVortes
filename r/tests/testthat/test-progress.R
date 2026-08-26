@@ -138,11 +138,33 @@ test_that("the chains of a fit are named as they are sampled", {
 
   expect_identical(
     phase_messages(seen),
+    c("sampling 2 chains", "pooling the draws", "summarising the draws")
+  )
+
+  seen <- progressions(suppressWarnings(
+    thiessen(fixture$x, fixture$y, small_control(), chains = 2, seed = 1,
+             threads = 2)
+  ))
+
+  expect_identical(
+    phase_messages(seen),
     c(
-      "sampling chain 1 of 2", "sampling chain 2 of 2",
-      "pooling the draws", "summarising the draws"
+      "sampling 2 chains on 2 threads", "pooling the draws",
+      "summarising the draws"
     )
   )
+})
+
+test_that("the sweeps of threaded chains are reported", {
+  fixture <- small_fixture()
+
+  seen <- progressions(suppressWarnings(
+    thiessen(fixture$x, fixture$y, small_control(), chains = 3, seed = 1,
+             threads = 2)
+  ))
+
+  expect_identical(sweep_updates(seen), progress_updates(small_control(), 3L))
+  expect_identical(total_advance(seen), progress_steps(small_control(), 3L))
 })
 
 test_that("the number of updates does not exceed the sweeps", {

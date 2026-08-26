@@ -13,6 +13,7 @@ Requires scikit-learn 1.6 or later, the `sklearn` extra.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from typing import Any, Literal, overload
 
@@ -32,6 +33,23 @@ from .families import Gaussian, Probit
 from .model import _emit_warnings, _resolve_chains
 from .params import MetricEntry, TermParams
 
+
+def _resolve_jobs(n_jobs: int | None) -> int:
+    """Resolve `n_jobs` to a thread count under the joblib convention.
+
+    `None` is one thread; a positive count is itself; a negative count is
+    that many below the machine's count plus one, so -1 is every core.
+    """
+    if n_jobs is None:
+        return 1
+    jobs = int(n_jobs)
+    if jobs != n_jobs or jobs == 0:
+        raise ValueError(f"n_jobs must be a non-zero integer or None; got {n_jobs!r}")
+    if jobs > 0:
+        return jobs
+    return max(1, (os.cpu_count() or 1) + 1 + jobs)
+
+
 __all__ = ["AddiVortesClassifier", "AddiVortesRegressor"]
 
 
@@ -49,6 +67,7 @@ class _BaseAddiVortes(BaseEstimator):
         prior_only: bool = False,
         categorical_features: str | Sequence[Any] | None = None,
         n_chains: int = 1,
+        n_jobs: int | None = None,
         random_state: SeedLike = None,
     ) -> None:
         self.mean_params = mean_params
@@ -59,6 +78,7 @@ class _BaseAddiVortes(BaseEstimator):
         self.prior_only = prior_only
         self.categorical_features = categorical_features
         self.n_chains = n_chains
+        self.n_jobs = n_jobs
         self.random_state = random_state
 
     def __sklearn_tags__(self) -> Any:
@@ -131,6 +151,7 @@ class _BaseAddiVortes(BaseEstimator):
     def _fit_core(self, x: npt.NDArray[np.float64], y: npt.NDArray[np.float64]) -> None:
         seed = _resolve_seed(self.random_state)
         chains = _resolve_chains(self.n_chains)
+        threads = _resolve_jobs(self.n_jobs)
         self.random_state_ = seed
         design = np.ascontiguousarray(x, dtype=np.float64)
         self._fitted: _native.Fitted = _native.fit(
@@ -139,6 +160,7 @@ class _BaseAddiVortes(BaseEstimator):
             _as_response(y),
             seed,
             chains,
+            threads,
         )
         _emit_warnings(self._fitted, stacklevel=4)
         _warn_convergence(self._fitted, chains, design, stacklevel=4)
@@ -157,7 +179,7 @@ class _BaseAddiVortes(BaseEstimator):
         payload = state.pop("_fitted_json", None)
         self.__dict__.update(state)
         if payload is not None:
-            self._fitted = _native.fitted_from_json(payload)
+            self._fitted = _native.fitted_from_json(payload, _resolve_jobs(self.n_jobs))
 
 
 class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
@@ -203,6 +225,12 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
         pooled. Two or more chains warn where R-hat exceeds 1.01 or an
         effective sample size falls below 400 (Vehtari and others, 2021),
         which needs arviz.
+    n_jobs : int or None, default=None
+        The number of threads, under the joblib convention: `None` is one,
+        -1 every core. The chains are spread over at most this many
+        threads, each chain on one thread with its own generator, so the
+        draws do not depend on it; a prediction splits its rows over the
+        same number.
     random_state : int, Generator, RandomState or None, default=None
         The seed. An integer passes through to the core unchanged, so
         `AddiVortesRegressor(random_state=1)` and `Model(random_state=1)`
@@ -257,6 +285,7 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
         prior_only: bool = False,
         categorical_features: str | Sequence[Any] | None = None,
         n_chains: int = 1,
+        n_jobs: int | None = None,
         random_state: SeedLike = None,
     ) -> None:
         super().__init__(
@@ -268,6 +297,7 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
             prior_only=prior_only,
             categorical_features=categorical_features,
             n_chains=n_chains,
+            n_jobs=n_jobs,
             random_state=random_state,
         )
         self.outcome = outcome
@@ -407,6 +437,12 @@ class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
         pooled. Two or more chains warn where R-hat exceeds 1.01 or an
         effective sample size falls below 400 (Vehtari and others, 2021),
         which needs arviz.
+    n_jobs : int or None, default=None
+        The number of threads, under the joblib convention: `None` is one,
+        -1 every core. The chains are spread over at most this many
+        threads, each chain on one thread with its own generator, so the
+        draws do not depend on it; a prediction splits its rows over the
+        same number.
     random_state : int, Generator, RandomState or None, default=None
         The seed. An integer passes through to the core unchanged, so
         `AddiVortesRegressor(random_state=1)` and `Model(random_state=1)`
@@ -454,6 +490,7 @@ class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
         prior_only: bool = False,
         categorical_features: str | Sequence[Any] | None = None,
         n_chains: int = 1,
+        n_jobs: int | None = None,
         random_state: SeedLike = None,
     ) -> None:
         super().__init__(
@@ -465,6 +502,7 @@ class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
             prior_only=prior_only,
             categorical_features=categorical_features,
             n_chains=n_chains,
+            n_jobs=n_jobs,
             random_state=random_state,
         )
         self.outcome = outcome

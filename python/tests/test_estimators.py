@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pickle
+import warnings
 
 import numpy as np
 import pytest
@@ -28,6 +29,7 @@ PARAMETERS = {
     "prior_only",
     "categorical_features",
     "n_chains",
+    "n_jobs",
     "random_state",
 }
 
@@ -360,3 +362,26 @@ class TestCategorical:
         x, y = self._data()
         with pytest.raises(ValueError, match="data frame"):
             AddiVortesRegressor(categorical_features="from_dtype", **SMALL).fit(x, y)
+
+
+def test_n_jobs_spreads_the_chains_without_changing_the_draws(gaussian_fixture):
+    from thiessen.estimators import _resolve_jobs
+
+    x, y = gaussian_fixture
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        serial = AddiVortesRegressor(**SMALL, n_chains=2, random_state=1).fit(x, y)
+        threaded = AddiVortesRegressor(
+            **SMALL, n_chains=2, n_jobs=2, random_state=1
+        ).fit(x, y)
+        every_core = AddiVortesRegressor(
+            **SMALL, n_chains=2, n_jobs=-1, random_state=1
+        ).fit(x, y)
+
+    np.testing.assert_array_equal(threaded.predict(x), serial.predict(x))
+    np.testing.assert_array_equal(every_core.predict(x), serial.predict(x))
+    assert threaded._fitted.threads == 2
+    assert every_core._fitted.threads == _resolve_jobs(-1) >= 1
+    assert _resolve_jobs(None) == 1
+    with pytest.raises(ValueError):
+        _resolve_jobs(0)

@@ -101,11 +101,13 @@ fn core_state_payload(state: ExternalPtr<FittedHandle>) -> Result<Raw> {
     Ok(Raw::from_bytes(&bytes))
 }
 
-/// A live fitted-model pointer from the bytes of `core_state_payload`.
+/// A live fitted-model pointer from the bytes of `core_state_payload`,
+/// predicting on `threads` threads.
 #[extendr]
-fn core_state_restore(payload: &[u8]) -> Result<ExternalPtr<FittedHandle>> {
-    let inner: thiessen::Fitted =
+fn core_state_restore(payload: &[u8], threads: i32) -> Result<ExternalPtr<FittedHandle>> {
+    let mut inner: thiessen::Fitted =
         rmp_serde::from_slice(payload).map_err(|error| Error::Other(error.to_string()))?;
+    inner.set_threads(threads.max(1) as usize);
     Ok(ExternalPtr::new(FittedHandle { inner }))
 }
 
@@ -262,6 +264,39 @@ fn core_sampler_step(sampler: ExternalPtr<SamplerHandle>, n: i32) -> Result<()> 
     Ok(())
 }
 
+/// Advance every sampler through `burn_in` sweeps and then `draws` kept
+/// draws of `thinning` sweeps each, the samplers spread over at most
+/// `threads` threads.
+#[extendr]
+fn core_samplers_advance(
+    samplers: List,
+    burn_in: i32,
+    draws: i32,
+    thinning: i32,
+    threads: i32,
+) -> Result<()> {
+    let handles = samplers
+        .values()
+        .map(ExternalPtr::<SamplerHandle>::try_from)
+        .collect::<Result<Vec<_>>>()?;
+    let mut guards: Vec<_> = handles
+        .iter()
+        .map(|handle| handle.inner.borrow_mut())
+        .collect();
+    let mut live = guards
+        .iter_mut()
+        .map(|guard| guard.as_mut().ok_or_else(finished))
+        .collect::<Result<Vec<_>>>()?;
+    thiessen::Sampler::advance_all(
+        &mut live,
+        burn_in.max(0) as usize,
+        draws.max(0) as usize,
+        thinning.max(0) as usize,
+        threads.max(1) as usize,
+    );
+    Ok(())
+}
+
 /// Record the current state as a posterior draw.
 #[extendr]
 fn core_sampler_keep(sampler: ExternalPtr<SamplerHandle>) -> Result<()> {
@@ -322,9 +357,9 @@ fn core_sampler_noise_variances(sampler: ExternalPtr<SamplerHandle>) -> Result<V
 }
 
 /// The fitted model from the kept draws of every sampler, their chains
-/// pooled. Consumes the samplers.
+/// pooled, predicting on `threads` threads. Consumes the samplers.
 #[extendr]
-fn core_finish(samplers: List) -> Result<List> {
+fn core_finish(samplers: List, threads: i32) -> Result<List> {
     let handles = samplers
         .values()
         .map(ExternalPtr::<SamplerHandle>::try_from)
@@ -338,8 +373,9 @@ fn core_finish(samplers: List) -> Result<List> {
     }
     let n_chains = samplers.len() as i32;
     let y = first.y.borrow();
-    let (fitted, fitted_values) =
+    let (mut fitted, fitted_values) =
         thiessen::Fitted::pool_samplers(samplers, &first.data, &y).map_err(core_error)?;
+    fitted.set_threads(threads.max(1) as usize);
     let warnings: Vec<String> = fitted.warnings().iter().map(ToString::to_string).collect();
     Ok(list!(
         config = serde_json::to_string(fitted.config()).map_err(json_error)?,
@@ -371,6 +407,7 @@ extendr_module! {
     fn core_diagnostics;
     fn core_sampler_new;
     fn core_sampler_step;
+    fn core_samplers_advance;
     fn core_sampler_keep;
     fn core_sampler_n_kept;
     fn core_sampler_set_response;

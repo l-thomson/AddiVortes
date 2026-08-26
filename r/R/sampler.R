@@ -132,7 +132,7 @@ thiessen_sampler <- function(x, y, control = thiessen_control(), seed = NULL) {
     core_call(core_sampler_noise_variances(handle))
   }
   self$finish <- function() {
-    fit <- core_call(core_finish(list(handle)))
+    fit <- core_call(core_finish(list(handle), 1L))
     assemble_fit(fit, design = design, y = current_y, seed = resolved,
                  call = sys.call(-1L))
   }

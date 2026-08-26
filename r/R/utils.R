@@ -38,7 +38,14 @@ core_call <- function(expr, call = rlang::caller_env()) {
 fit_state <- function(object, call = rlang::caller_env()) {
   state <- object$state
   if (!core_state_is_live(state$handle)) {
-    state$handle <- core_call(core_state_restore(state$payload), call = call)
+    threads <- object$threads
+    if (is.null(threads)) {
+      threads <- 1L
+    }
+    state$handle <- core_call(
+      core_state_restore(state$payload, threads),
+      call = call
+    )
   }
   state$handle
 }
@@ -223,6 +230,21 @@ resolve_chains <- function(chains, call = rlang::caller_env()) {
   as.integer(chains)
 }
 
+#' Resolve the number of threads of a fit
+#'
+#' @param threads A whole number of threads.
+#' @param call The calling environment to report.
+#' @return An integer.
+#' @noRd
+resolve_threads <- function(threads, call = rlang::caller_env()) {
+  if (!is.numeric(threads) || length(threads) != 1L || is.na(threads) ||
+        threads < 1 || threads != trunc(threads)) {
+    thiessen_abort("`threads` must be a whole number of at least 1.",
+                   call = call)
+  }
+  as.integer(threads)
+}
+
 #' The number of progress reports a fit signals
 #'
 #' Progress is signalled with progressr, so a session reports it only after
@@ -256,15 +278,18 @@ progress_steps <- function(control, chains = 1L) {
   updates + POOLING_WEIGHT * updates + 1L
 }
 
-#' The message the sweeps of a chain report
+#' The message the sweeps report
 #'
-#' @param index The chain, from one.
 #' @param chains The number of chains the fit runs.
+#' @param threads The number of threads the chains run on.
 #' @return A string.
 #' @noRd
-sweep_message <- function(index, chains) {
+sweep_message <- function(chains, threads) {
   if (chains == 1L) {
     return("sampling")
   }
-  sprintf("sampling chain %d of %d", index, chains)
+  if (threads == 1L) {
+    return(sprintf("sampling %d chains", chains))
+  }
+  sprintf("sampling %d chains on %d threads", chains, min(chains, threads))
 }

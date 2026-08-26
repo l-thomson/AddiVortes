@@ -85,6 +85,12 @@
   `src/rust/vendor.tar.xz`; `core_version()` reports the core version.
 * `predict(interval = )` takes the mean and the interval from one pass
   over the draws rather than two; the values are unchanged.
+* `thiessen(threads = )` runs the chains of a fit on up to that many
+  threads, each chain on one thread with its own generator, and
+  `predict()` on the fit splits its rows over the same number; the draws
+  and the predictions do not depend on the count. The chains of a fit
+  now advance together rather than in turn, so a progress handler
+  reports "sampling 2 chains" in place of one message per chain.
 * The library is built with the workspace release profile (`lto = "fat"`,
   `codegen-units = 1`), which the detached manifest under `src/rust` did
   not carry: fits about 7 per cent and predictions 10 to 15 per cent

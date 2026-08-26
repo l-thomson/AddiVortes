@@ -43,6 +43,11 @@ of one row per kept draw and one column per row of \code{newdata}.
 \description{
 Posterior predictions from a fitted model
 }
+\details{
+The rows of \code{newdata} are split over the \code{threads} of the fit,
+each chunk evaluated on a thread of its own; the values do not depend
+on the count.
+}
 \examples{
 n <- 60
 x <- cbind(seq(0, 1, length.out = n), rep(c(0, 0.5), length.out = n))

@@ -15,6 +15,10 @@
 #' @param level The mass of a central interval. Default 0.95.
 #' @param ... Ignored.
 #'
+#' @details The rows of `newdata` are split over the `threads` of the fit,
+#'   each chunk evaluated on a thread of its own; the values do not depend
+#'   on the count.
+#'
 #' @return For `type = "mean"` and `interval = "none"`, a numeric vector of
 #'   length `nrow(newdata)`; with an interval, a matrix of that many rows
 #'   with columns `fit`, `lower` and `upper`. For the other types, a matrix

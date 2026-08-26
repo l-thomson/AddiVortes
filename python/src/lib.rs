@@ -51,6 +51,12 @@ pub struct Fitted {
 
 #[pymethods]
 impl Fitted {
+    /// The number of threads the predictions run on.
+    #[getter]
+    fn threads(&self) -> usize {
+        self.inner.threads()
+    }
+
     /// The posterior mean at each row of `x`.
     fn predict<'py>(
         &self,
@@ -337,28 +343,45 @@ impl Sampler {
 }
 
 /// Fit the model of the configuration to `x` and `y` under `seed`, running
-/// `n_chains` chains seeded by [`thiessen::chain_seed`] and pooling their
-/// draws.
+/// `n_chains` chains seeded by [`thiessen::chain_seed`] over at most
+/// `n_threads` threads and pooling their draws. The GIL is released for
+/// the fit.
 #[pyfunction]
 fn fit(
+    py: Python<'_>,
     config_json: &str,
     x: PyReadonlyArray2<'_, f64>,
     y: PyReadonlyArray1<'_, f64>,
     seed: u64,
     n_chains: usize,
+    n_threads: usize,
 ) -> PyResult<Fitted> {
     let config = config(config_json)?;
     let data = design(&x)?;
     let y = response(&y);
-    let (inner, _) =
-        thiessen::fit_chains(&config, &data, &y, seed, n_chains.max(1)).map_err(core_error)?;
+    let (inner, _) = py
+        .detach(|| {
+            thiessen::fit_chains_with_threads(
+                &config,
+                &data,
+                &y,
+                seed,
+                n_chains.max(1),
+                n_threads.max(1),
+            )
+        })
+        .map_err(core_error)?;
     Ok(Fitted { inner })
 }
 
-/// Load a fitted model from the JSON of `Fitted.to_json`.
+/// Load a fitted model from the JSON of `Fitted.to_json`, predicting on
+/// `n_threads` threads.
 #[pyfunction]
-fn fitted_from_json(json: &str) -> PyResult<Fitted> {
-    let inner = serde_json::from_str(json).map_err(|e| ThiessenError::new_err(e.to_string()))?;
+#[pyo3(signature = (json, n_threads = 1))]
+fn fitted_from_json(json: &str, n_threads: usize) -> PyResult<Fitted> {
+    let mut inner: thiessen::Fitted =
+        serde_json::from_str(json).map_err(|e| ThiessenError::new_err(e.to_string()))?;
+    inner.set_threads(n_threads);
     Ok(Fitted { inner })
 }
 

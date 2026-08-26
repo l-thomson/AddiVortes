@@ -36,8 +36,8 @@ core_state_is_live <- function(state) .Call(wrap__core_state_is_live, state)
 
 core_state_payload <- function(state) .Call(wrap__core_state_payload, state)
 
-core_state_restore <- function(payload) {
-  .Call(wrap__core_state_restore, payload)
+core_state_restore <- function(payload, threads) {
+  .Call(wrap__core_state_restore, payload, threads)
 }
 
 core_predict <- function(state, x) .Call(wrap__core_predict, state, x)
@@ -70,6 +70,10 @@ core_sampler_new <- function(config_json, x, y, seed_value, chain) {
 
 core_sampler_step <- function(sampler, n) .Call(wrap__core_sampler_step, sampler, n)
 
+core_samplers_advance <- function(samplers, burn_in, draws, thinning, threads) {
+  .Call(wrap__core_samplers_advance, samplers, burn_in, draws, thinning, threads)
+}
+
 core_sampler_keep <- function(sampler) .Call(wrap__core_sampler_keep, sampler)
 
 core_sampler_n_kept <- function(sampler) .Call(wrap__core_sampler_n_kept, sampler)
@@ -86,4 +90,6 @@ core_sampler_noise_variances <- function(sampler) {
   .Call(wrap__core_sampler_noise_variances, sampler)
 }
 
-core_finish <- function(samplers) .Call(wrap__core_finish, samplers)
+core_finish <- function(samplers, threads) {
+  .Call(wrap__core_finish, samplers, threads)
+}
