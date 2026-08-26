@@ -90,7 +90,7 @@ thiessen_control <- function(outcome = gaussian_outcome(),
               null_ok = TRUE)
   check_group(general_params, "general_params", "general_params")
   if (!is.null(tessellations)) {
-    check_scalar(tessellations, "tessellations")
+    check_whole_number(tessellations, min = 0)
     if (!is.null(mean_params$tessellations)) {
       thiessen_abort(paste0(
         "`tessellations` is a shortcut for `mean_params`; set the count ",
@@ -136,24 +136,4 @@ print.thiessen_control <- function(x, ...) {
     cat(sprintf("  %-15s %s\n", name, shown[[name]]))
   }
   invisible(x)
-}
-
-#' One line naming each column's metric
-#'
-#' @param metric The `metric` field of a geometry group.
-#' @return A character string.
-#' @noRd
-format_metric <- function(metric) {
-  named <- vapply(
-    metric,
-    function(entry) {
-      if (is.character(entry)) {
-        entry
-      } else {
-        paste0(names(entry)[1L], "(", entry[[1L]][["sphere"]], ")")
-      }
-    },
-    character(1)
-  )
-  paste(named, collapse = ", ")
 }

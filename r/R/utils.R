@@ -1,5 +1,5 @@
-# Shared helpers: error signalling, seed resolution, and the JSON encoding
-# of a configuration.
+# Shared helpers: error signalling, argument checks, seed resolution, and
+# the JSON encoding of a configuration.
 
 #' Signal an error of the package's condition class
 #'
@@ -8,6 +8,113 @@
 #' @noRd
 thiessen_abort <- function(message, call = rlang::caller_env()) {
   rlang::abort(message, class = "thiessen_error", call = call)
+}
+
+#' Re-signal an rlang input check under the package's condition class
+#'
+#' rlang's `check_*()` helpers signal `rlang_error`; every error this
+#' package raises carries `thiessen_error` (srr BS2.15). The message and
+#' the reported call are rlang's.
+#'
+#' @param expr One `rlang::check_*()` call.
+#' @param call The calling environment to report.
+#' @noRd
+resignal <- function(expr, call = rlang::caller_env()) {
+  rlang::try_fetch(
+    expr,
+    error = function(condition) {
+      thiessen_abort(conditionMessage(condition), call = call)
+    }
+  )
+}
+
+#' Reject a value that is not a single number
+#'
+#' @param x The value to check.
+#' @param ... Passed to [rlang::check_number_decimal()]: `min`, `max`,
+#'   `allow_null`.
+#' @param arg The argument name to report.
+#' @param call The calling environment to report.
+#' @noRd
+check_number <- function(x, ..., arg = rlang::caller_arg(x),
+                         call = rlang::caller_env()) {
+  resignal(
+    rlang::check_number_decimal(x, ..., arg = arg, call = call),
+    call = call
+  )
+}
+
+#' Reject a value that is not a single whole number
+#'
+#' @param x The value to check.
+#' @param ... Passed to [rlang::check_number_whole()]: `min`, `max`,
+#'   `allow_null`.
+#' @param arg The argument name to report.
+#' @param call The calling environment to report.
+#' @noRd
+check_whole_number <- function(x, ..., arg = rlang::caller_arg(x),
+                               call = rlang::caller_env()) {
+  resignal(
+    rlang::check_number_whole(x, ..., arg = arg, call = call),
+    call = call
+  )
+}
+
+#' Reject a value that is not `TRUE` or `FALSE`
+#'
+#' @param x The value to check.
+#' @param arg The argument name to report.
+#' @param call The calling environment to report.
+#' @noRd
+check_flag <- function(x, arg = rlang::caller_arg(x),
+                       call = rlang::caller_env()) {
+  resignal(rlang::check_bool(x, arg = arg, call = call), call = call)
+}
+
+#' Reject a value that is not a probability in the open interval (0, 1)
+#'
+#' rlang's bounds are inclusive and it offers no exclusive option, so the
+#' interval is checked here.
+#'
+#' @param x The value to check.
+#' @param arg The argument name to report.
+#' @param call The calling environment to report.
+#' @noRd
+check_probability <- function(x, arg = rlang::caller_arg(x),
+                              call = rlang::caller_env()) {
+  check_number(x, arg = arg, call = call)
+  if (x <= 0 || x >= 1) {
+    thiessen_abort(
+      paste0(
+        "`", arg, "` must be a number strictly between 0 and 1, not the ",
+        "number ", format(x), "."
+      ),
+      call = call
+    )
+  }
+  invisible(NULL)
+}
+
+#' Reject a group argument of the wrong class
+#'
+#' @param value The value to check.
+#' @param name The argument name to report.
+#' @param constructor The constructor whose class is required.
+#' @param null_ok Whether `NULL` passes.
+#' @param call The calling environment to report.
+#' @noRd
+check_group <- function(value, name, constructor, null_ok = FALSE,
+                        call = rlang::caller_env()) {
+  if (null_ok && is.null(value)) {
+    return(invisible(NULL))
+  }
+  if (!inherits(value, constructor)) {
+    thiessen_abort(
+      paste0("`", name, "` must come from `", constructor, "()`."),
+      call = call
+    )
+  }
+  invisible(NULL)
 }
 
 #' Call the core, re-signalling its errors with the package's class
@@ -72,17 +179,8 @@ resolve_seed <- function(seed, call = rlang::caller_env()) {
   if (is.null(seed)) {
     return(as.double(sample.int(.Machine$integer.max, 1L)))
   }
-  if (!is.numeric(seed) || length(seed) != 1L || is.na(seed)) {
-    thiessen_abort("`seed` must be `NULL` or a single number.", call = call)
-  }
-  seed <- as.double(seed)
-  if (seed < 0 || seed != trunc(seed) || seed > 2^53) {
-    thiessen_abort(
-      "`seed` must be a whole number in [0, 2^53].",
-      call = call
-    )
-  }
-  seed
+  check_whole_number(seed, min = 0, max = 2^53, call = call)
+  as.double(seed)
 }
 
 #' Encode a control object as the core's configuration JSON
@@ -231,11 +329,7 @@ as_design <- function(x, argument = "x", call = rlang::caller_env()) {
 #' @return An integer.
 #' @noRd
 resolve_chains <- function(chains, call = rlang::caller_env()) {
-  if (!is.numeric(chains) || length(chains) != 1L || is.na(chains) ||
-        chains < 1 || chains != trunc(chains)) {
-    thiessen_abort("`chains` must be a whole number of at least 1.",
-                   call = call)
-  }
+  check_whole_number(chains, min = 1, call = call)
   as.integer(chains)
 }
 

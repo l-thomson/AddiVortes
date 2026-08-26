@@ -103,10 +103,7 @@ thiessen_sampler <- function(x, y, control = thiessen_control(), seed = NULL) {
 
   self <- new.env(parent = emptyenv())
   self$step <- function(n = 1) {
-    if (!is.numeric(n) || length(n) != 1L || is.na(n) || n < 0 ||
-          n != trunc(n)) {
-      thiessen_abort("`n` must be a whole number of sweeps.")
-    }
+    check_whole_number(n, min = 0)
     core_call(core_sampler_step(handle, as.integer(n)))
     invisible(NULL)
   }

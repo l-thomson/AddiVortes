@@ -54,10 +54,7 @@ predict.thiessen <- function(object, newdata = NULL,
   if (interval != "none" && type != "mean") {
     thiessen_abort("An interval is available for `type = \"mean\"` only.")
   }
-  if (!is.numeric(level) || length(level) != 1L || is.na(level) ||
-        level <= 0 || level >= 1) {
-    thiessen_abort("`level` must be a single number in (0, 1).")
-  }
+  check_probability(level)
   state <- fit_state(object)
   core_state_set_threads(state, threads)
   if (type != "mean") {

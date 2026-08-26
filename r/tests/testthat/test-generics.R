@@ -184,6 +184,10 @@ test_that("the interval mass must be a probability", {
   fit <- gaussian_fit()
 
   expect_error(predictive_interval(fit, prob = 1), class = "thiessen_error")
+  expect_error(predictive_interval(fit, prob = 0), class = "thiessen_error")
+  expect_error(
+    predictive_interval(fit, prob = "wide"), class = "thiessen_error"
+  )
 })
 
 test_that("bayesplot draws from the fit unmodified", {

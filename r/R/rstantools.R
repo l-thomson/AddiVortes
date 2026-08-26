@@ -148,10 +148,7 @@ log_lik.thiessen <- function(object, newdata = NULL, y = NULL, ...) {
 #' @exportS3Method rstantools::predictive_interval
 predictive_interval.thiessen <- function(object, prob = 0.9, newdata = NULL,
                                          ...) {
-  if (!is.numeric(prob) || length(prob) != 1L || is.na(prob) ||
-        prob <= 0 || prob >= 1) {
-    thiessen_abort("`prob` must be a single number in (0, 1).")
-  }
+  check_probability(prob)
   design <- predict_design(object, newdata)
   bounds <- core_call(
     core_interval(fit_state(object), design, "prediction", prob)

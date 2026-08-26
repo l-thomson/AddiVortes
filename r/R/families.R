@@ -24,8 +24,8 @@
 #' gaussian_outcome(nu = 3)
 #' @export
 gaussian_outcome <- function(nu = 6, q = 0.85) {
-  check_scalar(nu, "nu")
-  check_scalar(q, "q")
+  check_number(nu)
+  check_number(q)
   new_outcome("gaussian", list(nu = nu, q = q))
 }
 
@@ -45,7 +45,7 @@ gaussian_outcome <- function(nu = 6, q = 0.85) {
 #' probit_outcome()
 #' @export
 probit_outcome <- function(offset = NULL) {
-  if (!is.null(offset)) check_scalar(offset, "offset")
+  check_number(offset, allow_null = TRUE)
   new_outcome("probit", list(offset = offset))
 }
 

@@ -25,19 +25,21 @@
 #' @srrstats {G1.4} Every exported function is documented with roxygen2.
 #' @srrstats {G1.4a} Every internal function is documented with roxygen2
 #'   and `@noRd`.
-#' @srrstats {G2.0} Lengths are asserted at the boundary: `check_scalar()`
-#'   for every scalar option, the design and response row check in
-#'   `new_fit()`, and the per-column length check on `metric` in the core.
+#' @srrstats {G2.0} Lengths are asserted at the boundary: `check_number()`
+#'   and its siblings for every scalar option, the design and response row
+#'   check in `new_fit()`, and the per-column length check on `metric` in
+#'   the core.
 #' @srrstats {G2.0a} The documented types in `thiessen()`,
 #'   `thiessen_control()` and the parameter groups state the expected
 #'   lengths, for example `y` as a vector of `nrow(x)` values.
 #' @srrstats {G2.1} Types are asserted at the boundary: `as_design()`,
-#'   `as_response()`, `check_scalar()` and `check_group()`, with the core's
+#'   `as_response()`, `check_number()` and `check_group()`, with the core's
 #'   deserialiser as a second gate on the whole configuration.
 #' @srrstats {G2.1a} Every `@param` entry states the expected type.
-#' @srrstats {G2.2} Scalar options reject vectors through `check_scalar()`,
-#'   and `chains` and `seed` through their own checks; tested in
-#'   test-control.R and test-determinism.R.
+#' @srrstats {G2.2} Scalar options reject vectors through `check_number()`,
+#'   `check_whole_number()`, `check_flag()` and `check_probability()`,
+#'   which wrap rlang's input checks under the package's condition class;
+#'   tested in test-control.R and test-determinism.R.
 #' @srrstats {G2.3} Character input is restricted to the `metric` entries.
 #' @srrstats {G2.3a} The core's deserialiser permits only the documented
 #'   metric values and errors with the field and the offending value;
@@ -181,15 +183,16 @@
 #'   `thiessen_control()` time, before any chain runs; tested in
 #'   test-control.R.
 #' @srrstats {BS2.3} Distributional parameters are scalars enforced by
-#'   `check_scalar()`; nothing is discarded silently.
+#'   `check_number()`; nothing is discarded silently.
 #' @srrstats {BS2.4} The one vector option, `metric`, must match the
 #'   design's column count; the core errors otherwise.
 #' @srrstats {BS2.5} The core validates positivity and ranges (`nu`, `k`,
 #'   `lambda_c`, `sigma_c`, `omega` positive; `q` a probability); tested in
 #'   test-control.R ("the core rejects an invalid value at construction").
-#' @srrstats {BS2.6} `burn_in`, `draws`, `thinning`, `chains` and `seed`
-#'   are checked as whole numbers in their documented ranges; tested in
-#'   test-control.R and test-determinism.R.
+#' @srrstats {BS2.6} `tessellations`, `burn_in`, `draws`, `thinning`,
+#'   `chains` and `seed` are checked as whole numbers in their documented
+#'   ranges by `check_whole_number()`; tested in test-control.R and
+#'   test-determinism.R.
 #' @srrstats {BS2.8} `thiessen_sampler()` keeps a run alive: the caller
 #'   steps further, keeps more draws and finishes later, so a previous
 #'   run's state is the starting point of the next stretch.

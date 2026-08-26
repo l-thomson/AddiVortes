@@ -79,7 +79,12 @@
   configuration naming a gated field or variant is rejected with the
   core's message; `core_experimental()` reports the build's setting.
 * Errors carry the condition class `thiessen_error` and warnings
-  `thiessen_warning`.
+  `thiessen_warning`. Scalar arguments are checked by rlang's input
+  checks, re-signalled under that class, so a rejected value is reported
+  with the argument's name and what was passed.
+* `print()` and `format()` on an outcome family or a parameter group give
+  the constructor call that builds it: the string parses back to the
+  object.
 * Builds and links the core crate offline from vendored sources, the core
   as source under `src/rust/core` and the third-party crates in
   `src/rust/vendor.tar.xz`; `core_version()` reports the core version.
