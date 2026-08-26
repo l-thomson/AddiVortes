@@ -13,9 +13,10 @@ the core crate version the package builds against, which
 - `Model.fit(n_threads=)` and the estimators' `n_jobs` (joblib convention,
   `None` one thread, -1 every core): the chains of a fit run on up to that
   many threads, each chain on one thread with its own generator, and the
-  fitted model splits the rows of a prediction over the same number
-  (`FittedModel.n_threads`; `load(n_threads=)`). The draws and the
-  predictions do not depend on the count. The GIL is released for the
+  fitted model splits the rows of a prediction, and of its quantiles and
+  intervals, over the same number (`FittedModel.n_threads`;
+  `load(n_threads=)`). The draws and the predictions do not depend on
+  the count. The GIL is released for the
   fit.
 
 - `thiessen.sampler.Sampler` (experimental): the core's Gibbs loop driven

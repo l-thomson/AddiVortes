@@ -20,9 +20,48 @@ pub(crate) fn spread<T: Send>(items: &mut [T], threads: usize, work: impl Fn(&mu
     });
 }
 
+/// Run `work` over `out` split into at most `threads` contiguous chunks,
+/// each chunk on a thread of its own; `work(start, chunk)` receives the
+/// chunk and the index of its first item. One thread runs the whole of
+/// `out` on the calling thread.
+pub(crate) fn spread_rows<T: Send>(
+    out: &mut [T],
+    threads: usize,
+    work: impl Fn(usize, &mut [T]) + Sync,
+) {
+    let threads = threads.clamp(1, out.len().max(1));
+    if threads == 1 {
+        work(0, out);
+        return;
+    }
+    let per = out.len().div_ceil(threads);
+    let work = &work;
+    std::thread::scope(|scope| {
+        for (index, chunk) in out.chunks_mut(per).enumerate() {
+            scope.spawn(move || work(index * per, chunk));
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
-    use super::spread;
+    use super::{spread, spread_rows};
+
+    #[test]
+    fn every_row_takes_its_own_index_on_any_thread_count() {
+        for threads in [0, 1, 2, 3, 7, 40] {
+            let mut rows: Vec<usize> = vec![0; 10];
+            spread_rows(&mut rows, threads, |start, chunk| {
+                for (offset, row) in chunk.iter_mut().enumerate() {
+                    *row = start + offset;
+                }
+            });
+            let expected: Vec<usize> = (0..10).collect();
+            assert_eq!(rows, expected, "threads = {threads}");
+        }
+        let mut none: Vec<usize> = Vec::new();
+        spread_rows(&mut none, 4, |_, chunk| assert!(chunk.is_empty()));
+    }
 
     #[test]
     fn every_item_is_visited_once_on_any_thread_count() {

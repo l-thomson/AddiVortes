@@ -52,6 +52,8 @@ fn predictions_do_not_depend_on_the_thread_count() {
     let one = fitted.predict_draws(&x).unwrap();
     let mean = fitted.predict(&x).unwrap();
     let interval = fitted.prediction_interval(&x, 0.9).unwrap();
+    let credible = fitted.credible_interval(&x, 0.9).unwrap();
+    let quantiles = fitted.predict_quantiles(&x, &[0.1, 0.5, 0.9]).unwrap();
     let mut threaded = fitted.clone();
     // Counts that divide the rows unevenly and one above the row count.
     for threads in [2, 5, 7, 1000] {
@@ -64,6 +66,11 @@ fn predictions_do_not_depend_on_the_thread_count() {
         );
         assert_eq!(threaded.predict(&x).unwrap(), mean);
         assert_eq!(threaded.prediction_interval(&x, 0.9).unwrap(), interval);
+        assert_eq!(threaded.credible_interval(&x, 0.9).unwrap(), credible);
+        assert_eq!(
+            threaded.predict_quantiles(&x, &[0.1, 0.5, 0.9]).unwrap(),
+            quantiles
+        );
     }
     threaded.set_threads(0);
     assert_eq!(threaded.threads(), 1);

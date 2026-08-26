@@ -13,6 +13,7 @@ use crate::maths;
 use crate::sampler::Sampler;
 use crate::scaler::Scaler;
 use crate::tessellation::Tessellation;
+use crate::threads;
 
 /// The kept posterior draws, scaled space: the m mean tessellations per
 /// draw; sigma^2 per draw under the Gaussian model; the m' variance
@@ -378,7 +379,7 @@ pub enum IntervalKind {
 }
 
 /// A central credible interval for the mean function at one row.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Interval {
     /// Lower end.
     pub lower: f64,
@@ -796,7 +797,12 @@ impl Fitted {
     pub fn predict_quantiles(&self, x: &Data, probs: &[f64]) -> Result<Vec<f64>> {
         check_probabilities(probs)?;
         let per_draw = self.predict_draws(x)?;
-        Ok(quantiles_from_draws(&per_draw, x.n_rows(), probs))
+        Ok(quantiles_from_draws(
+            &per_draw,
+            x.n_rows(),
+            probs,
+            self.threads,
+        ))
     }
 
     /// Central credible interval for the quantity of
@@ -810,7 +816,12 @@ impl Fitted {
     pub fn credible_interval(&self, x: &Data, level: f64) -> Result<Vec<Interval>> {
         check_probability(level)?;
         let per_draw = self.predict_draws(x)?;
-        Ok(credible_from_draws(&per_draw, x.n_rows(), level))
+        Ok(credible_from_draws(
+            &per_draw,
+            x.n_rows(),
+            level,
+            self.threads,
+        ))
     }
 
     /// Central posterior predictive interval for a new observation at each
@@ -857,7 +868,7 @@ impl Fitted {
         let n = x.n_rows();
         let mean = column_means(&per_draw, n);
         let intervals = match kind {
-            IntervalKind::Credible => credible_from_draws(&per_draw, n, level),
+            IntervalKind::Credible => credible_from_draws(&per_draw, n, level, self.threads),
             IntervalKind::Prediction => self.prediction_from_draws(x, &per_draw, level)?,
         };
         Ok((mean, intervals))
@@ -894,19 +905,20 @@ impl Fitted {
                 .map(|s| s.sqrt() * range)
                 .collect();
             let tail = 0.5 * (1.0 - level);
-            let n = x.n_rows();
-            let mut fits = vec![0.0; per_draw.len()];
-            let mut out = Vec::with_capacity(n);
-            for row in 0..n {
-                for (fit, draw) in fits.iter_mut().zip(per_draw) {
-                    *fit = draw[row];
+            let mut out = vec![Interval::default(); x.n_rows()];
+            threads::spread_rows(&mut out, self.threads, |start, chunk| {
+                let mut fits = vec![0.0; per_draw.len()];
+                for (offset, interval) in chunk.iter_mut().enumerate() {
+                    for (fit, draw) in fits.iter_mut().zip(per_draw) {
+                        *fit = draw[start + offset];
+                    }
+                    let cdf = |t: f64| laplace_mixture_cdf(&fits, &sigmas, t);
+                    *interval = Interval {
+                        lower: heavy_mixture_quantile(&fits, &sigmas, tail, cdf),
+                        upper: heavy_mixture_quantile(&fits, &sigmas, 1.0 - tail, cdf),
+                    };
                 }
-                let cdf = |t: f64| laplace_mixture_cdf(&fits, &sigmas, t);
-                out.push(Interval {
-                    lower: heavy_mixture_quantile(&fits, &sigmas, tail, cdf),
-                    upper: heavy_mixture_quantile(&fits, &sigmas, 1.0 - tail, cdf),
-                });
-            }
+            });
             return Ok(out);
         }
         #[cfg(feature = "experimental")]
@@ -922,41 +934,44 @@ impl Fitted {
                 .map(|d| self.student_df(params, d))
                 .collect();
             let tail = 0.5 * (1.0 - level);
-            let n = x.n_rows();
-            let mut fits = vec![0.0; per_draw.len()];
-            let mut out = Vec::with_capacity(n);
-            for row in 0..n {
-                for (fit, draw) in fits.iter_mut().zip(per_draw) {
-                    *fit = draw[row];
+            let mut out = vec![Interval::default(); x.n_rows()];
+            threads::spread_rows(&mut out, self.threads, |start, chunk| {
+                let mut fits = vec![0.0; per_draw.len()];
+                for (offset, interval) in chunk.iter_mut().enumerate() {
+                    for (fit, draw) in fits.iter_mut().zip(per_draw) {
+                        *fit = draw[start + offset];
+                    }
+                    let cdf = |t: f64| student_mixture_cdf(&fits, &sigmas, &dfs, t);
+                    *interval = Interval {
+                        lower: heavy_mixture_quantile(&fits, &sigmas, tail, cdf),
+                        upper: heavy_mixture_quantile(&fits, &sigmas, 1.0 - tail, cdf),
+                    };
                 }
-                let cdf = |t: f64| student_mixture_cdf(&fits, &sigmas, &dfs, t);
-                out.push(Interval {
-                    lower: heavy_mixture_quantile(&fits, &sigmas, tail, cdf),
-                    upper: heavy_mixture_quantile(&fits, &sigmas, 1.0 - tail, cdf),
-                });
-            }
+            });
             return Ok(out);
         }
         let variances = self.predict_variance(x)?;
         let tail = 0.5 * (1.0 - level);
-        let n = x.n_rows();
-        let mut fits = vec![0.0; per_draw.len()];
-        let mut sigmas = vec![0.0; per_draw.len()];
-        let mut out = Vec::with_capacity(n);
-        for row in 0..n {
-            for ((fit, sigma), (draw, variance)) in fits
-                .iter_mut()
-                .zip(&mut sigmas)
-                .zip(per_draw.iter().zip(&variances))
-            {
-                *fit = draw[row];
-                *sigma = variance[row].sqrt();
+        let mut out = vec![Interval::default(); x.n_rows()];
+        threads::spread_rows(&mut out, self.threads, |start, chunk| {
+            let mut fits = vec![0.0; per_draw.len()];
+            let mut sigmas = vec![0.0; per_draw.len()];
+            for (offset, interval) in chunk.iter_mut().enumerate() {
+                let row = start + offset;
+                for ((fit, sigma), (draw, variance)) in fits
+                    .iter_mut()
+                    .zip(&mut sigmas)
+                    .zip(per_draw.iter().zip(&variances))
+                {
+                    *fit = draw[row];
+                    *sigma = variance[row].sqrt();
+                }
+                *interval = Interval {
+                    lower: mixture_quantile(&fits, &sigmas, tail),
+                    upper: mixture_quantile(&fits, &sigmas, 1.0 - tail),
+                };
             }
-            out.push(Interval {
-                lower: mixture_quantile(&fits, &sigmas, tail),
-                upper: mixture_quantile(&fits, &sigmas, 1.0 - tail),
-            });
-        }
+        });
         #[cfg(feature = "experimental")]
         if let Outcome::Tobit(params) = &self.config.outcome {
             let lo = params.lower.unwrap_or(f64::NEG_INFINITY);
@@ -1491,24 +1506,40 @@ fn check_probabilities(probs: &[f64]) -> Result<()> {
 
 /// Posterior quantiles at each of `n` rows for each of `probs`, row-major,
 /// by type 7 interpolation over the per-draw values.
-fn quantiles_from_draws(per_draw: &[Vec<f64>], n: usize, probs: &[f64]) -> Vec<f64> {
-    let mut sorted = vec![0.0; per_draw.len()];
-    let mut out = Vec::with_capacity(n * probs.len());
-    for row in 0..n {
-        for (slot, draw) in sorted.iter_mut().zip(per_draw) {
-            *slot = draw[row];
+fn quantiles_from_draws(
+    per_draw: &[Vec<f64>],
+    n: usize,
+    probs: &[f64],
+    threads: usize,
+) -> Vec<f64> {
+    let mut out = vec![0.0; n * probs.len()];
+    let mut rows: Vec<&mut [f64]> = out.chunks_mut(probs.len().max(1)).collect();
+    rows.truncate(n);
+    threads::spread_rows(&mut rows, threads, |start, chunk| {
+        let mut sorted = vec![0.0; per_draw.len()];
+        for (offset, row) in chunk.iter_mut().enumerate() {
+            for (slot, draw) in sorted.iter_mut().zip(per_draw) {
+                *slot = draw[start + offset];
+            }
+            sorted.sort_by(f64::total_cmp);
+            for (slot, &p) in row.iter_mut().zip(probs) {
+                *slot = maths::quantile_sorted(&sorted, p);
+            }
         }
-        sorted.sort_by(f64::total_cmp);
-        out.extend(probs.iter().map(|&p| maths::quantile_sorted(&sorted, p)));
-    }
+    });
     out
 }
 
 /// The central credible interval at `level` at each of `n` rows from the
 /// per-draw values.
-fn credible_from_draws(per_draw: &[Vec<f64>], n: usize, level: f64) -> Vec<Interval> {
+fn credible_from_draws(
+    per_draw: &[Vec<f64>],
+    n: usize,
+    level: f64,
+    threads: usize,
+) -> Vec<Interval> {
     let tail = 0.5 * (1.0 - level);
-    quantiles_from_draws(per_draw, n, &[tail, 1.0 - tail])
+    quantiles_from_draws(per_draw, n, &[tail, 1.0 - tail], threads)
         .chunks_exact(2)
         .map(|pair| Interval {
             lower: pair[0],
