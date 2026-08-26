@@ -122,6 +122,10 @@
 * The sampler keeps the working buffers of a backfitting step across
   steps rather than allocating them per proposal; sampled values are
   unchanged.
+* The backfitting step carries one number per training row and builds
+  the current tessellation's cell statistics in the pass that forms
+  them, with each cell's statistics in one record; sampled values are
+  unchanged and a sweep executes about a fifth fewer instructions.
 * `thiessen(threads = )` runs the chains of a fit on up to that many
   threads, each chain on one thread with its own generator, and
   `predict()` on the fit, intervals included, splits its rows over the
