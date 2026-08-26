@@ -68,6 +68,7 @@
 <li>Builds and links the core crate offline from vendored sources, the core as source under <code>src/rust/core</code> and the third-party crates in <code>src/rust/vendor.tar.xz</code>; <code><a href="../reference/core_version.html">core_version()</a></code> reports the core version.</li>
 <li>
 <code>predict(interval = )</code> takes the mean and the interval from one pass over the draws rather than two; the values are unchanged.</li>
+<li>The sampler keeps the working buffers of a backfitting step across steps rather than allocating them per proposal; sampled values are unchanged.</li>
 <li>The library is built with the workspace release profile (<code>lto = "fat"</code>, <code>codegen-units = 1</code>), which the detached manifest under <code>src/rust</code> did not carry: fits about 7 per cent and predictions 10 to 15 per cent faster on one machine, the shared library half the size, sampled values unchanged.</li>
 </ul></div>
   </main></div>

@@ -129,6 +129,9 @@
   reports the core version.
 - `predict(interval = )` takes the mean and the interval from one pass
   over the draws rather than two; the values are unchanged.
+- The sampler keeps the working buffers of a backfitting step across
+  steps rather than allocating them per proposal; sampled values are
+  unchanged.
 - The library is built with the workspace release profile
   (`lto = "fat"`, `codegen-units = 1`), which the detached manifest
   under `src/rust` did not carry: fits about 7 per cent and predictions
