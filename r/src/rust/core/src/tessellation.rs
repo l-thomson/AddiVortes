@@ -190,6 +190,16 @@ impl Tessellation {
         }
         value
     }
+
+    /// [`value_in_cell`](Self::value_in_cell) at row `i` of `x`, read
+    /// only under the linear basis.
+    pub(crate) fn training_value(&self, cell: usize, x: &Data, i: usize) -> f64 {
+        if self.betas.is_empty() {
+            self.mus[cell]
+        } else {
+            self.value_in_cell(cell, x.row(i))
+        }
+    }
 }
 
 #[derive(serde::Deserialize)]

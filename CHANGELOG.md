@@ -346,6 +346,16 @@ says "Sampled values changed" with the reason.
   the same for a fixed seed. Under hard membership a sweep allocates
   nothing; a default fit went from about 22 heap allocations per proposal
   to none outside the kept draws.
+- The backfitting step carries one number per training row, the
+  family's partial (the partial residual under Gaussian cells, the
+  product of the other tessellations under inverse-gamma cells), in
+  place of a three-field record, and reads the input and the weight
+  from the sampler's own vectors; the current tessellation's cell
+  statistics are accumulated in the same pass that forms the partials,
+  in place of a pass of their own; and each cell's statistics sit in one
+  record. The per-row operations and their order are unchanged, so
+  sampled values are the same for a fixed seed. A sweep at n = 500
+  executes 21 per cent fewer instructions.
 - Prediction evaluates each kept tessellation over every row at once,
   through the same streaming assignment the sampler uses under an
   all-Euclidean geometry, in place of a nearest-centre search per row per
