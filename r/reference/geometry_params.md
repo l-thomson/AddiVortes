@@ -39,5 +39,5 @@ An object of class `"geometry_params"`.
 
 ``` r
 geometry_params(metric = list("euclidean", "categorical"))
-#> geometry_params(metric = euclidean, categorical, sigma_c = 0.8)
+#> geometry_params(metric = list("euclidean", "categorical"), sigma_c = 0.8)
 ```

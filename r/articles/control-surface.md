@@ -78,7 +78,7 @@ term_params(
   geometry = geometry_params(metric = list("euclidean", "categorical")),
   structure = structure_params(omega = 2)
 )
-#> term_params(k = 3, lambda_c = 5, geometry = geometry_params(metric = euclidean, categorical, sigma_c = 0.8), structure = structure_params(omega = 2))
+#> term_params(k = 3, lambda_c = 5, geometry = geometry_params(metric = list("euclidean", "categorical"), sigma_c = 0.8), structure = structure_params(omega = 2))
 ```
 
 ## The sweep schedule
