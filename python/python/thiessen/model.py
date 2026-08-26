@@ -262,8 +262,17 @@ class FittedModel:
 
     @property
     def n_threads(self) -> int:
-        """int: The number of threads a prediction splits its rows over."""
+        """int: The number of threads a prediction splits its rows over.
+
+        Settable: a positive integer, in force from the next prediction.
+        """
         return self._n_threads
+
+    @n_threads.setter
+    def n_threads(self, n_threads: int) -> None:
+        threads = _resolve_threads(n_threads)
+        self._fitted.set_threads(threads)
+        self._n_threads = threads
 
     @property
     def model(self) -> str:

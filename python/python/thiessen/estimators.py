@@ -34,11 +34,23 @@ from .model import _emit_warnings, _resolve_chains
 from .params import MetricEntry, TermParams
 
 
+def _cpu_count() -> int:
+    """Return the number of CPUs the process may run on, affinity aware."""
+    process_count = getattr(os, "process_cpu_count", None)
+    if process_count is not None:
+        return int(process_count() or 1)
+    affinity = getattr(os, "sched_getaffinity", None)
+    if affinity is not None:
+        return len(affinity(0)) or 1
+    return os.cpu_count() or 1
+
+
 def _resolve_jobs(n_jobs: int | None) -> int:
     """Resolve `n_jobs` to a thread count under the joblib convention.
 
     `None` is one thread; a positive count is itself; a negative count is
-    that many below the machine's count plus one, so -1 is every core.
+    that many below the CPUs the process may run on plus one, so -1 is
+    every one of them.
     """
     if n_jobs is None:
         return 1
@@ -47,7 +59,7 @@ def _resolve_jobs(n_jobs: int | None) -> int:
         raise ValueError(f"n_jobs must be a non-zero integer or None; got {n_jobs!r}")
     if jobs > 0:
         return jobs
-    return max(1, (os.cpu_count() or 1) + 1 + jobs)
+    return max(1, _cpu_count() + 1 + jobs)
 
 
 __all__ = ["AddiVortesClassifier", "AddiVortesRegressor"]
@@ -143,6 +155,7 @@ class _BaseAddiVortes(BaseEstimator):
 
     def _validate_predict(self, x: Any) -> npt.NDArray[np.float64]:
         check_is_fitted(self)
+        self._fitted.set_threads(_resolve_jobs(self.n_jobs))
         if self.categorical_features is None:
             checked = validate_data(self, x, reset=False, dtype=np.float64)
             return np.asarray(checked, dtype=np.float64)
@@ -230,7 +243,7 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
         -1 every core. The chains are spread over at most this many
         threads, each chain on one thread with its own generator, so the
         draws do not depend on it; a prediction splits its rows over the
-        same number.
+        same number, read again at each call.
     random_state : int, Generator, RandomState or None, default=None
         The seed. An integer passes through to the core unchanged, so
         `AddiVortesRegressor(random_state=1)` and `Model(random_state=1)`
@@ -442,7 +455,7 @@ class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
         -1 every core. The chains are spread over at most this many
         threads, each chain on one thread with its own generator, so the
         draws do not depend on it; a prediction splits its rows over the
-        same number.
+        same number, read again at each call.
     random_state : int, Generator, RandomState or None, default=None
         The seed. An integer passes through to the core unchanged, so
         `AddiVortesRegressor(random_state=1)` and `Model(random_state=1)`

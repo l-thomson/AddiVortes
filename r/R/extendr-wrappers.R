@@ -40,6 +40,8 @@ core_state_restore <- function(payload, threads) {
   .Call(wrap__core_state_restore, payload, threads)
 }
 
+core_state_set_threads <- function(state, threads) invisible(.Call(wrap__core_state_set_threads, state, threads))
+
 core_predict <- function(state, x) .Call(wrap__core_predict, state, x)
 
 core_predict_draws <- function(state, x, kind) {

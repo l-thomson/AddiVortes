@@ -96,7 +96,8 @@ pub fn fit_chains(
 }
 
 /// Fit as [`fit_chains`], the chains spread over at most `n_threads`
-/// threads ([`Sampler::advance_all`]). The draws do not depend on
+/// threads, and at most the parallelism available to the process
+/// ([`Sampler::advance_all`]). The draws do not depend on
 /// `n_threads`: each chain runs on one thread with its own generator. The
 /// fitted model's [`threads`](Fitted::threads) is `n_threads`, so its
 /// predictions use the same count.

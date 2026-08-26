@@ -111,6 +111,12 @@ fn core_state_restore(payload: &[u8], threads: i32) -> Result<ExternalPtr<Fitted
     Ok(ExternalPtr::new(FittedHandle { inner }))
 }
 
+/// Set the number of threads the predictions of `state` run on.
+#[extendr]
+fn core_state_set_threads(mut state: ExternalPtr<FittedHandle>, threads: i32) {
+    state.inner.set_threads(threads.max(1) as usize);
+}
+
 /// The posterior mean at each row of `x`.
 #[extendr]
 fn core_predict(state: ExternalPtr<FittedHandle>, x: RMatrix<f64>) -> Result<Vec<f64>> {
@@ -398,6 +404,7 @@ extendr_module! {
     fn core_state_is_live;
     fn core_state_payload;
     fn core_state_restore;
+    fn core_state_set_threads;
     fn core_predict;
     fn core_predict_draws;
     fn core_interval;

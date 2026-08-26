@@ -13,11 +13,13 @@
 #'   the posterior mean; `"prediction"` for the posterior predictive
 #'   interval. Only with `type = "mean"`.
 #' @param level The mass of a central interval. Default 0.95.
+#' @param threads The number of threads, a whole number; `NULL`, the
+#'   default, is the count the fit was made with.
 #' @param ... Ignored.
 #'
-#' @details The rows of `newdata` are split over the `threads` of the fit,
-#'   each chunk evaluated on a thread of its own; the values do not depend
-#'   on the count.
+#' @details The rows of `newdata` are split over `threads` threads, each
+#'   chunk evaluated on a thread of its own; the values do not depend on
+#'   the count.
 #'
 #' @return For `type = "mean"` and `interval = "none"`, a numeric vector of
 #'   length `nrow(newdata)`; with an interval, a matrix of that many rows
@@ -40,10 +42,15 @@
 predict.thiessen <- function(object, newdata = NULL,
                              type = c("mean", "draws", "latent", "variance"),
                              interval = c("none", "credible", "prediction"),
-                             level = 0.95, ...) {
+                             level = 0.95, threads = NULL, ...) {
   type <- match.arg(type)
   interval <- match.arg(interval)
   design <- predict_design(object, newdata)
+  threads <- if (is.null(threads)) {
+    fit_threads(object)
+  } else {
+    resolve_threads(threads)
+  }
   if (interval != "none" && type != "mean") {
     thiessen_abort("An interval is available for `type = \"mean\"` only.")
   }
@@ -52,6 +59,7 @@ predict.thiessen <- function(object, newdata = NULL,
     thiessen_abort("`level` must be a single number in (0, 1).")
   }
   state <- fit_state(object)
+  core_state_set_threads(state, threads)
   if (type != "mean") {
     return(core_call(core_predict_draws(state, design, type)))
   }

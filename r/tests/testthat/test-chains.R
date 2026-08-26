@@ -74,14 +74,13 @@ test_that("chains must be a whole number of at least one", {
   }
 })
 
-test_that("threaded chains draw what the chains run in turn draw", {
+# Threaded fits against the serial fit of the same seed.
+expect_threads_alike <- function(serial, chains, threads) {
   fixture <- small_fixture()
-  serial <- chain_fit(seed = 5, chains = 3)
+  for (count in threads) {
+    threaded <- chain_fit(seed = 5, chains = chains, threads = count)
 
-  for (threads in c(2, 3, 8)) {
-    threaded <- chain_fit(seed = 5, chains = 3, threads = threads)
-
-    expect_identical(threaded$threads, as.integer(threads))
+    expect_identical(threaded$threads, as.integer(count))
     expect_identical(threaded$state$payload, serial$state$payload)
     expect_identical(fitted(threaded), fitted(serial))
     expect_identical(thiessen_diagnostics(threaded), thiessen_diagnostics(serial))
@@ -94,7 +93,40 @@ test_that("threaded chains draw what the chains run in turn draw", {
       predict(serial, fixture$x, interval = "prediction")
     )
   }
+}
+
+# The CRAN policy allows a check two cores, so the wider counts are kept
+# off it.
+test_that("threaded chains draw what the chains run in turn draw", {
+  serial <- chain_fit(seed = 5, chains = 3)
+
+  expect_threads_alike(serial, chains = 3, threads = 2)
   expect_identical(serial$threads, 1L)
+})
+
+test_that("more threads than chains, or than cores, draw the same", {
+  skip_on_cran()
+  serial <- chain_fit(seed = 5, chains = 3)
+
+  expect_threads_alike(serial, chains = 3, threads = c(3, 8))
+})
+
+test_that("predict() takes a thread count of its own", {
+  fixture <- small_fixture()
+  fit <- chain_fit(chains = 2)
+  mean <- predict(fit, fixture$x)
+  interval <- predict(fit, fixture$x, interval = "prediction")
+
+  expect_identical(predict(fit, fixture$x, threads = 2), mean)
+  expect_identical(
+    predict(fit, fixture$x, interval = "prediction", threads = 2),
+    interval
+  )
+  expect_identical(predict(fit, fixture$x), mean)
+  expect_error(
+    predict(fit, fixture$x, threads = 0),
+    class = "thiessen_error"
+  )
 })
 
 test_that("a threaded fit predicts alike after a save and a load", {

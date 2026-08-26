@@ -44,7 +44,7 @@ fn matrix<'py>(py: Python<'py>, rows: Vec<Vec<f64>>) -> PyResult<Bound<'py, PyAr
 }
 
 /// A fitted model.
-#[pyclass(module = "thiessen._native", frozen, name = "Fitted")]
+#[pyclass(module = "thiessen._native", name = "Fitted")]
 pub struct Fitted {
     inner: thiessen::Fitted,
 }
@@ -55,6 +55,11 @@ impl Fitted {
     #[getter]
     fn threads(&self) -> usize {
         self.inner.threads()
+    }
+
+    /// Set the number of threads the predictions run on.
+    fn set_threads(&mut self, n_threads: usize) {
+        self.inner.set_threads(n_threads);
     }
 
     /// The posterior mean at each row of `x`.

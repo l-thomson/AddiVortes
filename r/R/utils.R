@@ -38,16 +38,25 @@ core_call <- function(expr, call = rlang::caller_env()) {
 fit_state <- function(object, call = rlang::caller_env()) {
   state <- object$state
   if (!core_state_is_live(state$handle)) {
-    threads <- object$threads
-    if (is.null(threads)) {
-      threads <- 1L
-    }
     state$handle <- core_call(
-      core_state_restore(state$payload, threads),
+      core_state_restore(state$payload, fit_threads(object)),
       call = call
     )
   }
   state$handle
+}
+
+#' The thread count a fit predicts on
+#'
+#' @param object An object of class `"thiessen"`.
+#' @return An integer; one for a fit without the field.
+#' @noRd
+fit_threads <- function(object) {
+  threads <- object$threads
+  if (is.null(threads)) {
+    return(1L)
+  }
+  as.integer(threads)
 }
 
 #' Resolve the seed of a fit

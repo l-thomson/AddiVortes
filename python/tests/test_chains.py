@@ -165,3 +165,18 @@ def test_the_thread_count_must_be_a_positive_integer(gaussian_fixture, n_threads
     x, y = gaussian_fixture
     with pytest.raises((ValueError, TypeError)):
         Model(**SMALL).fit(x, y, random_state=1, n_threads=n_threads)
+
+
+def test_the_thread_count_can_be_set_on_a_fitted_model(gaussian_fixture):
+    x, y = gaussian_fixture
+    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    mean = fitted.predict(x)
+    interval = fitted.prediction_interval(x)
+
+    fitted.n_threads = 2
+
+    assert fitted.n_threads == 2
+    np.testing.assert_array_equal(fitted.predict(x), mean)
+    np.testing.assert_array_equal(fitted.prediction_interval(x), interval)
+    with pytest.raises(ValueError):
+        fitted.n_threads = 0

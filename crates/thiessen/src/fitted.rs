@@ -409,7 +409,8 @@ impl Fitted {
 
     /// The number of threads the predictions run on: the rows of a design
     /// are split into as many contiguous chunks, each evaluated on a
-    /// thread of its own. One unless [`set_threads`](Self::set_threads) or
+    /// thread of its own, never more than the parallelism available to
+    /// the process. One unless [`set_threads`](Self::set_threads) or
     /// [`fit_chains_with_threads`](crate::fit_chains_with_threads) set it;
     /// not persisted with the model. The predicted values do not depend on
     /// it: every row is evaluated by the same operations in the same

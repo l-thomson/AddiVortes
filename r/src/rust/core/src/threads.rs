@@ -1,12 +1,20 @@
 //! Independent work spread over a bounded number of scoped threads: the
 //! chains of a fit, and the row chunks of a prediction.
 
+/// The number of threads for `items` items: at most `threads`, at most
+/// one per item, and at most the parallelism available to the process
+/// (affinity masks and cgroup quotas included).
+fn bound(threads: usize, items: usize) -> usize {
+    let cores = std::thread::available_parallelism().map_or(usize::MAX, |c| c.get());
+    threads.clamp(1, items.max(1)).min(cores)
+}
+
 /// Run `work` once on every item, the items split into at most `threads`
 /// contiguous chunks, each chunk on a thread of its own; one thread runs
 /// the items in order on the calling thread. A result that depends only
 /// on its own item is the same on every thread count.
 pub(crate) fn spread<T: Send>(items: &mut [T], threads: usize, work: impl Fn(&mut T) + Sync) {
-    let threads = threads.clamp(1, items.len().max(1));
+    let threads = bound(threads, items.len());
     if threads == 1 {
         items.iter_mut().for_each(work);
         return;
@@ -29,7 +37,7 @@ pub(crate) fn spread_rows<T: Send>(
     threads: usize,
     work: impl Fn(usize, &mut [T]) + Sync,
 ) {
-    let threads = threads.clamp(1, out.len().max(1));
+    let threads = bound(threads, out.len());
     if threads == 1 {
         work(0, out);
         return;
@@ -45,7 +53,16 @@ pub(crate) fn spread_rows<T: Send>(
 
 #[cfg(test)]
 mod tests {
-    use super::{spread, spread_rows};
+    use super::{bound, spread, spread_rows};
+
+    #[test]
+    fn the_thread_count_is_bounded_by_the_items_and_the_machine() {
+        let cores = std::thread::available_parallelism().map_or(1, |c| c.get());
+        assert_eq!(bound(0, 10), 1);
+        assert_eq!(bound(3, 0), 1);
+        assert_eq!(bound(3, 2), 2.min(cores));
+        assert_eq!(bound(1_000_000, 1_000_000), cores);
+    }
 
     #[test]
     fn every_row_takes_its_own_index_on_any_thread_count() {

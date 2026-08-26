@@ -18,7 +18,8 @@ says "Sampled values changed" with the reason.
   after it, split into that many contiguous chunks, each evaluated on a
   thread of its own by the same operations in the same order, so the
   values do not depend on the count; an execution setting, not persisted
-  with the model.
+  with the model. Either count is bounded by the parallelism available
+  to the process.
 
 - (experimental) `Metric::Minkowski` with order p >= 1 and
   `Metric::Manhattan`, its p = 1 alias: Minkowski distance on the scaled

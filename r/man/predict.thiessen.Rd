@@ -10,6 +10,7 @@
   type = c("mean", "draws", "latent", "variance"),
   interval = c("none", "credible", "prediction"),
   level = 0.95,
+  threads = NULL,
   ...
 )
 }
@@ -32,6 +33,9 @@ interval. Only with \code{type = "mean"}.}
 
 \item{level}{The mass of a central interval. Default 0.95.}
 
+\item{threads}{The number of threads, a whole number; \code{NULL}, the
+default, is the count the fit was made with.}
+
 \item{...}{Ignored.}
 }
 \value{
@@ -44,9 +48,9 @@ of one row per kept draw and one column per row of \code{newdata}.
 Posterior predictions from a fitted model
 }
 \details{
-The rows of \code{newdata} are split over the \code{threads} of the fit,
-each chunk evaluated on a thread of its own; the values do not depend
-on the count.
+The rows of \code{newdata} are split over \code{threads} threads, each
+chunk evaluated on a thread of its own; the values do not depend on
+the count.
 }
 \examples{
 n <- 60

@@ -385,3 +385,14 @@ def test_n_jobs_spreads_the_chains_without_changing_the_draws(gaussian_fixture):
     assert _resolve_jobs(None) == 1
     with pytest.raises(ValueError):
         _resolve_jobs(0)
+
+
+def test_n_jobs_is_read_at_each_prediction(gaussian_fixture):
+    x, y = gaussian_fixture
+    model = AddiVortesRegressor(random_state=1, **SMALL).fit(x, y)
+    mean = model.predict(x)
+
+    model.set_params(n_jobs=2)
+
+    np.testing.assert_array_equal(model.predict(x), mean)
+    assert model._fitted.threads == 2
