@@ -92,19 +92,48 @@ pub fn fit_chains(
     seed: u64,
     n_chains: usize,
 ) -> Result<(Fitted, Vec<f64>)> {
+    fit_chains_with_threads(config, x, y, seed, n_chains, 1)
+}
+
+/// Fit as [`fit_chains`], the chains spread over at most `n_threads`
+/// threads, and at most the parallelism available to the process
+/// ([`Sampler::advance_all`]). The draws do not depend on
+/// `n_threads`: each chain runs on one thread with its own generator. The
+/// fitted model's [`threads`](Fitted::threads) is `n_threads`, so its
+/// predictions use the same count.
+///
+/// # Errors
+///
+/// [`fit_chains`].
+pub fn fit_chains_with_threads(
+    config: &Config,
+    x: &Data,
+    y: &[f64],
+    seed: u64,
+    n_chains: usize,
+    n_threads: usize,
+) -> Result<(Fitted, Vec<f64>)> {
     if n_chains == 0 {
         return Err(crate::error::invalid(
             "n_chains",
             "a fit needs at least one chain",
         ));
     }
-    let mut samplers = Vec::with_capacity(n_chains);
-    for k in 0..n_chains {
-        let mut sampler = Sampler::new(config, x, y, crate::chain_seed(seed, k))?;
-        advance(&mut sampler, config, &mut |_, _| {});
-        samplers.push(sampler);
-    }
-    Fitted::pool_samplers(samplers, x, y)
+    let mut samplers = (0..n_chains)
+        .map(|k| Sampler::new(config, x, y, crate::chain_seed(seed, k)))
+        .collect::<Result<Vec<_>>>()?;
+    let schedule = &config.general_params;
+    let mut chains: Vec<&mut Sampler> = samplers.iter_mut().collect();
+    Sampler::advance_all(
+        &mut chains,
+        schedule.burn_in,
+        schedule.draws,
+        schedule.thinning,
+        n_threads,
+    );
+    let (mut fitted, values) = Fitted::pool_samplers(samplers, x, y)?;
+    fitted.set_threads(n_threads);
+    Ok((fitted, values))
 }
 
 /// Fit the AFT model: as [`fit`], with the times and the event

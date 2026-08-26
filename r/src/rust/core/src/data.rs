@@ -105,6 +105,16 @@ impl Data {
         })
     }
 
+    /// Rows `range` as a matrix of their own.
+    pub(crate) fn rows(&self, range: std::ops::Range<usize>) -> Self {
+        Self {
+            values: self.values[range.start * self.n_cols..range.end * self.n_cols].to_vec(),
+            n_rows: range.len(),
+            n_cols: self.n_cols,
+            columns: OnceLock::new(),
+        }
+    }
+
     /// The buffer and shape.
     pub fn into_parts(self) -> (Vec<f64>, usize, usize) {
         (self.values, self.n_rows, self.n_cols)

@@ -10,6 +10,17 @@ says "Sampled values changed" with the reason.
 
 ### Added
 
+- `fit_chains_with_threads` and `Sampler::advance_all`: the chains of a
+  fit spread over at most `n_threads` scoped threads, each chain on one
+  thread with its own generator, so the draws are those of the chains
+  run in turn on any count. `Fitted::threads` and `set_threads`: the
+  rows of a prediction, and of the per-row quantile and interval pass
+  after it, split into that many contiguous chunks, each evaluated on a
+  thread of its own by the same operations in the same order, so the
+  values do not depend on the count; an execution setting, not persisted
+  with the model. Either count is bounded by the parallelism available
+  to the process.
+
 - (experimental) `Metric::Minkowski` with order p >= 1 and
   `Metric::Manhattan`, its p = 1 alias: Minkowski distance on the scaled
   active coordinates, the active columns of one order combined as

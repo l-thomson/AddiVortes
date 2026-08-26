@@ -124,6 +124,7 @@ mod rng;
 mod sampler;
 mod scaler;
 mod tessellation;
+mod threads;
 
 /// The crate version, as the bindings report it.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -143,7 +144,7 @@ pub use fitted::{Fitted, Interval, IntervalKind, Posterior};
 #[cfg(feature = "experimental")]
 pub use geometry::GowerKind;
 pub use geometry::Metric;
-pub use models::{fit, fit_chains, fit_with_progress};
+pub use models::{fit, fit_chains, fit_chains_with_threads, fit_with_progress};
 #[cfg(feature = "experimental")]
 pub use models::{fit_aft, fit_interval_censored};
 pub use rng::chain_seed;

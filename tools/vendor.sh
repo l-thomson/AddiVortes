@@ -18,7 +18,7 @@ version=$(cargo metadata --no-deps --format-version 1 \
 cargo package -p thiessen --no-verify --allow-dirty --quiet
 rm -rf "$rust/core" "$rust/vendor"
 mkdir -p "$rust/core"
-tar xzf "target/package/thiessen-$version.crate" --strip-components=1 -C "$rust/core"
+tar xzmf "target/package/thiessen-$version.crate" --strip-components=1 -C "$rust/core"
 # The test-only crates are not built by the R package and would otherwise
 # be vendored; `cargo vendor` has no switch for dev-dependencies.
 awk '/^\[dev-dependencies/ { skip = 1; next } /^\[/ { skip = 0 } !skip' \

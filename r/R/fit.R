@@ -24,8 +24,9 @@
 #' `stats::update()` works on a fit: the call is stored, so
 #' `update(fit, seed = 2)` refits with that argument replaced.
 #'
-#' With `chains` of two or more, the chains are run in turn with the seeds
-#' the core derives from `seed`, their draws are pooled, and the fit carries
+#' With `chains` of two or more, the chains are run together with the seeds
+#' the core derives from `seed`, each on one of `threads` threads, their
+#' draws are pooled, and the fit carries
 #' rank-normalised split R-hat and the bulk and tail effective sample sizes
 #' of sigma and of the mean function at up to twenty training rows
 #' (`posterior::summarise_draws()`). A fit warns, and `print()` and
@@ -88,6 +89,10 @@
 #'   has its own seed, derived from `seed` in the core, and the draws of the
 #'   chains are pooled. Two or more chains give the convergence
 #'   diagnostics; one chain does not.
+#' @param threads The number of threads, a whole number. The chains are
+#'   spread over at most this many threads, each chain on one thread with
+#'   its own generator, so the draws do not depend on it; `predict()` on
+#'   the fit splits the rows over the same number. Default 1.
 #' @param seed The seed of the chain. `NULL`, the default, draws one from
 #'   R's stream, so [set.seed()] governs; a whole number in `[0, 2^53]`
 #'   passes to the core unchanged, so the same value reproduces the same
@@ -95,7 +100,8 @@
 #' @param ... Passed to the method.
 #'
 #' @return An object of class `"thiessen"`: a list with the fitted state,
-#'   the resolved configuration, the number of chains and of kept draws, the
+#'   the resolved configuration, the number of chains, the thread count,
+#'   the number of kept draws, the
 #'   convergence diagnostics where two or more chains ran, the seed used,
 #'   the design, the response, the fitted values, the residuals, the
 #'   hardhat blueprint where one applies, and the call.
@@ -138,18 +144,18 @@ thiessen <- function(x, ...) {
 #' @rdname thiessen
 #' @export
 thiessen.default <- function(x, y, control = thiessen_control(), seed = NULL,
-                             chains = 1, ...) {
+                             chains = 1, threads = 1, ...) {
   rlang::check_dots_empty()
   design <- as_design(x)
   response <- as_response(y)
-  new_fit(design, response$y, control, seed, chains,
+  new_fit(design, response$y, control, seed, chains, threads,
           generic_call(match.call()), response_levels = response$levels)
 }
 
 #' @rdname thiessen
 #' @export
 thiessen.data.frame <- function(x, y, control = thiessen_control(),
-                                seed = NULL, chains = 1, ...) {
+                                seed = NULL, chains = 1, threads = 1, ...) {
   rlang::check_dots_empty()
   molded <- core_call(
     hardhat::mold(~ ., data = x, blueprint = blueprint_for(control))
@@ -159,7 +165,7 @@ thiessen.data.frame <- function(x, y, control = thiessen_control(),
     control$mean_params$geometry$metric
   )
   response <- as_response(y)
-  new_fit(design, response$y, control, seed, chains,
+  new_fit(design, response$y, control, seed, chains, threads,
           generic_call(match.call()), blueprint = molded$blueprint,
           response_levels = response$levels)
 }
@@ -167,7 +173,7 @@ thiessen.data.frame <- function(x, y, control = thiessen_control(),
 #' @rdname thiessen
 #' @export
 thiessen.formula <- function(formula, data, control = thiessen_control(),
-                             seed = NULL, chains = 1, ...) {
+                             seed = NULL, chains = 1, threads = 1, ...) {
   rlang::check_dots_empty()
   molded <- core_call(
     hardhat::mold(formula, data, blueprint = blueprint_for(control))
@@ -177,7 +183,7 @@ thiessen.formula <- function(formula, data, control = thiessen_control(),
     control$mean_params$geometry$metric
   )
   response <- encode_response(molded$outcomes)
-  new_fit(design, response$y, control, seed, chains,
+  new_fit(design, response$y, control, seed, chains, threads,
           generic_call(match.call()), blueprint = molded$blueprint,
           response_levels = response$levels)
 }
@@ -219,14 +225,16 @@ generic_call <- function(call) {
 #' @param control An object of class `"thiessen_control"`.
 #' @param seed The seed as the caller gave it.
 #' @param chains The number of chains to run.
+#' @param threads The number of threads the chains run on.
 #' @param call The call to store.
 #' @param blueprint The hardhat blueprint, or `NULL` for a matrix fit.
 #' @param response_levels The response's factor levels, or `NULL`.
 #' @param call_env The calling environment to report.
 #' @return An object of class `"thiessen"`.
 #' @noRd
-new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
-                    response_levels = NULL, call_env = rlang::caller_env()) {
+new_fit <- function(design, y, control, seed, chains, threads, call,
+                    blueprint = NULL, response_levels = NULL,
+                    call_env = rlang::caller_env()) {
   if (length(y) != nrow(design)) {
     thiessen_abort(
       sprintf(
@@ -237,6 +245,7 @@ new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
     )
   }
   chains <- resolve_chains(chains, call = call_env)
+  threads <- resolve_threads(threads, call = call_env)
   resolved <- resolve_seed(seed, call = call_env)
   # The progressor's life must span the whole fit, so the count never ends
   # it: `auto_finish` would close the handler on the last step, and the
@@ -245,10 +254,10 @@ new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
     steps = progress_steps(control, chains), auto_finish = FALSE
   )
   fit <- core_call(
-    run_schedule(control, design, y, resolved, chains, report),
+    run_schedule(control, design, y, resolved, chains, threads, report),
     call = call_env
   )
-  assemble_fit(fit, design, y, resolved, call,
+  assemble_fit(fit, design, y, resolved, call, threads = threads,
                blueprint = blueprint, response_levels = response_levels,
                call_env = call_env, report = report)
 }
@@ -260,60 +269,61 @@ new_fit <- function(design, y, control, seed, chains, call, blueprint = NULL,
 #' `R_tryEval`, which clears R's handler stack: a condition raised inside a
 #' callback the core calls reaches no handler established outside the
 #' `.Call`. Driving the sampler from R signals where the handlers are live.
-#' The sweep order is the core's own, so the draws are unchanged.
+#' The chains advance together, a slice of sweeps at a time between
+#' reports, each chain on its own thread when `threads` allows; the sweep
+#' order within a chain is the core's own, so the draws are unchanged.
 #'
 #' @param control An object of class `"thiessen_control"`.
 #' @param design The numeric design.
 #' @param y The numeric response.
 #' @param seed The resolved seed.
 #' @param chains The number of chains to run.
+#' @param threads The number of threads the chains run on.
 #' @param report A progressr progressor.
 #' @return The list `core_finish()` returns.
 #' @noRd
-run_schedule <- function(control, design, y, seed, chains, report) {
+run_schedule <- function(control, design, y, seed, chains, threads, report) {
   schedule <- control$general_params
   config <- config_json(control)
   thinning <- as.integer(schedule$thinning)
   sweeps <- schedule$burn_in + schedule$draws * thinning
-  total <- chains * sweeps
   updates <- progress_updates(control, chains)
   emitted <- 0L
-  done <- 0L
-  # `updates` reports spread evenly over the sweeps of every chain, and the
-  # sweeps to the next of them, so burn-in advances in one call per report.
+  # `updates` reports spread evenly over the sweeps, and the sweeps of every
+  # chain to the next of them, so burn-in advances in one call per report.
   gap <- function(completed) {
-    ceiling((emitted + 1L) * total / updates) - done - completed
+    ceiling((emitted + 1L) * sweeps / updates) - completed
   }
   tick <- function(completed) {
     while (emitted < updates &&
-             (emitted + 1L) * total <= (done + completed) * updates) {
+             (emitted + 1L) * sweeps <= completed * updates) {
       emitted <<- emitted + 1L
       report()
     }
   }
-  samplers <- vector("list", chains)
-  for (index in seq_len(chains)) {
-    report(amount = 0, class = "sticky",
-           message = sweep_message(index, chains))
-    handle <- core_sampler_new(config, design, y, seed, index - 1L)
-    samplers[[index]] <- handle
-    completed <- 0L
-    while (completed < schedule$burn_in) {
-      run <- max(1L, min(schedule$burn_in - completed, gap(completed)))
-      core_sampler_step(handle, as.integer(run))
-      completed <- completed + run
-      tick(completed)
-    }
-    for (draw in seq_len(schedule$draws)) {
-      core_sampler_step(handle, thinning)
-      completed <- completed + thinning
-      core_sampler_keep(handle)
-      tick(completed)
-    }
-    done <- done + sweeps
+  report(amount = 0, class = "sticky",
+         message = sweep_message(chains, threads))
+  samplers <- lapply(seq_len(chains) - 1L, function(chain) {
+    core_sampler_new(config, design, y, seed, chain)
+  })
+  completed <- 0L
+  while (completed < schedule$burn_in) {
+    run <- max(1L, min(schedule$burn_in - completed, gap(completed)))
+    core_samplers_advance(samplers, as.integer(run), 0L, thinning, threads)
+    completed <- completed + run
+    tick(completed)
+  }
+  kept <- 0L
+  while (kept < schedule$draws) {
+    run <- max(1L, min(schedule$draws - kept,
+                       ceiling(gap(completed) / thinning)))
+    core_samplers_advance(samplers, 0L, as.integer(run), thinning, threads)
+    kept <- kept + run
+    completed <- completed + run * thinning
+    tick(completed)
   }
   report(amount = 0, class = "sticky", message = "pooling the draws")
-  fit <- core_finish(samplers)
+  fit <- core_finish(samplers, threads)
   report(amount = POOLING_WEIGHT * updates)
   fit
 }
@@ -325,6 +335,7 @@ run_schedule <- function(control, design, y, seed, chains, report) {
 #' @param y The numeric response.
 #' @param seed The resolved seed.
 #' @param call The call to store.
+#' @param threads The number of threads the fit predicts on.
 #' @param blueprint The hardhat blueprint, or `NULL` for a matrix fit.
 #' @param response_levels The response's factor levels, or `NULL`.
 #' @param call_env The calling environment to report.
@@ -332,8 +343,8 @@ run_schedule <- function(control, design, y, seed, chains, report) {
 #'   for a caller with no report of its own to advance.
 #' @return An object of class `"thiessen"`.
 #' @noRd
-assemble_fit <- function(fit, design, y, seed, call, blueprint = NULL,
-                         response_levels = NULL,
+assemble_fit <- function(fit, design, y, seed, call, threads = 1L,
+                         blueprint = NULL, response_levels = NULL,
                          call_env = rlang::caller_env(),
                          report = progressr::progressor(
                            steps = 1L, enable = FALSE
@@ -355,6 +366,7 @@ assemble_fit <- function(fit, design, y, seed, call, blueprint = NULL,
       ),
       model = fit$model,
       n_chains = fit$n_chains,
+      threads = threads,
       n_draws = fit$n_draws,
       in_sample_rmse = fit$in_sample_rmse,
       warnings = fit$warnings,

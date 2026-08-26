@@ -88,6 +88,13 @@
 * The sampler keeps the working buffers of a backfitting step across
   steps rather than allocating them per proposal; sampled values are
   unchanged.
+* `thiessen(threads = )` runs the chains of a fit on up to that many
+  threads, each chain on one thread with its own generator, and
+  `predict()` on the fit, intervals included, splits its rows over the
+  same number or over its own `threads` argument; the draws and the
+  predictions do not depend on the count. The chains of a fit now
+  advance together rather than in turn, so a progress handler reports
+  "sampling 2 chains" in place of one message per chain.
 * The library is built with the workspace release profile (`lto = "fat"`,
   `codegen-units = 1`), which the detached manifest under `src/rust` did
   not carry: fits about 7 per cent and predictions 10 to 15 per cent

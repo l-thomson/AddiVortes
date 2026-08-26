@@ -9,9 +9,25 @@
 \usage{
 thiessen(x, ...)
 
-\method{thiessen}{default}(x, y, control = thiessen_control(), seed = NULL, chains = 1, ...)
+\method{thiessen}{default}(
+  x,
+  y,
+  control = thiessen_control(),
+  seed = NULL,
+  chains = 1,
+  threads = 1,
+  ...
+)
 
-\method{thiessen}{data.frame}(x, y, control = thiessen_control(), seed = NULL, chains = 1, ...)
+\method{thiessen}{data.frame}(
+  x,
+  y,
+  control = thiessen_control(),
+  seed = NULL,
+  chains = 1,
+  threads = 1,
+  ...
+)
 
 \method{thiessen}{formula}(
   formula,
@@ -19,6 +35,7 @@ thiessen(x, ...)
   control = thiessen_control(),
   seed = NULL,
   chains = 1,
+  threads = 1,
   ...
 )
 }
@@ -44,6 +61,11 @@ has its own seed, derived from \code{seed} in the core, and the draws of the
 chains are pooled. Two or more chains give the convergence
 diagnostics; one chain does not.}
 
+\item{threads}{The number of threads, a whole number. The chains are
+spread over at most this many threads, each chain on one thread with
+its own generator, so the draws do not depend on it; \code{predict()} on
+the fit splits the rows over the same number. Default 1.}
+
 \item{formula}{A two-sided formula. The left side names the response and
 the right side the covariates, \code{.} for every remaining column.}
 
@@ -51,7 +73,8 @@ the right side the covariates, \code{.} for every remaining column.}
 }
 \value{
 An object of class \code{"thiessen"}: a list with the fitted state,
-the resolved configuration, the number of chains and of kept draws, the
+the resolved configuration, the number of chains, the thread count,
+the number of kept draws, the
 convergence diagnostics where two or more chains ran, the seed used,
 the design, the response, the fitted values, the residuals, the
 hardhat blueprint where one applies, and the call.
@@ -82,8 +105,9 @@ are rejected with an error; no row is dropped silently.
 \code{stats::update()} works on a fit: the call is stored, so
 \code{update(fit, seed = 2)} refits with that argument replaced.
 
-With \code{chains} of two or more, the chains are run in turn with the seeds
-the core derives from \code{seed}, their draws are pooled, and the fit carries
+With \code{chains} of two or more, the chains are run together with the seeds
+the core derives from \code{seed}, each on one of \code{threads} threads, their
+draws are pooled, and the fit carries
 rank-normalised split R-hat and the bulk and tail effective sample sizes
 of sigma and of the mean function at up to twenty training rows
 (\code{posterior::summarise_draws()}). A fit warns, and \code{print()} and

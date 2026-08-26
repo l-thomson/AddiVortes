@@ -1166,6 +1166,30 @@ impl Sampler {
         }
     }
 
+    /// Advance every sampler through `burn_in` sweeps and then `draws`
+    /// kept draws of `thinning` sweeps each, the samplers spread over at
+    /// most `threads` threads. Each sampler's draws are those of the same
+    /// calls made on it alone, on any thread count.
+    pub fn advance_all(
+        samplers: &mut [&mut Sampler],
+        burn_in: usize,
+        draws: usize,
+        thinning: usize,
+        threads: usize,
+    ) {
+        crate::threads::spread(samplers, threads, |sampler| {
+            for _ in 0..burn_in {
+                sampler.step();
+            }
+            for _ in 0..draws {
+                for _ in 0..thinning {
+                    sampler.step();
+                }
+                sampler.keep();
+            }
+        });
+    }
+
     /// Record the current state as a posterior draw.
     pub fn keep(&mut self) {
         let sigma_sq = (self.outcome.sigma2_mode().samples_global_sigma_sq()
