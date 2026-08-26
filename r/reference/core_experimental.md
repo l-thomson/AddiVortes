@@ -2,10 +2,11 @@
 
 The outcome families and options the core crate keeps behind its
 `experimental` Cargo feature are absent from a build without it, so a
-configuration or a saved fit naming one is rejected with the core's
-message naming the feature. This package enables the feature in no
-build, so the answer is `FALSE` in every released version; report it
-with
+configuration or a saved fit naming one is rejected with the condition
+class `thiessen_requires_feature`. Every released build has the feature
+off; a build with it on is installed from source with
+`THIESSEN_EXPERIMENTAL=1` in the environment, is outside semantic
+versioning, and reads a fit the other build cannot. Report this with
 [`core_version()`](https://l-thomson.github.io/thiessen/r/reference/core_version.md)
 in a bug report, since a fit rejected for naming a gated option looks
 the same either way.

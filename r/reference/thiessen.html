@@ -216,8 +216,8 @@ not depend on whether a handler is set.</p>
 writes one and a later session reads it and predicts the same values,
 with no refit. A fit written by a build with the core's <code>experimental</code>
 feature and read by a build without it errors with the condition class
-<code>thiessen_error</code>, naming the feature, at the first call that needs the
-state.</p>
+<code>thiessen_requires_feature</code>, naming the item and the feature, at the
+first call that needs the state.</p>
     </div>
     <div class="section level2">
     <h2 id="conditions">Conditions<a class="anchor" aria-label="anchor" href="#conditions"></a></h2>
@@ -226,7 +226,10 @@ state.</p>
 
 <p>Errors raised by this package and by the core carry the condition class
 <code>thiessen_error</code>, and its warnings carry <code>thiessen_warning</code>, so either
-can be handled or silenced by class rather than by message. The
+can be handled or silenced by class rather than by message. An error
+naming the core's <code>experimental</code> feature carries
+<code>thiessen_requires_feature</code> before it, so a configuration needing an
+opt-in build is told apart from an invalid one. The
 convergence warning fires on any short schedule, so silencing it
 deliberately is a routine need:</p>
 <p></p><div class="sourceCode"><pre><code><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">withCallingHandlers</span>(</span>

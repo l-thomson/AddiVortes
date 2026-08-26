@@ -16,6 +16,26 @@
 - [`print(`*`<thiessen_outcome>`*`)`](https://l-thomson.github.io/thiessen/r/reference/print.thiessen_outcome.md)
   : Print an outcome family
 
+## Experimental outcome families
+
+Compiled only into a core built with its `experimental` feature; see
+`experimental_outcomes`.
+
+- [`tobit_outcome()`](https://l-thomson.github.io/thiessen/r/reference/tobit_outcome.md)
+  **\[experimental\]** : The tobit outcome family
+- [`aft_outcome()`](https://l-thomson.github.io/thiessen/r/reference/aft_outcome.md)
+  **\[experimental\]** : The accelerated failure time outcome family
+- [`interval_censored_outcome()`](https://l-thomson.github.io/thiessen/r/reference/interval_censored_outcome.md)
+  **\[experimental\]** : The interval-censored outcome family
+- [`ordinal_outcome()`](https://l-thomson.github.io/thiessen/r/reference/ordinal_outcome.md)
+  **\[experimental\]** : The ordinal outcome family
+- [`student_t_outcome()`](https://l-thomson.github.io/thiessen/r/reference/student_t_outcome.md)
+  **\[experimental\]** : The Student-t outcome family
+- [`laplace_outcome()`](https://l-thomson.github.io/thiessen/r/reference/laplace_outcome.md)
+  **\[experimental\]** : The Laplace outcome family
+- [`experimental_outcomes`](https://l-thomson.github.io/thiessen/r/reference/experimental_outcomes.md)
+  : Outcome families behind the core's experimental feature
+
 ## Parameter groups
 
 - [`term_params()`](https://l-thomson.github.io/thiessen/r/reference/term_params.md)

@@ -31,9 +31,9 @@ thiessen_control(
 - outcome:
 
   The outcome family, from
-  [`gaussian_outcome()`](https://l-thomson.github.io/thiessen/r/reference/gaussian_outcome.md)
-  or
-  [`probit_outcome()`](https://l-thomson.github.io/thiessen/r/reference/probit_outcome.md).
+  [`gaussian_outcome()`](https://l-thomson.github.io/thiessen/r/reference/gaussian_outcome.md),
+  [`probit_outcome()`](https://l-thomson.github.io/thiessen/r/reference/probit_outcome.md)
+  or one of the experimental constructors above.
 
 - mean_params:
 
@@ -76,19 +76,29 @@ One shortcut: `thiessen_control(tessellations = 200)` sets the mean
 ensemble's size without spelling the group, since that count is the
 single number most fits tune. Every other setting is named in its group.
 
-The models reachable here are the published method and follow semantic
-versioning. Everything else the core crate adds sits behind its
-`experimental` Cargo feature, which this package does not enable, so a
-configuration or a saved fit naming such an option is rejected with the
-core's message naming the feature. The outcome families it gates are
-tobit, accelerated failure time, interval-censored and ordinal: none is
-a function in this package, and
+The models reachable with
+[`gaussian_outcome()`](https://l-thomson.github.io/thiessen/r/reference/gaussian_outcome.md)
+and
+[`probit_outcome()`](https://l-thomson.github.io/thiessen/r/reference/probit_outcome.md)
+are the published method and follow semantic versioning. Everything else
+the core crate adds sits behind its `experimental` Cargo feature, which
+a released build does not enable, so a configuration or a saved fit
+naming such an option is rejected with the condition class
+`thiessen_requires_feature`. The families it gates each have a
+constructor here
+([`tobit_outcome()`](https://l-thomson.github.io/thiessen/r/reference/tobit_outcome.md),
+[`aft_outcome()`](https://l-thomson.github.io/thiessen/r/reference/aft_outcome.md),
+[`interval_censored_outcome()`](https://l-thomson.github.io/thiessen/r/reference/interval_censored_outcome.md),
+[`ordinal_outcome()`](https://l-thomson.github.io/thiessen/r/reference/ordinal_outcome.md),
+[`student_t_outcome()`](https://l-thomson.github.io/thiessen/r/reference/student_t_outcome.md)
+and
+[`laplace_outcome()`](https://l-thomson.github.io/thiessen/r/reference/laplace_outcome.md)),
+so naming one is portable, and a build accepting them is installed from
+source with `THIESSEN_EXPERIMENTAL=1` in the environment;
 [`core_experimental()`](https://l-thomson.github.io/thiessen/r/reference/core_experimental.md)
-reports the setting of the build in use. Each graduates on its own once
-calibrated and is then accepted as any other option, with no separate
-opt-in; until then it can be built in R against
-[`thiessen_sampler()`](https://l-thomson.github.io/thiessen/r/reference/thiessen_sampler.md).
-The table of experimental items and their status is
+reports the setting of the build in use. Each item graduates on its own
+once calibrated and is then accepted as any other option, with no
+separate opt-in. The table of experimental items and their status is
 [`docs/experimental.md`](https://github.com/l-thomson/thiessen/blob/dev/docs/experimental.md).
 
 The core's calibration suite covers the configurations listed in

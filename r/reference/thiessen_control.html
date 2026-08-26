@@ -80,8 +80,8 @@ schedule. An argument left at its default gives the core's default, so
 
 
 <dl><dt id="arg-outcome">outcome<a class="anchor" aria-label="anchor" href="#arg-outcome"></a></dt>
-<dd><p>The outcome family, from <code><a href="gaussian_outcome.html">gaussian_outcome()</a></code> or
-<code><a href="probit_outcome.html">probit_outcome()</a></code>.</p></dd>
+<dd><p>The outcome family, from <code><a href="gaussian_outcome.html">gaussian_outcome()</a></code>,
+<code><a href="probit_outcome.html">probit_outcome()</a></code> or one of the experimental constructors above.</p></dd>
 
 
 <dt id="arg-mean-params">mean_params<a class="anchor" aria-label="anchor" href="#arg-mean-params"></a></dt>
@@ -122,17 +122,20 @@ x; it needs the Gaussian family with nu &gt; 2, and the paper's count is
 ensemble's size without spelling the group, since that count is the
 single number most fits tune. Every other setting is named in its
 group.</p>
-<p>The models reachable here are the published method and follow semantic
-versioning. Everything else the core crate adds sits behind its
-<code>experimental</code> Cargo feature, which this package does not enable, so a
-configuration or a saved fit naming such an option is rejected with the
-core's message naming the feature. The outcome families it gates are
-tobit, accelerated failure time, interval-censored and ordinal: none is
-a function in this package, and <code><a href="core_experimental.html">core_experimental()</a></code> reports the
-setting of the build in use. Each graduates on its own once calibrated
-and is then accepted as any other option, with no separate opt-in; until
-then it can be built in R against <code><a href="thiessen_sampler.html">thiessen_sampler()</a></code>. The table of
-experimental items and their status is
+<p>The models reachable with <code><a href="gaussian_outcome.html">gaussian_outcome()</a></code> and <code><a href="probit_outcome.html">probit_outcome()</a></code>
+are the published method and follow semantic versioning. Everything
+else the core crate adds sits behind its <code>experimental</code> Cargo feature,
+which a released build does not enable, so a configuration or a saved
+fit naming such an option is rejected with the condition class
+<code>thiessen_requires_feature</code>. The families it gates each have a
+constructor here (<code><a href="tobit_outcome.html">tobit_outcome()</a></code>, <code><a href="aft_outcome.html">aft_outcome()</a></code>,
+<code><a href="interval_censored_outcome.html">interval_censored_outcome()</a></code>, <code><a href="ordinal_outcome.html">ordinal_outcome()</a></code>,
+<code><a href="student_t_outcome.html">student_t_outcome()</a></code> and <code><a href="laplace_outcome.html">laplace_outcome()</a></code>), so naming one is
+portable, and a build accepting them is installed from source with
+<code>THIESSEN_EXPERIMENTAL=1</code> in the environment; <code><a href="core_experimental.html">core_experimental()</a></code>
+reports the setting of the build in use. Each item graduates on its own
+once calibrated and is then accepted as any other option, with no
+separate opt-in. The table of experimental items and their status is
 <a href="https://github.com/l-thomson/thiessen/blob/dev/docs/experimental.md" class="external-link"><code>docs/experimental.md</code></a>.</p>
 <p>The core's calibration suite covers the configurations listed in
 <a href="https://github.com/l-thomson/thiessen/blob/dev/docs/calibrated.md" class="external-link"><code>docs/calibrated.md</code></a>;

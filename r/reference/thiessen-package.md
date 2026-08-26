@@ -7,8 +7,10 @@ and Gosling, 2025,
 [doi:10.1214/09-AOAS285](https://doi.org/10.1214/09-AOAS285) ) in which
 a cell is a region of the covariate space rather than a box. Provides
 the Gaussian, binary probit and heteroscedastic models, with methods for
-prediction, posterior intervals and summaries. The sampler is the
-'thiessen' Rust crate, built and linked from vendored sources.
+prediction, posterior intervals and summaries. Further outcome families
+are experimental and reach a fit only in a source build made with the
+environment variable 'THIESSEN_EXPERIMENTAL' set to 1. The sampler is
+the 'thiessen' Rust crate, built and linked from vendored sources.
 
 ## References
 
