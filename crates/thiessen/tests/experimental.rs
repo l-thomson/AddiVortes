@@ -73,3 +73,61 @@ fn a_saved_bandwidth_names_the_feature() {
     let err = serde_json::from_str::<thiessen::Tessellation>(json).unwrap_err();
     assert!(err.to_string().contains("experimental"), "{err}");
 }
+
+/// The entry points of the gated models exist in every build and report
+/// the model's own name, so a binding wraps one surface.
+#[test]
+fn every_gated_entry_point_names_the_outcome_and_the_feature() {
+    let (config, x, y) = common::fixture();
+    let config = config.with_burn_in(2).with_draws(2);
+    let fitted = thiessen::fit(&config, &x, &y, common::SEED).unwrap();
+    let mut sampler = thiessen::Sampler::new(&config, &x, &y, common::SEED).unwrap();
+    let ones = vec![1.0; y.len()];
+    let events = vec![true; y.len()];
+    let gated = |result: Result<(), Error>, name: &str| match result {
+        Err(Error::RequiresFeature { item, feature }) => {
+            assert_eq!(feature, "experimental");
+            assert!(item.contains(name), "{item} should name {name}");
+        }
+        other => panic!("{name} should need the feature, got {other:?}"),
+    };
+    gated(
+        thiessen::fit_aft(&config, &x, &ones, &events, common::SEED).map(drop),
+        "aft",
+    );
+    gated(
+        thiessen::fit_interval_censored(&config, &x, &ones, &ones, common::SEED).map(drop),
+        "interval_censored",
+    );
+    gated(
+        thiessen::Sampler::aft(&config, &x, &ones, &events, common::SEED).map(drop),
+        "aft",
+    );
+    gated(
+        thiessen::Sampler::interval_censored(&config, &x, &ones, &ones, common::SEED).map(drop),
+        "interval_censored",
+    );
+    gated(sampler.set_aft_response(&ones, &events), "aft");
+    gated(
+        sampler.set_interval_censored_response(&ones, &ones),
+        "interval_censored",
+    );
+    gated(
+        fitted.log_likelihood_survival(&x, &ones, &events).map(drop),
+        "aft",
+    );
+    gated(
+        fitted
+            .log_likelihood_interval_censored(&x, &ones, &ones)
+            .map(drop),
+        "interval_censored",
+    );
+    gated(
+        fitted.predict_category_probabilities(&x).map(drop),
+        "ordinal",
+    );
+    assert!(fitted.cutpoint_draws().is_empty());
+    assert!(sampler.cutpoints().is_empty());
+    assert_eq!(sampler.student_df(), None);
+    assert_eq!(sampler.inclusion_state(), None);
+}

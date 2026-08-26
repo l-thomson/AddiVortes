@@ -256,6 +256,16 @@ says "Sampled values changed" with the reason.
   without the feature accepts the published defaults `"hard"`, `"uniform"`
   and `"constant"`, which are what the model does when the field is
   absent. Serialised output and sampled values are unchanged.
+- The entry points of the gated models (`fit_aft`,
+  `fit_interval_censored`, `Sampler::aft`, `Sampler::interval_censored`,
+  `Sampler::set_aft_response`, `Sampler::set_interval_censored_response`,
+  `Fitted::log_likelihood_survival`,
+  `Fitted::log_likelihood_interval_censored` and
+  `Fitted::predict_category_probabilities`) are present in every build
+  and return `Error::RequiresFeature` naming the outcome in a build
+  without the feature; `Fitted::cutpoint_draws`, `Sampler::cutpoints`,
+  `Sampler::student_df` and `Sampler::inclusion_state` are present and
+  empty. A binding compiles against one surface under either build.
 - Breaking: the `Model` enum is gone. The outcome layer is the whole
   selection surface: `Fitted::model_name()` returns "gaussian",
   "probit" or "heteroscedastic", `Fitted::outcome()` and

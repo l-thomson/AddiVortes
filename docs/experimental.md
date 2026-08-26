@@ -24,7 +24,11 @@ naming a gated item in a build without the feature is rejected by
 `Config::validate` with `Error::RequiresFeature`, which reaches R as the
 condition class `thiessen_requires_feature` and Python as
 `RequiresFeatureError`. The outcome families have a constructor in both
-bindings whatever the build carries, so a script naming one is portable.
+bindings whatever the build carries, so a script naming one is portable,
+and the core's entry points for the gated models (`fit_aft`,
+`Sampler::aft`, `Fitted::predict_category_probabilities` and their
+siblings) exist in every build and return the same error without the
+feature, so a binding wraps one surface.
 A fit saved from a build with the feature does not load in one without
 it.
 

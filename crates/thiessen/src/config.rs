@@ -105,14 +105,12 @@ impl From<StableOutcome> for Outcome {
         match outcome {
             StableOutcome::Gaussian(params) => Outcome::Gaussian(params),
             StableOutcome::Probit(params) => Outcome::Probit(params),
-            StableOutcome::Tobit(_) => Outcome::Gated(Gated("the `tobit` outcome")),
-            StableOutcome::Aft(_) => Outcome::Gated(Gated("the `aft` outcome")),
-            StableOutcome::IntervalCensored(_) => {
-                Outcome::Gated(Gated("the `interval_censored` outcome"))
-            }
-            StableOutcome::Ordinal(_) => Outcome::Gated(Gated("the `ordinal` outcome")),
-            StableOutcome::StudentT(_) => Outcome::Gated(Gated("the `student_t` outcome")),
-            StableOutcome::Laplace(_) => Outcome::Gated(Gated("the `laplace` outcome")),
+            StableOutcome::Tobit(_) => Outcome::Gated(Gated::TOBIT),
+            StableOutcome::Aft(_) => Outcome::Gated(Gated::AFT),
+            StableOutcome::IntervalCensored(_) => Outcome::Gated(Gated::INTERVAL_CENSORED),
+            StableOutcome::Ordinal(_) => Outcome::Gated(Gated::ORDINAL),
+            StableOutcome::StudentT(_) => Outcome::Gated(Gated::STUDENT_T),
+            StableOutcome::Laplace(_) => Outcome::Gated(Gated::LAPLACE),
         }
     }
 }
@@ -132,6 +130,13 @@ pub struct Gated(pub(crate) &'static str);
 
 #[cfg(not(feature = "experimental"))]
 impl Gated {
+    pub(crate) const TOBIT: Self = Gated("the `tobit` outcome");
+    pub(crate) const AFT: Self = Gated("the `aft` outcome");
+    pub(crate) const INTERVAL_CENSORED: Self = Gated("the `interval_censored` outcome");
+    pub(crate) const ORDINAL: Self = Gated("the `ordinal` outcome");
+    pub(crate) const STUDENT_T: Self = Gated("the `student_t` outcome");
+    pub(crate) const LAPLACE: Self = Gated("the `laplace` outcome");
+
     /// The item, as [`Error::RequiresFeature`](crate::Error::RequiresFeature)
     /// names it.
     pub(crate) fn requires_feature(self) -> crate::error::Error {

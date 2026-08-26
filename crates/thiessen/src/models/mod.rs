@@ -137,8 +137,9 @@ pub fn fit_chains_with_threads(
 }
 
 /// Fit the AFT model: as [`fit`], with the times and the event
-/// indicator in place of a plain response ([`Outcome::Aft`](crate::Outcome::Aft)).
-/// Experimental (`docs/experimental.md`).
+/// indicator in place of a plain response (`Outcome::Aft`).
+/// Experimental (`docs/experimental.md`): present in every build, served
+/// only with the `experimental` feature.
 ///
 /// # Arguments
 ///
@@ -148,9 +149,9 @@ pub fn fit_chains_with_threads(
 ///
 /// # Errors
 ///
+/// `RequiresFeature` in a build without the feature; otherwise
 /// [`Sampler::aft`].
-#[cfg(feature = "experimental")]
-#[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+#[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
 pub fn fit_aft(
     config: &Config,
     x: &Data,
@@ -158,6 +159,9 @@ pub fn fit_aft(
     events: &[bool],
     seed: u64,
 ) -> Result<Fitted> {
+    #[cfg(not(feature = "experimental"))]
+    return Err(crate::config::Gated::AFT.requires_feature());
+    #[cfg(feature = "experimental")]
     run_schedule(
         Sampler::aft(config, x, times, events, seed)?,
         config,
@@ -167,8 +171,9 @@ pub fn fit_aft(
 
 /// Fit the interval-censored model: as [`fit`], with one pair of bounds
 /// per row in place of a plain response
-/// ([`Outcome::IntervalCensored`](crate::Outcome::IntervalCensored)).
-/// Experimental (`docs/experimental.md`).
+/// (`Outcome::IntervalCensored`).
+/// Experimental (`docs/experimental.md`): present in every build, served
+/// only with the `experimental` feature.
 ///
 /// # Arguments
 ///
@@ -178,9 +183,9 @@ pub fn fit_aft(
 ///
 /// # Errors
 ///
+/// `RequiresFeature` in a build without the feature; otherwise
 /// [`Sampler::interval_censored`].
-#[cfg(feature = "experimental")]
-#[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+#[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
 pub fn fit_interval_censored(
     config: &Config,
     x: &Data,
@@ -188,6 +193,9 @@ pub fn fit_interval_censored(
     upper: &[f64],
     seed: u64,
 ) -> Result<Fitted> {
+    #[cfg(not(feature = "experimental"))]
+    return Err(crate::config::Gated::INTERVAL_CENSORED.requires_feature());
+    #[cfg(feature = "experimental")]
     run_schedule(
         Sampler::interval_censored(config, x, lower, upper, seed)?,
         config,
