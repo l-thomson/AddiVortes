@@ -62,6 +62,18 @@ core_predict_interval <- function(state, x, kind, level) {
 
 core_sigma <- function(state) .Call(wrap__core_sigma, state)
 
+core_log_lik_survival <- function(state, x, times, events) {
+  .Call(wrap__core_log_lik_survival, state, x, times, events)
+}
+
+core_log_lik_interval_censored <- function(state, x, lower, upper) {
+  .Call(wrap__core_log_lik_interval_censored, state, x, lower, upper)
+}
+
+core_predict_probs <- function(state, x) .Call(wrap__core_predict_probs, state, x)
+
+core_posterior_draws <- function(state) .Call(wrap__core_posterior_draws, state)
+
 core_log_lik <- function(state, x, y) {
   .Call(wrap__core_log_lik, state, x, y)
 }
@@ -72,6 +84,14 @@ core_diagnostics <- function(state) {
 
 core_sampler_new <- function(config_json, x, y, seed_value, chain) {
   .Call(wrap__core_sampler_new, config_json, x, y, seed_value, chain)
+}
+
+core_sampler_new_aft <- function(config_json, x, times, events, seed_value, chain) {
+  .Call(wrap__core_sampler_new_aft, config_json, x, times, events, seed_value, chain)
+}
+
+core_sampler_new_interval_censored <- function(config_json, x, lower, upper, seed_value, chain) {
+  .Call(wrap__core_sampler_new_interval_censored, config_json, x, lower, upper, seed_value, chain)
 }
 
 core_sampler_step <- function(sampler, n) .Call(wrap__core_sampler_step, sampler, n)
@@ -86,6 +106,14 @@ core_sampler_n_kept <- function(sampler) .Call(wrap__core_sampler_n_kept, sample
 
 core_sampler_set_response <- function(sampler, y) {
   .Call(wrap__core_sampler_set_response, sampler, y)
+}
+
+core_sampler_set_aft_response <- function(sampler, times, events) {
+  .Call(wrap__core_sampler_set_aft_response, sampler, times, events)
+}
+
+core_sampler_set_interval_censored_response <- function(sampler, lower, upper) {
+  .Call(wrap__core_sampler_set_interval_censored_response, sampler, lower, upper)
 }
 
 core_sampler_fitted_values <- function(sampler) {
