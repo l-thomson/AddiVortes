@@ -285,6 +285,14 @@ says "Sampled values changed" with the reason.
   from the one pass that gives the pooled in-sample RMSE; both bindings
   use them. Sampled values, the pooled in-sample RMSE and the fitted
   values are unchanged for a fixed seed.
+- The backfitting step writes its proposal, the proposal's assignment,
+  the partials, both sets of cell statistics and the cell-value draw into
+  buffers the ensemble keeps across steps, and swaps an accepted proposal
+  into the ensemble, in place of allocating each of them per proposal;
+  the arithmetic and the draw order are unchanged, so sampled values are
+  the same for a fixed seed. Under hard membership a sweep allocates
+  nothing; a default fit went from about 22 heap allocations per proposal
+  to none outside the kept draws.
 - Prediction evaluates each kept tessellation over every row at once,
   through the same streaming assignment the sampler uses under an
   all-Euclidean geometry, in place of a nearest-centre search per row per
