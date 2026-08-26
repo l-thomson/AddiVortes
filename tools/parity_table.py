@@ -58,7 +58,8 @@ in `general_params()`. The one R shortcut,
 FOOTER = """
 Groups without a row: `mean_params.cell` and `variance_params.cell` carry
 no field on the stable surface; the within-cell basis is experimental,
-`cell_params(basis = )` in R (`docs/experimental.md`).
+`cell_params(basis = )` in R and `CellParams(basis=)` in Python
+(`docs/experimental.md`).
 
 The seed is not part of the configuration: it is `random_state` in Python
 and `seed` in R, resolved by each language's rule and passed to the core
