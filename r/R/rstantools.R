@@ -90,8 +90,10 @@ posterior_epred.thiessen <- function(object, newdata = NULL, ...) {
 #' @param object An object of class `"thiessen"`.
 #' @param newdata New covariates, as [predict.thiessen()] takes them.
 #'   `NULL`, the default, is the training rows.
-#' @param y The response at `newdata`. Taken from `newdata` where the fit
-#'   came from a formula and `newdata` carries the response column.
+#' @param y The response at `newdata`, in the shape [thiessen()] took:
+#'   a `Surv` under the AFT and interval-censored families. Taken from
+#'   `newdata` where the fit came from a formula and `newdata` carries the
+#'   response column.
 #' @param ... Ignored.
 #'
 #' @return A double matrix, one row per kept draw and one column per
@@ -112,16 +114,19 @@ posterior_epred.thiessen <- function(object, newdata = NULL, ...) {
 #' @exportS3Method rstantools::log_lik
 log_lik.thiessen <- function(object, newdata = NULL, y = NULL, ...) {
   if (is.null(newdata)) {
-    return(core_call(core_log_lik(fit_state(object), object$x, object$y)))
+    return(core_call(
+      log_lik_of(fit_state(object), object$x, object$response)
+    ))
   }
   design <- predict_design(object, newdata)
   response <- log_lik_response(object, newdata, y)
-  if (length(response) != nrow(design)) {
+  if (response$n != nrow(design)) {
     thiessen_abort(
       "`y` must have one value per row of `newdata`."
     )
   }
-  core_call(core_log_lik(fit_state(object), design, response))
+  check_outcome_response(attr(object$control$outcome, "kind"), response)
+  core_call(log_lik_of(fit_state(object), design, response))
 }
 
 #' Central posterior predictive interval
@@ -183,11 +188,11 @@ predict_design <- function(object, newdata, call = rlang::caller_env()) {
 #' @param newdata New covariates.
 #' @param y The response as the caller gave it, or `NULL`.
 #' @param call The calling environment to report.
-#' @return A double vector.
+#' @return An object of class `"thiessen_response"`.
 #' @noRd
 log_lik_response <- function(object, newdata, y, call = rlang::caller_env()) {
   if (!is.null(y)) {
-    return(as_response(y, call = call)$y)
+    return(as_response(y, call = call))
   }
   if (is.null(object$blueprint)) {
     thiessen_abort(
@@ -199,5 +204,5 @@ log_lik_response <- function(object, newdata, y, call = rlang::caller_env()) {
     hardhat::forge(newdata, object$blueprint, outcomes = TRUE),
     call = call
   )
-  encode_response(forged$outcomes, call = call)$y
+  encode_response(forged$outcomes, call = call)
 }

@@ -21,6 +21,11 @@ says "Sampled values changed" with the reason.
   with the model. Either count is bounded by the parallelism available
   to the process.
 
+- `Sampler::training_response`: the response the in-sample fit is
+  measured against, caller scale, the observed values under the models
+  whose working response is replaced by latents. `Fitted::cutpoint_draws`,
+  `inclusion_weight_draws`, `concentration_draws` and `bandwidth_draws`
+  are present in every build, empty without the feature.
 - (experimental) `Fitted::inclusion_weight_draws` and
   `Fitted::concentration_draws`: the DART inclusion weights s and their
   concentration theta of each kept draw, which the sampler drew and no

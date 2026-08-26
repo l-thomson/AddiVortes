@@ -6,9 +6,12 @@
 #'   type; a fit from a matrix takes a numeric matrix with the fitted
 #'   columns. `NULL`, the default, predicts at the training rows.
 #' @param type The quantity: `"mean"`, the posterior mean of the response
-#'   (the probability under the probit model); `"draws"`, that quantity for
-#'   every kept draw; `"latent"`, the mean function f for every kept draw;
-#'   `"variance"`, the variance of y given f for every kept draw.
+#'   (the probability under the probit model, the expected category under
+#'   the ordinal model, f(x) on the log-time scale under the AFT model);
+#'   `"draws"`, that quantity for every kept draw; `"latent"`, the mean
+#'   function f for every kept draw; `"variance"`, the variance of y given
+#'   f for every kept draw; `"probs"`, under the ordinal model only, the
+#'   posterior-mean probability of each category, the `MASS::polr` name.
 #' @param interval `"none"`, the default; `"credible"` for the interval of
 #'   the posterior mean; `"prediction"` for the posterior predictive
 #'   interval. Only with `type = "mean"`.
@@ -23,7 +26,9 @@
 #'
 #' @return For `type = "mean"` and `interval = "none"`, a numeric vector of
 #'   length `nrow(newdata)`; with an interval, a matrix of that many rows
-#'   with columns `fit`, `lower` and `upper`. For the other types, a matrix
+#'   with columns `fit`, `lower` and `upper`. For `type = "probs"`, a
+#'   matrix of one row per row of `newdata` and one column per category,
+#'   named by the levels of the response. For the other types, a matrix
 #'   of one row per kept draw and one column per row of `newdata`.
 #'
 #' @examples
@@ -40,7 +45,8 @@
 #' @importFrom stats predict
 #' @export
 predict.thiessen <- function(object, newdata = NULL,
-                             type = c("mean", "draws", "latent", "variance"),
+                             type = c("mean", "draws", "latent", "variance",
+                                      "probs"),
                              interval = c("none", "credible", "prediction"),
                              level = 0.95, threads = NULL, ...) {
   type <- match.arg(type)
@@ -57,6 +63,11 @@ predict.thiessen <- function(object, newdata = NULL,
   check_probability(level)
   state <- fit_state(object)
   core_state_set_threads(state, threads)
+  if (type == "probs") {
+    probs <- core_call(core_predict_probs(state, design))
+    colnames(probs) <- object$response_levels
+    return(probs)
+  }
   if (type != "mean") {
     return(core_call(core_predict_draws(state, design, type)))
   }
@@ -73,10 +84,12 @@ predict.thiessen <- function(object, newdata = NULL,
 #' @param object An object of class `"thiessen"`.
 #' @param ... Ignored.
 #'
-#' @return A single number: the posterior mean of sigma under the Gaussian
-#'   model, and 1 under the probit model, whose latent scale is fixed. The
-#'   heteroscedastic model has no single residual scale; use
-#'   `predict(type = "variance")`.
+#' @return A single number: the posterior mean of sigma under a model with
+#'   a global residual scale (the Gaussian, tobit, AFT, interval-censored,
+#'   Student-t and Laplace models; under the last two the scale of the t
+#'   or Laplace errors), and 1 under the probit and ordinal models, whose
+#'   latent scale is fixed. The heteroscedastic model has no single
+#'   residual scale; use `predict(type = "variance")`.
 #'
 #' @examples
 #' n <- 60
@@ -90,7 +103,7 @@ predict.thiessen <- function(object, newdata = NULL,
 #' @importFrom stats sigma
 #' @export
 sigma.thiessen <- function(object, ...) {
-  if (object$model == "probit") {
+  if (object$model %in% c("probit", "ordinal")) {
     return(1)
   }
   draws <- core_call(core_sigma(fit_state(object)))

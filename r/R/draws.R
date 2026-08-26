@@ -4,9 +4,10 @@
 #' The posterior draws of a fit as a matrix of named variables
 #'
 #' `mu[i]` is the mean function at training row i, `sigma` the residual
-#' standard deviation where the model has one, and `cell_count` and
+#' standard deviation where the model has one, `cell_count` and
 #' `dimension_count` the mean cells and mean active covariates per mean
-#' tessellation.
+#' tessellation, and, where the model samples them, `df`, `cutpoint[k]`,
+#' `bandwidth[j]`, `inclusion_weight[j]` and `concentration`.
 #'
 #' @param object An object of class `"thiessen"`.
 #' @return A double matrix, one row per kept draw.
@@ -25,6 +26,22 @@ draws_matrix_of <- function(object) {
     c(diagnostics$cell_count, diagnostics$dimension_count),
     ncol = 2L, dimnames = list(NULL, c("cell_count", "dimension_count"))
   )
+  extras <- core_call(core_posterior_draws(state))
+  if (length(extras$df) > 0L) {
+    blocks$df <- matrix(extras$df, ncol = 1L, dimnames = list(NULL, "df"))
+  }
+  for (name in c("cutpoint", "bandwidth", "inclusion_weight")) {
+    draws <- extras[[name]]
+    if (ncol(draws) > 0L) {
+      colnames(draws) <- paste0(name, "[", seq_len(ncol(draws)), "]")
+      blocks[[name]] <- draws
+    }
+  }
+  if (length(extras$concentration) > 0L) {
+    blocks$concentration <- matrix(
+      extras$concentration, ncol = 1L, dimnames = list(NULL, "concentration")
+    )
+  }
   do.call(cbind, blocks)
 }
 
@@ -49,8 +66,14 @@ chain_array <- function(draws, chains) {
 #' Posterior draws of a fitted model
 #'
 #' The variables are `mu[i]`, the mean function at training row i; `sigma`,
-#' under the Gaussian model only; and `cell_count` and `dimension_count`, the
-#' mean cells and mean active covariates per mean tessellation.
+#' where the model has a global residual scale; `cell_count` and
+#' `dimension_count`, the mean cells and mean active covariates per mean
+#' tessellation; and the quantities the experimental models sample where
+#' the fit has them: `df`, the error degrees of freedom under a Student-t
+#' grid; `cutpoint[k]`, the interior cutpoints of the ordinal model;
+#' `bandwidth[j]`, the soft-membership bandwidth of tessellation j;
+#' `inclusion_weight[j]` and `concentration`, the DART inclusion weight of
+#' covariate j and the Dirichlet concentration.
 #'
 #' The chain dimension holds the chains of the fit. A fit of one chain has
 #' one chain, and `posterior::summarise_draws()` then reports R-hat as `NA`;

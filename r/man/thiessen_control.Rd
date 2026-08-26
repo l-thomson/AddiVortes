@@ -5,7 +5,7 @@
 \title{Configuration of a fit}
 \usage{
 thiessen_control(
-  outcome = gaussian_outcome(),
+  outcome = NULL,
   mean_params = term_params(),
   variance_params = NULL,
   general_params = NULL,
@@ -14,7 +14,8 @@ thiessen_control(
 }
 \arguments{
 \item{outcome}{The outcome family, from \code{\link[=gaussian_outcome]{gaussian_outcome()}},
-\code{\link[=probit_outcome]{probit_outcome()}} or one of the experimental constructors above.}
+\code{\link[=probit_outcome]{probit_outcome()}} or one of the experimental constructors above.
+\code{NULL}, the default, takes the family the response selects.}
 
 \item{mean_params}{The ensemble describing the average, from
 \code{\link[=term_params]{term_params()}}.}
@@ -55,6 +56,13 @@ ensemble's size without spelling the group, since that count is the
 single number most fits tune. Every other setting is named in its
 group.
 
+\code{outcome} left \code{NULL} takes the family from the response at fit: a
+numeric vector the Gaussian family, a two-level factor the probit
+family, an ordered factor the ordinal family, and a \code{\link[survival:Surv]{survival::Surv()}}
+the AFT or the interval-censored family by its type. A named family is
+checked against the response and a mismatch is an error naming both;
+see \code{\link[=thiessen]{thiessen()}}.
+
 The models reachable with \code{\link[=gaussian_outcome]{gaussian_outcome()}} and \code{\link[=probit_outcome]{probit_outcome()}}
 are the published method and follow semantic versioning. Everything
 else the core crate adds sits behind its \code{experimental} Cargo feature,
@@ -79,6 +87,8 @@ verified.
 }
 \examples{
 thiessen_control(tessellations = 50)
+
+thiessen_control(outcome = probit_outcome())
 
 thiessen_control(
   outcome = gaussian_outcome(nu = 10),

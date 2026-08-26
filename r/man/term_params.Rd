@@ -9,7 +9,8 @@ term_params(
   k = 3,
   lambda_c = 5,
   geometry = NULL,
-  structure = NULL
+  structure = NULL,
+  cell = NULL
 )
 }
 \arguments{
@@ -35,6 +36,9 @@ covariate space: set it on \code{mean_params} and it applies to
 \item{structure}{The covariate-inclusion prior, from
 \code{\link[=structure_params]{structure_params()}}. \code{NULL} takes the core's defaults. Shared
 between the ensembles like \code{geometry}.}
+
+\item{cell}{The within-cell response surface, from \code{\link[=cell_params]{cell_params()}}.
+\code{NULL} takes the core's default, one constant value per cell.}
 }
 \value{
 An object of class \code{"term_params"}.
@@ -48,5 +52,6 @@ heteroscedastic model, one as \code{variance_params}.
 term_params(tessellations = 200, lambda_c = 25)
 }
 \seealso{
-\code{\link[=thiessen_control]{thiessen_control()}}, \code{\link[=geometry_params]{geometry_params()}}, \code{\link[=structure_params]{structure_params()}}
+\code{\link[=thiessen_control]{thiessen_control()}}, \code{\link[=geometry_params]{geometry_params()}},
+\code{\link[=structure_params]{structure_params()}}, \code{\link[=cell_params]{cell_params()}}
 }

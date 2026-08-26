@@ -9,9 +9,11 @@ full_term <- function(tessellations) {
     k = 2,
     lambda_c = 4,
     geometry = geometry_params(
-      metric = c("euclidean", "euclidean"), sigma_c = 0.7
+      metric = c("euclidean", "euclidean"), sigma_c = 0.7,
+      membership = "hard"
     ),
-    structure = structure_params(omega = 1.5)
+    structure = structure_params(omega = 1.5, inclusion = "uniform"),
+    cell = cell_params(basis = "constant")
   )
 }
 
@@ -40,7 +42,8 @@ config_paths <- function(tree, prefix = "") {
   paths
 }
 
-# Serialised groups with no field on the stable surface.
+# Groups the core serialises empty at their defaults, so the path is the
+# group itself; the surface names their one field.
 UNEXPOSED <- c("mean_params.cell", "variance_params.cell")
 
 test_that("every surface argument is a core option", {

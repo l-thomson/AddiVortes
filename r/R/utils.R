@@ -237,7 +237,10 @@ config_json <- function(control, call = rlang::caller_env()) {
       }
     }
   }
-  grouped <- list(outcome = outcome_group(control$outcome))
+  grouped <- list()
+  if (!is.null(control$outcome)) {
+    grouped$outcome <- tagged_group(control$outcome)
+  }
   if (length(mean_params) > 0L) grouped$mean_params <- mean_params
   if (length(variance_params) > 0L) {
     grouped$variance_params <- variance_params
@@ -257,13 +260,50 @@ term_group <- function(params) {
   }
   group <- compact(unclass(params))
   if (!is.null(group$geometry)) {
-    group$geometry <- compact(unclass(group$geometry))
+    geometry <- compact(unclass(group$geometry))
+    if (!is.null(geometry$metric)) {
+      geometry$metric <- lapply(geometry$metric, metric_entry)
+    }
+    if (inherits(geometry$membership, "thiessen_option")) {
+      geometry$membership <- tagged_group(geometry$membership)
+    }
+    # The core takes the precision matrix row-major; R stores column-major.
+    if (!is.null(geometry$precision)) {
+      geometry$precision <- as.vector(t(geometry$precision))
+    }
+    group$geometry <- geometry
   }
   if (!is.null(group$structure)) {
-    group$structure <- compact(unclass(group$structure))
-    if (length(group$structure) == 0L) group$structure <- NULL
+    structure <- compact(unclass(group$structure))
+    if (inherits(structure$inclusion, "thiessen_option")) {
+      structure$inclusion <- tagged_group(structure$inclusion)
+    }
+    group$structure <- if (length(structure) == 0L) NULL else structure
+  }
+  if (!is.null(group$cell)) {
+    cell <- compact(unclass(group$cell))
+    group$cell <- if (length(cell) == 0L) NULL else cell
   }
   group
+}
+
+#' A metric entry in the core's tagged form
+#'
+#' The core's unit entries (`"euclidean"`, `"categorical"`,
+#' `"mahalanobis"`) are bare strings; an entry with fields is an object
+#' under its name, and `"manhattan"` and `"cosine"`, whose fields all have
+#' defaults, are accepted as bare strings here and tagged for the core.
+#'
+#' @param entry One entry of `metric`.
+#' @return The entry as the core reads it.
+#' @noRd
+metric_entry <- function(entry) {
+  if (is.character(entry) && entry %in% c("manhattan", "cosine")) {
+    return(stats::setNames(
+      list(structure(list(), names = character(0))), entry
+    ))
+  }
+  entry
 }
 
 #' The control object of a resolved configuration
@@ -304,14 +344,51 @@ term_from_config <- function(group) {
     return(NULL)
   }
   if (!is.null(group$geometry)) {
-    if (length(group$geometry$metric) == 0L) group$geometry$metric <- NULL
-    class(group$geometry) <- "geometry_params"
+    geometry <- group$geometry
+    if (length(geometry$metric) == 0L) geometry$metric <- NULL
+    if (!is.null(geometry$membership)) {
+      geometry$membership <- option_from_config(
+        geometry$membership, "membership"
+      )
+    }
+    if (!is.null(geometry$precision)) {
+      p <- as.integer(round(sqrt(length(geometry$precision))))
+      geometry$precision <- matrix(
+        unlist(geometry$precision), nrow = p, ncol = p, byrow = TRUE
+      )
+    }
+    class(geometry) <- "geometry_params"
+    group$geometry <- geometry
   }
   if (!is.null(group$structure)) {
-    class(group$structure) <- "structure_params"
+    structure <- group$structure
+    if (!is.null(structure$inclusion)) {
+      structure$inclusion <- option_from_config(
+        structure$inclusion, "inclusion"
+      )
+    }
+    class(structure) <- "structure_params"
+    group$structure <- structure
+  }
+  if (!is.null(group$cell)) {
+    class(group$cell) <- "cell_params"
   }
   class(group) <- "term_params"
   group
+}
+
+#' A component option of a resolved configuration as the surface's object
+#'
+#' @param value The option as the core reports it: a string for a unit
+#'   variant, a one-entry named list otherwise.
+#' @param slot The field the option sits on.
+#' @return A string, or an object of class `"thiessen_option"`.
+#' @noRd
+option_from_config <- function(value, slot) {
+  if (is.character(value)) {
+    return(value)
+  }
+  new_option(names(value)[[1L]], value[[1L]], slot)
 }
 
 #' Coerce a design to the numeric matrix the core takes

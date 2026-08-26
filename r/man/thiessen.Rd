@@ -45,8 +45,10 @@ data frame. A numeric vector is taken as one column.}
 
 \item{...}{Passed to the method.}
 
-\item{y}{The response: a numeric vector of length \code{nrow(x)}, or a
-two-level factor. Under the probit model the values must be 0 and 1.}
+\item{y}{The response, with one value per row of \code{x}: a numeric
+vector, a two-level factor, an ordered factor, or a
+\code{\link[survival:Surv]{survival::Surv()}} of type \code{"right"} or \code{"interval2"}. Under the
+probit model a numeric vector must hold 0 and 1.}
 
 \item{control}{An object of class \code{"thiessen_control"}, from
 \code{\link[=thiessen_control]{thiessen_control()}}.}
@@ -76,7 +78,10 @@ An object of class \code{"thiessen"}: a list with the fitted state,
 the resolved configuration, the number of chains, the thread count,
 the number of kept draws, the
 convergence diagnostics where two or more chains ran, the seed used,
-the design, the response, the fitted values, the residuals, the
+the design, the response the in-sample fit is measured against (the
+numeric response, the factor codes, or under a censored family the
+observed values on the model's scale, the log times under the AFT
+family), the fitted values, the residuals against that response, the
 hardhat blueprint where one applies, and the call.
 }
 \description{
@@ -95,9 +100,20 @@ Where \code{control} declares a \code{metric}, one entry per column, factors are
 passed as integer level codes instead and each factor column must declare
 \code{"categorical"}.
 
-A factor response must have two levels and becomes 0 and 1 with the first
-level as the zero, as \code{glm} treats one. An ordered factor is encoded as
-an unordered one; the ordering is not used.
+The response selects the outcome family where \code{control} names none: a
+numeric vector the Gaussian family, a two-level factor the probit family
+(0 and 1 with the first level as the zero, as \code{glm} treats one), an
+ordered factor the ordinal family (the \code{MASS::polr} convention), a
+\code{\link[survival:Surv]{survival::Surv()}} of type \code{"right"} the AFT family and one of type
+\code{"interval2"} the interval-censored family (an \code{NA} bound is one-sided
+censoring and an equal pair an exact value). A family named in
+\code{control} is checked against the response and never coerced: the
+probit family also takes the numbers 0 and 1, and every other family
+takes only the shape that selects it. This is \code{glm}'s rule, the
+declared family authoritative and the response validated against it,
+with "not declared" representable. The families beyond the Gaussian
+and probit ones need a build with the core's \code{experimental} feature;
+see \code{\link[=thiessen_control]{thiessen_control()}}.
 
 Missing (\code{NA}) and non-finite values in the covariates or the response
 are rejected with an error; no row is dropped silently.

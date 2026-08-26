@@ -14,9 +14,20 @@
 #' passed as integer level codes instead and each factor column must declare
 #' `"categorical"`.
 #'
-#' A factor response must have two levels and becomes 0 and 1 with the first
-#' level as the zero, as `glm` treats one. An ordered factor is encoded as
-#' an unordered one; the ordering is not used.
+#' The response selects the outcome family where `control` names none: a
+#' numeric vector the Gaussian family, a two-level factor the probit family
+#' (0 and 1 with the first level as the zero, as `glm` treats one), an
+#' ordered factor the ordinal family (the `MASS::polr` convention), a
+#' [survival::Surv()] of type `"right"` the AFT family and one of type
+#' `"interval2"` the interval-censored family (an `NA` bound is one-sided
+#' censoring and an equal pair an exact value). A family named in
+#' `control` is checked against the response and never coerced: the
+#' probit family also takes the numbers 0 and 1, and every other family
+#' takes only the shape that selects it. This is `glm`'s rule, the
+#' declared family authoritative and the response validated against it,
+#' with "not declared" representable. The families beyond the Gaussian
+#' and probit ones need a build with the core's `experimental` feature;
+#' see [thiessen_control()].
 #'
 #' Missing (`NA`) and non-finite values in the covariates or the response
 #' are rejected with an error; no row is dropped silently.
@@ -84,8 +95,10 @@
 #' @param formula A two-sided formula. The left side names the response and
 #'   the right side the covariates, `.` for every remaining column.
 #' @param data A data frame holding the columns the formula names.
-#' @param y The response: a numeric vector of length `nrow(x)`, or a
-#'   two-level factor. Under the probit model the values must be 0 and 1.
+#' @param y The response, with one value per row of `x`: a numeric
+#'   vector, a two-level factor, an ordered factor, or a
+#'   [survival::Surv()] of type `"right"` or `"interval2"`. Under the
+#'   probit model a numeric vector must hold 0 and 1.
 #' @param control An object of class `"thiessen_control"`, from
 #'   [thiessen_control()].
 #' @param chains The number of chains to run, a whole number. Each chain
@@ -106,7 +119,10 @@
 #'   the resolved configuration, the number of chains, the thread count,
 #'   the number of kept draws, the
 #'   convergence diagnostics where two or more chains ran, the seed used,
-#'   the design, the response, the fitted values, the residuals, the
+#'   the design, the response the in-sample fit is measured against (the
+#'   numeric response, the factor codes, or under a censored family the
+#'   observed values on the model's scale, the log times under the AFT
+#'   family), the fitted values, the residuals against that response, the
 #'   hardhat blueprint where one applies, and the call.
 #'
 #' @references
@@ -151,8 +167,8 @@ thiessen.default <- function(x, y, control = thiessen_control(), seed = NULL,
   rlang::check_dots_empty()
   design <- as_design(x)
   response <- as_response(y)
-  new_fit(design, response$y, control, seed, chains, threads,
-          generic_call(match.call()), response_levels = response$levels)
+  new_fit(design, response, control, seed, chains, threads,
+          generic_call(match.call()))
 }
 
 #' @rdname thiessen
@@ -168,9 +184,8 @@ thiessen.data.frame <- function(x, y, control = thiessen_control(),
     control$mean_params$geometry$metric
   )
   response <- as_response(y)
-  new_fit(design, response$y, control, seed, chains, threads,
-          generic_call(match.call()), blueprint = molded$blueprint,
-          response_levels = response$levels)
+  new_fit(design, response, control, seed, chains, threads,
+          generic_call(match.call()), blueprint = molded$blueprint)
 }
 
 #' @rdname thiessen
@@ -186,29 +201,8 @@ thiessen.formula <- function(formula, data, control = thiessen_control(),
     control$mean_params$geometry$metric
   )
   response <- encode_response(molded$outcomes)
-  new_fit(design, response$y, control, seed, chains, threads,
-          generic_call(match.call()), blueprint = molded$blueprint,
-          response_levels = response$levels)
-}
-
-#' Coerce a response to the numeric vector the core takes
-#'
-#' @param y A numeric vector or a two-level factor.
-#' @param call The calling environment to report.
-#' @return A list of the response and, for a factor, its levels.
-#' @noRd
-as_response <- function(y, call = rlang::caller_env()) {
-  if (is.factor(y)) {
-    return(encode_response(data.frame(y = y), call = call))
-  }
-  if (!is.numeric(y) || !is.null(dim(y))) {
-    thiessen_abort("`y` must be a numeric vector or a two-level factor.",
-                   call = call)
-  }
-  if (anyNA(y)) {
-    thiessen_abort("`y` must not contain missing values.", call = call)
-  }
-  list(y = as.double(y), levels = NULL)
+  new_fit(design, response, control, seed, chains, threads,
+          generic_call(match.call()), blueprint = molded$blueprint)
 }
 
 #' The method call with the generic's name, so `update()` can re-evaluate it
@@ -224,29 +218,34 @@ generic_call <- function(call) {
 #' Fit the core and assemble the object the methods return
 #'
 #' @param design The numeric design.
-#' @param y The numeric response.
+#' @param response An object of class `"thiessen_response"`.
 #' @param control An object of class `"thiessen_control"`.
 #' @param seed The seed as the caller gave it.
 #' @param chains The number of chains to run.
 #' @param threads The number of threads the chains run on.
 #' @param call The call to store.
 #' @param blueprint The hardhat blueprint, or `NULL` for a matrix fit.
-#' @param response_levels The response's factor levels, or `NULL`.
 #' @param call_env The calling environment to report.
 #' @return An object of class `"thiessen"`.
 #' @noRd
-new_fit <- function(design, y, control, seed, chains, threads, call,
-                    blueprint = NULL, response_levels = NULL,
-                    call_env = rlang::caller_env()) {
-  if (length(y) != nrow(design)) {
+new_fit <- function(design, response, control, seed, chains, threads, call,
+                    blueprint = NULL, call_env = rlang::caller_env()) {
+  if (response$n != nrow(design)) {
     thiessen_abort(
       sprintf(
         "The design has %d rows and the response has %d values; they must agree.",
-        nrow(design), length(y)
+        nrow(design), response$n
       ),
       call = call_env
     )
   }
+  if (!inherits(control, "thiessen_control")) {
+    thiessen_abort(
+      "`control` must come from `thiessen_control()`.",
+      call = call_env
+    )
+  }
+  control <- resolve_outcome(control, response, call = call_env)
   chains <- resolve_chains(chains, call = call_env)
   threads <- resolve_threads(threads, call = call_env)
   resolved <- resolve_seed(seed, call = call_env)
@@ -257,12 +256,12 @@ new_fit <- function(design, y, control, seed, chains, threads, call,
     steps = progress_steps(control, chains), auto_finish = FALSE
   )
   fit <- core_call(
-    run_schedule(control, design, y, resolved, chains, threads, report),
+    run_schedule(control, design, response, resolved, chains, threads,
+                 report),
     call = call_env
   )
-  assemble_fit(fit, design, y, resolved, call, threads = threads,
-               blueprint = blueprint, response_levels = response_levels,
-               call_env = call_env, report = report)
+  assemble_fit(fit, design, response, resolved, call, threads = threads,
+               blueprint = blueprint, call_env = call_env, report = report)
 }
 
 #' Run the sweep schedule of every chain and pool the draws
@@ -278,14 +277,15 @@ new_fit <- function(design, y, control, seed, chains, threads, call,
 #'
 #' @param control An object of class `"thiessen_control"`.
 #' @param design The numeric design.
-#' @param y The numeric response.
+#' @param response An object of class `"thiessen_response"`.
 #' @param seed The resolved seed.
 #' @param chains The number of chains to run.
 #' @param threads The number of threads the chains run on.
 #' @param report A progressr progressor.
 #' @return The list `core_finish()` returns.
 #' @noRd
-run_schedule <- function(control, design, y, seed, chains, threads, report) {
+run_schedule <- function(control, design, response, seed, chains, threads,
+                         report) {
   schedule <- control$general_params
   config <- config_json(control)
   thinning <- as.integer(schedule$thinning)
@@ -307,7 +307,7 @@ run_schedule <- function(control, design, y, seed, chains, threads, report) {
   report(amount = 0, class = "sticky",
          message = sweep_message(chains, threads))
   samplers <- lapply(seq_len(chains) - 1L, function(chain) {
-    core_sampler_new(config, design, y, seed, chain)
+    new_sampler_handle(config, design, response, seed, chain)
   })
   completed <- 0L
   while (completed < schedule$burn_in) {
@@ -335,23 +335,25 @@ run_schedule <- function(control, design, y, seed, chains, threads, report) {
 #'
 #' @param fit The list `core_finish()` returns.
 #' @param design The numeric design.
-#' @param y The numeric response.
+#' @param response An object of class `"thiessen_response"`.
 #' @param seed The resolved seed.
 #' @param call The call to store.
 #' @param threads The number of threads the fit predicts on.
 #' @param blueprint The hardhat blueprint, or `NULL` for a matrix fit.
-#' @param response_levels The response's factor levels, or `NULL`.
 #' @param call_env The calling environment to report.
 #' @param report A progressr progressor. The default is a disabled one,
 #'   for a caller with no report of its own to advance.
 #' @return An object of class `"thiessen"`.
 #' @noRd
-assemble_fit <- function(fit, design, y, seed, call, threads = 1L,
-                         blueprint = NULL, response_levels = NULL,
-                         call_env = rlang::caller_env(),
+assemble_fit <- function(fit, design, response, seed, call, threads = 1L,
+                         blueprint = NULL, call_env = rlang::caller_env(),
                          report = progressr::progressor(
                            steps = 1L, enable = FALSE
                          )) {
+  # The core measures the in-sample fit against the observed values on
+  # the model's scale where the working response is replaced by latents;
+  # a plain response is kept as given.
+  y <- if (response$kind == "plain") response$y else fit$y
   for (warning in fit$warnings) {
     rlang::warn(warning, class = "thiessen_warning")
   }
@@ -376,7 +378,8 @@ assemble_fit <- function(fit, design, y, seed, call, threads = 1L,
       seed = seed,
       n_features = ncol(design),
       blueprint = blueprint,
-      response_levels = response_levels,
+      response = response,
+      response_levels = response$levels,
       x = design,
       y = y,
       fitted.values = fit$fitted_values,

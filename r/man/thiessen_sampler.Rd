@@ -10,8 +10,11 @@ thiessen_sampler(x, y, control = thiessen_control(), seed = NULL)
 \item{x}{A numeric matrix of covariates, one row per observation. A
 numeric vector is taken as one column.}
 
-\item{y}{The response: a numeric vector of length \code{nrow(x)}. Labels in
-\{0, 1\} under the probit family.}
+\item{y}{The response, one value per row of \code{x}, in the shapes
+\code{\link[=thiessen]{thiessen()}} takes: a numeric vector (labels in \{0, 1\} under the
+probit family), a two-level or ordered factor, or a
+\code{\link[survival:Surv]{survival::Surv()}}. It selects the family where \code{control} names
+none.}
 
 \item{control}{An object of class \code{"thiessen_control"}, from
 \code{\link[=thiessen_control]{thiessen_control()}}.}
@@ -66,7 +69,12 @@ The returned object holds the loop's verbs:
 \item{\verb{$n_kept()}}{The number of draws kept so far.}
 \item{\verb{$set_response(y)}}{Replace the response, keeping the
 tessellations, the cell values and sigma^2; the next sweep
-conditions on it. Labels in \{0, 1\} under the probit family.}
+conditions on it. Takes the shapes \code{\link[=thiessen]{thiessen()}} takes, checked
+against the sampler's family: labels in \{0, 1\} or a two-level
+factor under the probit family, an ordered factor under the
+ordinal family, a \code{Surv} under the AFT and interval-censored
+families. Under the censored families the latents reset to the
+new observed values.}
 \item{\verb{$fitted_values()}}{The current mean function at the training
 rows: f(x_i), or c + f(x_i) under the probit family.}
 \item{\verb{$noise_variances()}}{The current variance of y given f at each

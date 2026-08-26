@@ -72,34 +72,21 @@ encode_predictors <- function(predictors, indicators, metric = NULL,
   design
 }
 
-#' Encode a molded response as the core's numeric response
+#' Parse a molded response
 #'
-#' A two-level factor becomes 0 and 1 with the first level as the zero, as
-#' `glm` treats a factor response.
+#' hardhat carries a `Surv` object and an ordered factor through the mold
+#' as one outcome column, so the column is parsed as `thiessen()` parses
+#' `y`.
 #'
-#' @param outcomes The `outcomes` element of a mold.
+#' @param outcomes The `outcomes` element of a mold or a forge.
 #' @param call The calling environment to report.
-#' @return A list of the response and, for a factor, its levels.
+#' @return An object of class `"thiessen_response"`.
 #' @noRd
 encode_response <- function(outcomes, call = rlang::caller_env()) {
   if (ncol(outcomes) != 1L) {
     thiessen_abort("The formula must name one response.", call = call)
   }
-  y <- outcomes[[1L]]
-  if (is.factor(y)) {
-    if (nlevels(y) != 2L) {
-      thiessen_abort(
-        "A factor response must have two levels.",
-        call = call
-      )
-    }
-    return(list(y = as.double(as.integer(y) - 1L), levels = levels(y)))
-  }
-  if (!is.numeric(y)) {
-    thiessen_abort("The response must be numeric or a two-level factor.",
-                   call = call)
-  }
-  list(y = as.double(y), levels = NULL)
+  as_response(outcomes[[1L]], call = call)
 }
 
 #' Forge new data against a fit's blueprint

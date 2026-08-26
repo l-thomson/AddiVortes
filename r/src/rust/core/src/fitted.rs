@@ -1465,8 +1465,6 @@ impl Fitted {
     /// [`variable_inclusion_proportions`](Self::variable_inclusion_proportions),
     /// which counts the usage the tessellations realised.
     /// Experimental (`docs/experimental.md`).
-    #[cfg(feature = "experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
     pub fn inclusion_weight_draws(&self) -> &[Vec<f64>] {
         self.posterior.inclusion_weights()
     }
@@ -1475,25 +1473,26 @@ impl Fitted {
     /// inclusion prior; empty under another inclusion prior. One value
     /// per draw, not one per covariate. Experimental
     /// (`docs/experimental.md`).
-    #[cfg(feature = "experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
     pub fn concentration_draws(&self) -> &[f64] {
         self.posterior.concentration()
     }
 
     /// The soft-membership kernel bandwidth of each mean tessellation,
     /// one row per kept draw, on the scaled covariate space its prior is
-    /// on; empty under hard membership. Experimental
-    /// (`docs/experimental.md`).
-    #[cfg(feature = "experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
+    /// on; empty under hard membership, and in a build without the
+    /// feature. Experimental (`docs/experimental.md`).
     pub fn bandwidth_draws(&self) -> Vec<Vec<f64>> {
-        self.posterior
-            .tessellations()
-            .iter()
-            .map(|draw| draw.iter().filter_map(Tessellation::bandwidth).collect())
-            .filter(|draw: &Vec<f64>| !draw.is_empty())
-            .collect()
+        #[cfg(not(feature = "experimental"))]
+        return Vec::new();
+        #[cfg(feature = "experimental")]
+        {
+            self.posterior
+                .tessellations()
+                .iter()
+                .map(|draw| draw.iter().filter_map(Tessellation::bandwidth).collect())
+                .filter(|draw: &Vec<f64>| !draw.is_empty())
+                .collect()
+        }
     }
 
     /// sigma per kept draw under a model with a global sampled sigma^2

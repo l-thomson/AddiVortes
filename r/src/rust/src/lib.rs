@@ -61,6 +61,12 @@ fn draw_matrix(draws: &[Vec<f64>]) -> RMatrix<f64> {
     RMatrix::new_matrix(draws.len(), n_cols, |row, col| draws[row][col])
 }
 
+/// An R logical vector as the core's event flags; `NA` is rejected on
+/// the R side.
+fn flags(events: &Logicals) -> Vec<bool> {
+    events.iter().map(|flag| flag.is_true()).collect()
+}
+
 /// A whole non-negative double as the core's `u64` seed.
 fn seed(seed: f64) -> Result<u64> {
     if !seed.is_finite() || seed < 0.0 || seed.fract() != 0.0 || seed > 9_007_199_254_740_992.0 {
@@ -215,6 +221,52 @@ fn core_log_lik(
     Ok(draw_matrix(&draws))
 }
 
+/// Pointwise survival log-likelihood under the AFT model, one row per
+/// draw.
+#[extendr]
+fn core_log_lik_survival(
+    state: ExternalPtr<FittedHandle>,
+    x: RMatrix<f64>,
+    times: &[f64],
+    events: Logicals,
+) -> Result<RMatrix<f64>> {
+    let draws = state
+        .inner
+        .log_likelihood_survival(&design(&x)?, times, &flags(&events))
+        .map_err(core_error)?;
+    Ok(draw_matrix(&draws))
+}
+
+/// Pointwise interval log-likelihood under the interval-censored model,
+/// one row per draw.
+#[extendr]
+fn core_log_lik_interval_censored(
+    state: ExternalPtr<FittedHandle>,
+    x: RMatrix<f64>,
+    lower: &[f64],
+    upper: &[f64],
+) -> Result<RMatrix<f64>> {
+    let draws = state
+        .inner
+        .log_likelihood_interval_censored(&design(&x)?, lower, upper)
+        .map_err(core_error)?;
+    Ok(draw_matrix(&draws))
+}
+
+/// Posterior-mean category probabilities under the ordinal model, one
+/// row per row of `x` and one column per category.
+#[extendr]
+fn core_predict_probs(state: ExternalPtr<FittedHandle>, x: RMatrix<f64>) -> Result<RMatrix<f64>> {
+    let rows = state
+        .inner
+        .predict_category_probabilities(&design(&x)?)
+        .map_err(core_error)?;
+    let n_cols = rows.first().map_or(0, Vec::len);
+    Ok(RMatrix::new_matrix(rows.len(), n_cols, |row, col| {
+        rows[row][col]
+    }))
+}
+
 /// The posterior mean beside a central interval, `n_rows` by 3 (fit,
 /// lower, upper), from one traversal of the draws.
 #[extendr]
@@ -247,6 +299,22 @@ fn core_sigma(state: ExternalPtr<FittedHandle>) -> Result<Vec<f64>> {
     Ok(state.inner.sigma())
 }
 
+/// The per-draw quantities the experimental models sample: the error
+/// degrees of freedom, the interior cutpoints, the soft-membership
+/// bandwidths, the DART inclusion weights and their concentration. Each
+/// is empty under a model that does not sample it.
+#[extendr]
+fn core_posterior_draws(state: ExternalPtr<FittedHandle>) -> Result<List> {
+    let fitted = &state.inner;
+    Ok(list!(
+        df = fitted.posterior().dfs().to_vec(),
+        cutpoint = draw_matrix(fitted.cutpoint_draws()),
+        bandwidth = draw_matrix(&fitted.bandwidth_draws()),
+        inclusion_weight = draw_matrix(fitted.inclusion_weight_draws()),
+        concentration = fitted.concentration_draws().to_vec()
+    ))
+}
+
 /// The per-draw ensemble summaries and the covariate inclusion shares.
 #[extendr]
 fn core_diagnostics(state: ExternalPtr<FittedHandle>) -> Result<List> {
@@ -263,7 +331,6 @@ fn core_diagnostics(state: ExternalPtr<FittedHandle>) -> Result<List> {
 struct SamplerHandle {
     inner: RefCell<Option<thiessen::Sampler>>,
     data: thiessen::Data,
-    y: RefCell<Vec<f64>>,
 }
 
 fn finished() -> Error {
@@ -285,11 +352,28 @@ impl SamplerHandle {
     fn take(&self) -> Result<thiessen::Sampler> {
         self.inner.borrow_mut().take().ok_or_else(finished)
     }
+
+    /// A handle over a constructed sampler.
+    fn new(inner: thiessen::Sampler, data: thiessen::Data) -> ExternalPtr<Self> {
+        ExternalPtr::new(SamplerHandle {
+            inner: RefCell::new(Some(inner)),
+            data,
+        })
+    }
 }
 
-/// Construct a sampler on the seed the core derives for chain `chain`, so
-/// driving the configured schedule by hand reproduces that chain of a fit
-/// bit for bit.
+/// The seed the core derives for chain `chain` of `seed_value`, so
+/// driving the configured schedule by hand reproduces that chain of a
+/// fit bit for bit.
+fn chain_seed(seed_value: f64, chain: i32) -> Result<u64> {
+    Ok(thiessen::chain_seed(
+        seed(seed_value)?,
+        chain.max(0) as usize,
+    ))
+}
+
+/// Construct a sampler over a plain response on the seed of chain
+/// `chain`.
 #[extendr]
 fn core_sampler_new(
     config_json: &str,
@@ -300,13 +384,57 @@ fn core_sampler_new(
 ) -> Result<ExternalPtr<SamplerHandle>> {
     let config = config(config_json)?;
     let data = design(&x)?;
-    let chain = thiessen::chain_seed(seed(seed_value)?, chain.max(0) as usize);
-    let inner = thiessen::Sampler::new(&config, &data, y, chain).map_err(core_error)?;
-    Ok(ExternalPtr::new(SamplerHandle {
-        inner: RefCell::new(Some(inner)),
-        data,
-        y: RefCell::new(y.to_vec()),
-    }))
+    let inner = thiessen::Sampler::new(&config, &data, y, chain_seed(seed_value, chain)?)
+        .map_err(core_error)?;
+    Ok(SamplerHandle::new(inner, data))
+}
+
+/// Construct a sampler for the AFT model over `times` and `events` on
+/// the seed of chain `chain`.
+#[extendr]
+fn core_sampler_new_aft(
+    config_json: &str,
+    x: RMatrix<f64>,
+    times: &[f64],
+    events: Logicals,
+    seed_value: f64,
+    chain: i32,
+) -> Result<ExternalPtr<SamplerHandle>> {
+    let config = config(config_json)?;
+    let data = design(&x)?;
+    let inner = thiessen::Sampler::aft(
+        &config,
+        &data,
+        times,
+        &flags(&events),
+        chain_seed(seed_value, chain)?,
+    )
+    .map_err(core_error)?;
+    Ok(SamplerHandle::new(inner, data))
+}
+
+/// Construct a sampler for the interval-censored model over the bound
+/// pairs on the seed of chain `chain`.
+#[extendr]
+fn core_sampler_new_interval_censored(
+    config_json: &str,
+    x: RMatrix<f64>,
+    lower: &[f64],
+    upper: &[f64],
+    seed_value: f64,
+    chain: i32,
+) -> Result<ExternalPtr<SamplerHandle>> {
+    let config = config(config_json)?;
+    let data = design(&x)?;
+    let inner = thiessen::Sampler::interval_censored(
+        &config,
+        &data,
+        lower,
+        upper,
+        chain_seed(seed_value, chain)?,
+    )
+    .map_err(core_error)?;
+    Ok(SamplerHandle::new(inner, data))
 }
 
 /// Run `n` sweeps of the Gibbs loop.
@@ -368,9 +496,33 @@ fn core_sampler_n_kept(sampler: ExternalPtr<SamplerHandle>) -> Result<i32> {
 /// Replace the response on the caller's scale.
 #[extendr]
 fn core_sampler_set_response(sampler: ExternalPtr<SamplerHandle>, y: &[f64]) -> Result<()> {
-    sampler.live_mut()?.set_response(y).map_err(core_error)?;
-    *sampler.y.borrow_mut() = y.to_vec();
-    Ok(())
+    sampler.live_mut()?.set_response(y).map_err(core_error)
+}
+
+/// Replace the AFT model's times and event indicator.
+#[extendr]
+fn core_sampler_set_aft_response(
+    sampler: ExternalPtr<SamplerHandle>,
+    times: &[f64],
+    events: Logicals,
+) -> Result<()> {
+    sampler
+        .live_mut()?
+        .set_aft_response(times, &flags(&events))
+        .map_err(core_error)
+}
+
+/// Replace the interval-censored model's bound pairs.
+#[extendr]
+fn core_sampler_set_interval_censored_response(
+    sampler: ExternalPtr<SamplerHandle>,
+    lower: &[f64],
+    upper: &[f64],
+) -> Result<()> {
+    sampler
+        .live_mut()?
+        .set_interval_censored_response(lower, upper)
+        .map_err(core_error)
 }
 
 /// The current mean function at the training rows, caller scale.
@@ -386,7 +538,8 @@ fn core_sampler_noise_variances(sampler: ExternalPtr<SamplerHandle>) -> Result<V
 }
 
 /// The fitted model from the kept draws of every sampler, their chains
-/// pooled, predicting on `threads` threads. Consumes the samplers.
+/// pooled, predicting on `threads` threads, with the response the
+/// in-sample fit is measured against. Consumes the samplers.
 #[extendr]
 fn core_finish(samplers: List, threads: i32) -> Result<List> {
     let handles = samplers
@@ -396,12 +549,15 @@ fn core_finish(samplers: List, threads: i32) -> Result<List> {
     let first = handles
         .first()
         .ok_or_else(|| Error::Other("a fit needs at least one chain".to_string()))?;
+    // The in-sample fit is measured against the response the core reports,
+    // the observed values under the models whose working response is
+    // replaced by latents.
+    let y = first.live()?.training_response();
     let mut samplers = Vec::with_capacity(handles.len());
     for handle in &handles {
         samplers.push(handle.take()?);
     }
     let n_chains = samplers.len() as i32;
-    let y = first.y.borrow();
     let (mut fitted, fitted_values) =
         thiessen::Fitted::pool_samplers(samplers, &first.data, &y).map_err(core_error)?;
     fitted.set_threads(threads.max(1) as usize);
@@ -414,6 +570,7 @@ fn core_finish(samplers: List, threads: i32) -> Result<List> {
         in_sample_rmse = fitted.in_sample_rmse(),
         warnings = warnings,
         fitted_values = fitted_values,
+        y = y,
         state = ExternalPtr::new(FittedHandle { inner: fitted })
     ))
 }
@@ -435,13 +592,21 @@ extendr_module! {
     fn core_predict_interval;
     fn core_sigma;
     fn core_log_lik;
+    fn core_log_lik_survival;
+    fn core_log_lik_interval_censored;
+    fn core_predict_probs;
+    fn core_posterior_draws;
     fn core_diagnostics;
     fn core_sampler_new;
+    fn core_sampler_new_aft;
+    fn core_sampler_new_interval_censored;
     fn core_sampler_step;
     fn core_samplers_advance;
     fn core_sampler_keep;
     fn core_sampler_n_kept;
     fn core_sampler_set_response;
+    fn core_sampler_set_aft_response;
+    fn core_sampler_set_interval_censored_response;
     fn core_sampler_fitted_values;
     fn core_sampler_noise_variances;
     fn core_finish;

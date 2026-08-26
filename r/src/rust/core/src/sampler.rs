@@ -1515,6 +1515,22 @@ impl Sampler {
             .collect()
     }
 
+    /// The response the in-sample fit is measured against, caller scale:
+    /// the observed values where the working response is replaced by
+    /// latents (the labels under the probit and ordinal models, the log
+    /// times under the AFT model, the working completions under the
+    /// tobit and interval-censored models), the working response
+    /// otherwise. The target of [`finish`](Self::finish)'s in-sample
+    /// RMSE.
+    pub fn training_response(&self) -> Vec<f64> {
+        self.outcome
+            .observed_response()
+            .unwrap_or(&self.y)
+            .iter()
+            .map(|&v| self.scaler.unscale_y(v))
+            .collect()
+    }
+
     /// The variance of y_i given f at each training row, caller scale:
     /// sigma^2 under the Gaussian model, 1 under the probit model (the
     /// latent scale), s^2(x_i) under the heteroscedastic model.

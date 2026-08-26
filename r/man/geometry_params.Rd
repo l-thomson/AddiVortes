@@ -4,21 +4,36 @@
 \alias{geometry_params}
 \title{The covariate space of the ensembles}
 \usage{
-geometry_params(metric = NULL, sigma_c = 0.8)
+geometry_params(
+  metric = NULL,
+  sigma_c = 0.8,
+  membership = NULL,
+  precision = NULL
+)
 }
 \arguments{
 \item{metric}{The metric of each covariate column, in column order: a
 list whose entries are \code{"euclidean"}, \code{"categorical"}, or
 \code{list(spherical = list(sphere = i))} for one coordinate of the sphere
-labelled \code{i}, its latitudes first and its longitude last, in radians.
-\code{NULL}, the default, is Euclidean on every column. Entries are
-matched case-sensitively, so \code{"Euclidean"} is rejected. Non-Euclidean
-columns are not scaled.}
+labelled \code{i}, its latitudes first and its longitude last, in radians;
+or one of the experimental entries below. \code{NULL}, the default, is
+Euclidean on every column. Entries are matched case-sensitively, so
+\code{"Euclidean"} is rejected. Non-Euclidean columns are not scaled.}
 
 \item{sigma_c}{Prior and proposal standard deviation sigma_c of a
 centre coordinate. A Euclidean column is min-max scaled to
 [-0.5, 0.5] over its training range inside the sampler and \code{sigma_c}
 is on that scale, so 1 is the full range of a column. Default 0.8.}
+
+\item{membership}{How an observation belongs to a tessellation's
+cells: \code{"hard"}, the published rule, or \code{\link[=soft_membership]{soft_membership()}}. \code{NULL},
+the default, is \code{"hard"}.}
+
+\item{precision}{The precision matrix of the Mahalanobis metric, a
+square numeric matrix over the columns of the encoded design,
+required exactly when an entry of \code{metric} is \code{"mahalanobis"}; it is
+checked at fit to be symmetric and positive definite. \code{NULL}, the
+default, is none. Experimental, as the metric it serves.}
 }
 \value{
 An object of class \code{"geometry_params"}.
@@ -26,9 +41,25 @@ An object of class \code{"geometry_params"}.
 \description{
 The covariate space of the ensembles
 }
+\section{Experimental metrics}{
+
+
+The entries beyond \code{"euclidean"}, \code{"categorical"} and the sphere are
+compiled only into a core built with its \code{experimental} feature (see
+\link{experimental_outcomes} for the policy) and are named as the core
+stores them: \code{list(minkowski = list(p = 3))} for the Minkowski distance
+of order p >= 1, \code{"manhattan"} for its order-1 case, \code{"cosine"} for the
+cosine distance, \code{list(gower = list(kind = "numeric"))} or
+\code{list(gower = list(kind = "categorical"))} for one column of the Gower
+distance, and \code{"mahalanobis"} for the Mahalanobis distance under
+\code{precision}. The Minkowski, Manhattan, cosine and Gower entries take a
+\code{group} label (default 0), \code{list(cosine = list(group = 1))}, so the
+columns sharing a label form one composite distance.
+}
+
 \examples{
 geometry_params(metric = list("euclidean", "categorical"))
 }
 \seealso{
-\code{\link[=term_params]{term_params()}}
+\code{\link[=term_params]{term_params()}}, \code{\link[=soft_membership]{soft_membership()}}
 }

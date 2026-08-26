@@ -5,6 +5,7 @@
 \alias{print.term_params}
 \alias{print.geometry_params}
 \alias{print.structure_params}
+\alias{print.cell_params}
 \alias{print.general_params}
 \title{Print a parameter group}
 \usage{
@@ -14,11 +15,13 @@
 
 \method{print}{structure_params}(x, ...)
 
+\method{print}{cell_params}(x, ...)
+
 \method{print}{general_params}(x, ...)
 }
 \arguments{
 \item{x}{A parameter group from \code{\link[=term_params]{term_params()}}, \code{\link[=geometry_params]{geometry_params()}},
-\code{\link[=structure_params]{structure_params()}} or \code{\link[=general_params]{general_params()}}.}
+\code{\link[=structure_params]{structure_params()}}, \code{\link[=cell_params]{cell_params()}} or \code{\link[=general_params]{general_params()}}.}
 
 \item{...}{Ignored.}
 }
