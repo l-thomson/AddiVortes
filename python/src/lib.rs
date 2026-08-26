@@ -49,6 +49,38 @@ fn response(y: &PyReadonlyArray1<'_, f64>) -> Vec<f64> {
     y.as_array().iter().copied().collect()
 }
 
+fn flags(events: &PyReadonlyArray1<'_, bool>) -> Vec<bool> {
+    events.as_array().iter().copied().collect()
+}
+
+/// Run the configured schedule over `samplers`, one chain each, over at
+/// most `n_threads` threads, and pool their draws. The in-sample fit is
+/// measured against the response the core reports, the observed values
+/// under the models whose working response is replaced by latents.
+fn run_chains(
+    config: &thiessen::Config,
+    data: &thiessen::Data,
+    mut samplers: Vec<thiessen::Sampler>,
+    n_threads: usize,
+) -> PyResult<Fitted> {
+    let y = samplers
+        .first()
+        .ok_or_else(|| ThiessenError::new_err("a fit needs at least one chain"))?
+        .training_response();
+    let schedule = &config.general_params;
+    let mut chains: Vec<&mut thiessen::Sampler> = samplers.iter_mut().collect();
+    thiessen::Sampler::advance_all(
+        &mut chains,
+        schedule.burn_in,
+        schedule.draws,
+        schedule.thinning,
+        n_threads,
+    );
+    let (mut inner, _) = thiessen::Fitted::pool_samplers(samplers, data, &y).map_err(core_error)?;
+    inner.set_threads(n_threads);
+    Ok(Fitted { inner })
+}
+
 fn matrix<'py>(py: Python<'py>, rows: Vec<Vec<f64>>) -> PyResult<Bound<'py, PyArray2<f64>>> {
     PyArray2::from_vec2(py, &rows).map_err(|e| ThiessenError::new_err(e.to_string()))
 }
@@ -186,9 +218,85 @@ impl Fitted {
         matrix(py, draws)
     }
 
+    /// Pointwise survival log-likelihood per draw under the AFT model,
+    /// draw-major.
+    fn log_likelihood_survival<'py>(
+        &self,
+        py: Python<'py>,
+        x: PyReadonlyArray2<'_, f64>,
+        times: PyReadonlyArray1<'_, f64>,
+        events: PyReadonlyArray1<'_, bool>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let draws = self
+            .inner
+            .log_likelihood_survival(&design(&x)?, &response(&times), &flags(&events))
+            .map_err(core_error)?;
+        matrix(py, draws)
+    }
+
+    /// Pointwise interval log-likelihood per draw under the
+    /// interval-censored model, draw-major.
+    fn log_likelihood_interval_censored<'py>(
+        &self,
+        py: Python<'py>,
+        x: PyReadonlyArray2<'_, f64>,
+        lower: PyReadonlyArray1<'_, f64>,
+        upper: PyReadonlyArray1<'_, f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let draws = self
+            .inner
+            .log_likelihood_interval_censored(&design(&x)?, &response(&lower), &response(&upper))
+            .map_err(core_error)?;
+        matrix(py, draws)
+    }
+
+    /// Posterior-mean category probabilities under the ordinal model,
+    /// `n_rows` by the category count.
+    fn predict_category_probabilities<'py>(
+        &self,
+        py: Python<'py>,
+        x: PyReadonlyArray2<'_, f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let rows = self
+            .inner
+            .predict_category_probabilities(&design(&x)?)
+            .map_err(core_error)?;
+        matrix(py, rows)
+    }
+
     /// sigma per kept draw; empty outside the Gaussian model.
     fn sigma<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         PyArray1::from_vec(py, self.inner.sigma())
+    }
+
+    /// The error degrees of freedom per kept draw; empty outside the
+    /// Student-t model with a grid.
+    fn dfs<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_vec(py, self.inner.posterior().dfs().to_vec())
+    }
+
+    /// The interior cutpoints per kept draw, draw-major; empty outside
+    /// the ordinal model and at two categories.
+    fn cutpoints<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        matrix(py, self.inner.cutpoint_draws().to_vec())
+    }
+
+    /// The soft-membership bandwidth of each mean tessellation per kept
+    /// draw, draw-major; empty under hard membership.
+    fn bandwidths<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        matrix(py, self.inner.bandwidth_draws())
+    }
+
+    /// The sampled inclusion weight of each covariate per kept draw,
+    /// draw-major; empty outside the DART inclusion prior.
+    fn inclusion_weights<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        matrix(py, self.inner.inclusion_weight_draws().to_vec())
+    }
+
+    /// The Dirichlet concentration per kept draw; empty outside the DART
+    /// inclusion prior.
+    fn concentrations<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_vec(py, self.inner.concentration_draws().to_vec())
     }
 
     /// Mean cells per mean tessellation, per kept draw.
@@ -261,7 +369,6 @@ impl Fitted {
 pub struct Sampler {
     inner: Option<thiessen::Sampler>,
     data: thiessen::Data,
-    y: Vec<f64>,
 }
 
 impl Sampler {
@@ -289,13 +396,61 @@ impl Sampler {
     ) -> PyResult<Self> {
         let config = config(config_json)?;
         let data = design(&x)?;
-        let y = response(&y);
         let chain = thiessen::chain_seed(seed, 0);
-        let inner = thiessen::Sampler::new(&config, &data, &y, chain).map_err(core_error)?;
+        let inner =
+            thiessen::Sampler::new(&config, &data, &response(&y), chain).map_err(core_error)?;
         Ok(Self {
             inner: Some(inner),
             data,
-            y,
+        })
+    }
+
+    /// A sampler for the AFT model over the times and event flags, on the
+    /// chain-0 seed of `seed`.
+    #[staticmethod]
+    fn aft(
+        config_json: &str,
+        x: PyReadonlyArray2<'_, f64>,
+        times: PyReadonlyArray1<'_, f64>,
+        events: PyReadonlyArray1<'_, bool>,
+        seed: u64,
+    ) -> PyResult<Self> {
+        let config = config(config_json)?;
+        let data = design(&x)?;
+        let chain = thiessen::chain_seed(seed, 0);
+        let inner =
+            thiessen::Sampler::aft(&config, &data, &response(&times), &flags(&events), chain)
+                .map_err(core_error)?;
+        Ok(Self {
+            inner: Some(inner),
+            data,
+        })
+    }
+
+    /// A sampler for the interval-censored model over the bound pairs, on
+    /// the chain-0 seed of `seed`.
+    #[staticmethod]
+    fn interval_censored(
+        config_json: &str,
+        x: PyReadonlyArray2<'_, f64>,
+        lower: PyReadonlyArray1<'_, f64>,
+        upper: PyReadonlyArray1<'_, f64>,
+        seed: u64,
+    ) -> PyResult<Self> {
+        let config = config(config_json)?;
+        let data = design(&x)?;
+        let chain = thiessen::chain_seed(seed, 0);
+        let inner = thiessen::Sampler::interval_censored(
+            &config,
+            &data,
+            &response(&lower),
+            &response(&upper),
+            chain,
+        )
+        .map_err(core_error)?;
+        Ok(Self {
+            inner: Some(inner),
+            data,
         })
     }
 
@@ -316,10 +471,31 @@ impl Sampler {
 
     /// Replace the response on the caller's scale.
     fn set_response(&mut self, y: PyReadonlyArray1<'_, f64>) -> PyResult<()> {
-        let values = response(&y);
-        self.live_mut()?.set_response(&values).map_err(core_error)?;
-        self.y = values;
-        Ok(())
+        self.live_mut()?
+            .set_response(&response(&y))
+            .map_err(core_error)
+    }
+
+    /// Replace the times and event flags under the AFT model.
+    fn set_aft_response(
+        &mut self,
+        times: PyReadonlyArray1<'_, f64>,
+        events: PyReadonlyArray1<'_, bool>,
+    ) -> PyResult<()> {
+        self.live_mut()?
+            .set_aft_response(&response(&times), &flags(&events))
+            .map_err(core_error)
+    }
+
+    /// Replace the bound pairs under the interval-censored model.
+    fn set_interval_censored_response(
+        &mut self,
+        lower: PyReadonlyArray1<'_, f64>,
+        upper: PyReadonlyArray1<'_, f64>,
+    ) -> PyResult<()> {
+        self.live_mut()?
+            .set_interval_censored_response(&response(&lower), &response(&upper))
+            .map_err(core_error)
     }
 
     /// The current mean function at the training rows, caller scale.
@@ -345,14 +521,17 @@ impl Sampler {
             .map_err(|e| ThiessenError::new_err(e.to_string()))
     }
 
-    /// The fitted model from the kept draws, pooled as a one-chain fit.
+    /// The fitted model from the kept draws, pooled as a one-chain fit;
+    /// the in-sample fit is measured against the response the core
+    /// reports.
     fn finish(&mut self) -> PyResult<Fitted> {
         let sampler = self
             .inner
             .take()
             .ok_or_else(|| ThiessenError::new_err("the sampler is finished"))?;
-        let (inner, _) = thiessen::Fitted::pool_samplers(vec![sampler], &self.data, &self.y)
-            .map_err(core_error)?;
+        let y = sampler.training_response();
+        let (inner, _) =
+            thiessen::Fitted::pool_samplers(vec![sampler], &self.data, &y).map_err(core_error)?;
         Ok(Fitted { inner })
     }
 }
@@ -387,6 +566,78 @@ fn fit(
         })
         .map_err(core_error)?;
     Ok(Fitted { inner })
+}
+
+/// Fit the AFT model to `x`, the times and the event flags: as [`fit`],
+/// through [`thiessen::Sampler::aft`] per chain. The GIL is released for
+/// the fit.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn fit_aft(
+    py: Python<'_>,
+    config_json: &str,
+    x: PyReadonlyArray2<'_, f64>,
+    times: PyReadonlyArray1<'_, f64>,
+    events: PyReadonlyArray1<'_, bool>,
+    seed: u64,
+    n_chains: usize,
+    n_threads: usize,
+) -> PyResult<Fitted> {
+    let config = config(config_json)?;
+    let data = design(&x)?;
+    let times = response(&times);
+    let events = flags(&events);
+    py.detach(|| {
+        let samplers = (0..n_chains.max(1))
+            .map(|k| {
+                thiessen::Sampler::aft(
+                    &config,
+                    &data,
+                    &times,
+                    &events,
+                    thiessen::chain_seed(seed, k),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(core_error)?;
+        run_chains(&config, &data, samplers, n_threads.max(1))
+    })
+}
+
+/// Fit the interval-censored model to `x` and the bound pairs: as
+/// [`fit`], through [`thiessen::Sampler::interval_censored`] per chain.
+/// The GIL is released for the fit.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn fit_interval_censored(
+    py: Python<'_>,
+    config_json: &str,
+    x: PyReadonlyArray2<'_, f64>,
+    lower: PyReadonlyArray1<'_, f64>,
+    upper: PyReadonlyArray1<'_, f64>,
+    seed: u64,
+    n_chains: usize,
+    n_threads: usize,
+) -> PyResult<Fitted> {
+    let config = config(config_json)?;
+    let data = design(&x)?;
+    let lower = response(&lower);
+    let upper = response(&upper);
+    py.detach(|| {
+        let samplers = (0..n_chains.max(1))
+            .map(|k| {
+                thiessen::Sampler::interval_censored(
+                    &config,
+                    &data,
+                    &lower,
+                    &upper,
+                    thiessen::chain_seed(seed, k),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(core_error)?;
+        run_chains(&config, &data, samplers, n_threads.max(1))
+    })
 }
 
 /// The configuration of a saved model, the rest of the payload ignored.
@@ -448,6 +699,8 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Fitted>()?;
     m.add_class::<Sampler>()?;
     m.add_function(wrap_pyfunction!(fit, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_aft, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_interval_censored, m)?)?;
     m.add_function(wrap_pyfunction!(fitted_from_json, m)?)?;
     m.add_function(wrap_pyfunction!(validate_config, m)?)?;
     m.add_function(wrap_pyfunction!(default_config, m)?)?;
