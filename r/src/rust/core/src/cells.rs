@@ -50,8 +50,9 @@ mod sealed {
     impl Sealed for super::InverseGammaCells {}
 }
 
-/// Per-cell sufficient statistics.
-pub(crate) trait Stats {
+/// Per-cell sufficient statistics, accumulated into a buffer that keeps
+/// its capacity across proposals.
+pub(crate) trait Stats: Clone + std::fmt::Debug + Default {
     /// Whether every cell holds at least one observation. Counted, not
     /// weighed: under prior-only sampling every weight is zero and the
     /// occupancy rule must not change.
@@ -85,10 +86,12 @@ pub(crate) trait CellFamily: sealed::Sealed {
     fn total(&self, input: f64, partial: &Partial, own: f64) -> f64;
 
     /// Statistics of the tessellation's `b` cells from the assignment
-    /// and the partials; `x` and the tessellation supply the offsets of
-    /// the linear basis and are unused otherwise. Under soft membership
-    /// `weights` holds the row-major n x b membership weights; occupancy
-    /// still counts the hard assignment.
+    /// and the partials, replacing whatever `out` held; `x` and the
+    /// tessellation supply the offsets of the linear basis and are
+    /// unused otherwise. Under soft membership `weights` holds the
+    /// row-major n x b membership weights; occupancy still counts the
+    /// hard assignment.
+    #[allow(clippy::too_many_arguments)]
     fn accumulate(
         &self,
         x: &Data,
@@ -97,7 +100,24 @@ pub(crate) trait CellFamily: sealed::Sealed {
         partials: &[Partial],
         b: usize,
         weights: Option<&[f64]>,
-    ) -> Self::Stats;
+        out: &mut Self::Stats,
+    );
+
+    /// [`accumulate`](Self::accumulate) into a fresh buffer.
+    #[cfg(test)]
+    fn accumulated(
+        &self,
+        x: &Data,
+        tessellation: &Tessellation,
+        cells: &[usize],
+        partials: &[Partial],
+        b: usize,
+        weights: Option<&[f64]>,
+    ) -> Self::Stats {
+        let mut out = Self::Stats::default();
+        self.accumulate(x, tessellation, cells, partials, b, weights, &mut out);
+        out
+    }
 
     /// The T-dependent part of the integrated log-likelihood.
     fn log_marginal(
@@ -106,9 +126,24 @@ pub(crate) trait CellFamily: sealed::Sealed {
         #[cfg(test)] breakage: crate::broken::Breakage,
     ) -> f64;
 
-    /// Posterior draw of every cell, ascending cell index: the values,
-    /// and the row-major slopes of the linear basis (empty otherwise).
-    fn draw(&self, stats: &Self::Stats, rng: &mut Rng) -> (Vec<f64>, Vec<f64>);
+    /// Posterior draw of every cell, ascending cell index, replacing
+    /// `values`, and the row-major slopes of the linear basis replacing
+    /// `slopes` (emptied otherwise).
+    fn draw(
+        &self,
+        stats: &Self::Stats,
+        rng: &mut Rng,
+        values: &mut Vec<f64>,
+        slopes: &mut Vec<f64>,
+    );
+
+    /// [`draw`](Self::draw) into fresh vectors.
+    #[cfg(test)]
+    fn draw_owned(&self, stats: &Self::Stats, rng: &mut Rng) -> (Vec<f64>, Vec<f64>) {
+        let (mut values, mut slopes) = (Vec::new(), Vec::new());
+        self.draw(stats, rng, &mut values, &mut slopes);
+        (values, slopes)
+    }
 
     /// The per-cell constant of the integrated likelihood, the term a
     /// fixture drops to mis-price the cell-count moves; zero for a family
@@ -136,7 +171,7 @@ pub(crate) struct GaussianCells {
 /// the whole tessellation, q = b, A = W' D W and b = W' D r with W the
 /// n x b membership weights and D the observation precisions; `count`
 /// still holds the hard assignment for the occupancy rule.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct GaussianStats {
     pub count: Vec<usize>,
     pub weight: Vec<f64>,
@@ -176,45 +211,47 @@ impl CellFamily for GaussianCells {
         partials: &[Partial],
         b: usize,
         weights: Option<&[f64]>,
-    ) -> GaussianStats {
+        out: &mut GaussianStats,
+    ) {
+        out.count.clear();
+        out.count.resize(b, 0);
+        out.weight.clear();
+        out.sum.clear();
+        out.a.clear();
+        out.bvec.clear();
         if let Some(w) = weights {
-            let mut count = vec![0_usize; b];
-            let mut a = vec![0.0; b * b];
-            let mut bvec = vec![0.0; b];
+            out.soft = true;
+            out.q = b;
+            out.a.resize(b * b, 0.0);
+            out.bvec.resize(b, 0.0);
             for (i, (&cell, p)) in cells.iter().zip(partials).enumerate() {
-                count[cell] += 1;
+                out.count[cell] += 1;
                 let row = &w[i * b..(i + 1) * b];
                 for r in 0..b {
-                    bvec[r] += p.weight * p.value * row[r];
+                    out.bvec[r] += p.weight * p.value * row[r];
                     for c in 0..b {
-                        a[r * b + c] += p.weight * row[r] * row[c];
+                        out.a[r * b + c] += p.weight * row[r] * row[c];
                     }
                 }
             }
-            return GaussianStats {
-                count,
-                weight: Vec::new(),
-                sum: Vec::new(),
-                soft: true,
-                q: b,
-                a,
-                bvec,
-            };
+            return;
         }
-        let mut count = vec![0_usize; b];
-        let mut weight = vec![0.0; b];
-        let mut sum = vec![0.0; b];
-        let (q, mut a, mut bvec) = if self.linear {
-            let q = tessellation.n_dims() + 1;
-            (q, vec![0.0; b * q * q], vec![0.0; b * q])
+        let q = if self.linear {
+            tessellation.n_dims() + 1
         } else {
-            (0, Vec::new(), Vec::new())
+            0
         };
+        out.soft = false;
+        out.q = q;
+        out.weight.resize(b, 0.0);
+        out.sum.resize(b, 0.0);
+        out.a.resize(b * q * q, 0.0);
+        out.bvec.resize(b * q, 0.0);
         let mut u = vec![0.0; q];
         for (i, (&cell, p)) in cells.iter().zip(partials).enumerate() {
-            count[cell] += 1;
-            weight[cell] += p.weight;
-            sum[cell] += p.weight * p.value;
+            out.count[cell] += 1;
+            out.weight[cell] += p.weight;
+            out.sum[cell] += p.weight * p.value;
             if self.linear {
                 u[0] = 1.0;
                 let row = x.row(i);
@@ -223,21 +260,12 @@ impl CellFamily for GaussianCells {
                     u[j + 1] = row[dim] - centre[j];
                 }
                 for r in 0..q {
-                    bvec[cell * q + r] += p.weight * p.value * u[r];
+                    out.bvec[cell * q + r] += p.weight * p.value * u[r];
                     for c in 0..q {
-                        a[cell * q * q + r * q + c] += p.weight * u[r] * u[c];
+                        out.a[cell * q * q + r * q + c] += p.weight * u[r] * u[c];
                     }
                 }
             }
-        }
-        GaussianStats {
-            count,
-            weight,
-            sum,
-            soft: false,
-            q,
-            a,
-            bvec,
         }
     }
 
@@ -308,7 +336,15 @@ impl CellFamily for GaussianCells {
     /// standard normals per cell, coefficient order. Under soft
     /// membership one joint b-dimensional draw, b standard normals in
     /// cell order.
-    fn draw(&self, stats: &GaussianStats, rng: &mut Rng) -> (Vec<f64>, Vec<f64>) {
+    fn draw(
+        &self,
+        stats: &GaussianStats,
+        rng: &mut Rng,
+        values: &mut Vec<f64>,
+        slopes: &mut Vec<f64>,
+    ) {
+        values.clear();
+        slopes.clear();
         if stats.soft {
             let q = stats.q;
             let mut p_mat = stats.a.clone();
@@ -326,27 +362,20 @@ impl CellFamily for GaussianCells {
                 }
                 z[r] /= p_mat[r * q + r];
             }
-            let values = theta.iter().zip(&z).map(|(&m, &e)| m + e).collect();
-            return (values, Vec::new());
+            values.extend(theta.iter().zip(&z).map(|(&m, &e)| m + e));
+            return;
         }
         if !self.linear {
-            let values = stats
-                .weight
-                .iter()
-                .zip(&stats.sum)
-                .map(|(&w, &s)| {
-                    let den = 1.0 + w * self.sigma_mu_sq;
-                    let mean = self.sigma_mu_sq * s / den;
-                    let var = self.sigma_mu_sq / den;
-                    mean + var.sqrt() * standard_normal(rng)
-                })
-                .collect();
-            return (values, Vec::new());
+            values.extend(stats.weight.iter().zip(&stats.sum).map(|(&w, &s)| {
+                let den = 1.0 + w * self.sigma_mu_sq;
+                let mean = self.sigma_mu_sq * s / den;
+                let var = self.sigma_mu_sq / den;
+                mean + var.sqrt() * standard_normal(rng)
+            }));
+            return;
         }
         let q = stats.q;
         let b = stats.count.len();
-        let mut values = Vec::with_capacity(b);
-        let mut slopes = Vec::with_capacity(b * (q - 1));
         for cell in 0..b {
             let mut p_mat = stats.a[cell * q * q..(cell + 1) * q * q].to_vec();
             for r in 0..q {
@@ -368,7 +397,6 @@ impl CellFamily for GaussianCells {
                 slopes.push(theta[r] + z[r]);
             }
         }
-        (values, slopes)
     }
 
     #[cfg(test)]
@@ -429,7 +457,7 @@ pub(crate) struct InverseGammaCells {
 }
 
 /// Per-cell (n_k, E_k) accumulated in ascending observation order.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct InverseGammaStats {
     pub count: Vec<usize>,
     pub sum: Vec<f64>,
@@ -483,14 +511,16 @@ impl CellFamily for InverseGammaCells {
         partials: &[Partial],
         b: usize,
         _weights: Option<&[f64]>,
-    ) -> InverseGammaStats {
-        let mut count = vec![0_usize; b];
-        let mut sum = vec![0.0; b];
+        out: &mut InverseGammaStats,
+    ) {
+        out.count.clear();
+        out.count.resize(b, 0);
+        out.sum.clear();
+        out.sum.resize(b, 0.0);
         for (&cell, p) in cells.iter().zip(partials) {
-            count[cell] += 1;
-            sum[cell] += p.weight * p.value * p.value;
+            out.count[cell] += 1;
+            out.sum[cell] += p.weight * p.value * p.value;
         }
-        InverseGammaStats { count, sum }
     }
 
     fn log_marginal(
@@ -508,17 +538,19 @@ impl CellFamily for InverseGammaCells {
     }
 
     /// One gamma draw per cell.
-    fn draw(&self, stats: &InverseGammaStats, rng: &mut Rng) -> (Vec<f64>, Vec<f64>) {
-        let values = stats
-            .count
-            .iter()
-            .zip(&stats.sum)
-            .map(|(&n, &e)| {
-                let (shape, rate) = self.posterior(n, e);
-                1.0 / rng::gamma(shape, 1.0 / rate, rng)
-            })
-            .collect();
-        (values, Vec::new())
+    fn draw(
+        &self,
+        stats: &InverseGammaStats,
+        rng: &mut Rng,
+        values: &mut Vec<f64>,
+        slopes: &mut Vec<f64>,
+    ) {
+        values.clear();
+        slopes.clear();
+        values.extend(stats.count.iter().zip(&stats.sum).map(|(&n, &e)| {
+            let (shape, rate) = self.posterior(n, e);
+            1.0 / rng::gamma(shape, 1.0 / rate, rng)
+        }));
     }
 
     #[cfg(test)]
@@ -569,7 +601,7 @@ mod tests {
             sigma_mu_sq: 0.25,
             linear: false,
         };
-        let stats = family.accumulate(
+        let stats = family.accumulated(
             &ctx.0,
             &ctx.1,
             &[0, 1, 1],
@@ -581,7 +613,7 @@ mod tests {
         assert_eq!(stats.sum, vec![2.0, 10.0, 0.0]);
         assert!(!stats.all_occupied());
         assert!(family
-            .accumulate(
+            .accumulated(
                 &ctx.0,
                 &ctx.1,
                 &[0, 1],
@@ -616,7 +648,7 @@ mod tests {
             sigma_mu_sq: 0.25,
             linear: false,
         };
-        let stats = family.accumulate(
+        let stats = family.accumulated(
             &ctx.0,
             &ctx.1,
             &[0; 4],
@@ -699,10 +731,10 @@ mod tests {
             let cells_b: Vec<usize> = (0..n).map(|_| uniform_index(b, &mut rng)).collect();
             let partials = gaussian_partials(&r, &w);
             let delta = family.log_marginal(
-                &family.accumulate(&ctx.0, &ctx.1, &cells_a, &partials, b, None),
+                &family.accumulated(&ctx.0, &ctx.1, &cells_a, &partials, b, None),
                 crate::broken::Breakage::None,
             ) - family.log_marginal(
-                &family.accumulate(&ctx.0, &ctx.1, &cells_b, &partials, b, None),
+                &family.accumulated(&ctx.0, &ctx.1, &cells_b, &partials, b, None),
                 crate::broken::Breakage::None,
             );
             let dense = dense_log_density(&r, &w, &cells_a, family.sigma_mu_sq)
@@ -719,7 +751,7 @@ mod tests {
             sigma_mu_sq: 0.25,
             linear: false,
         };
-        let stats = family.accumulate(
+        let stats = family.accumulated(
             &ctx.0,
             &ctx.1,
             &[0; 4],
@@ -729,7 +761,9 @@ mod tests {
         );
         let mut rng = chain_rng(1);
         let n = 40_000;
-        let draws: Vec<f64> = (0..n).map(|_| family.draw(&stats, &mut rng).0[0]).collect();
+        let draws: Vec<f64> = (0..n)
+            .map(|_| family.draw_owned(&stats, &mut rng).0[0])
+            .collect();
         let mean = draws.iter().sum::<f64>() / n as f64;
         let var = draws.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / n as f64;
         close(mean, 1.0 / 3.0, 0.01);
@@ -775,7 +809,7 @@ mod tests {
                 rest: 1.0,
             },
         ];
-        let stats = family.accumulate(&ctx.0, &ctx.1, &[0, 1, 1], &partials, 3, None);
+        let stats = family.accumulated(&ctx.0, &ctx.1, &[0, 1, 1], &partials, 3, None);
         assert_eq!(stats.count, vec![1, 2, 0]);
         assert_eq!(stats.sum, vec![2.0, 2.0 + 9.0, 0.0]);
         assert!(!stats.all_occupied());
@@ -847,10 +881,10 @@ mod tests {
             let cells_a: Vec<usize> = (0..n).map(|_| uniform_index(b, &mut rng)).collect();
             let cells_b: Vec<usize> = (0..n).map(|_| uniform_index(b, &mut rng)).collect();
             let delta = family.log_marginal(
-                &family.accumulate(&ctx.0, &ctx.1, &cells_a, &partials, b, None),
+                &family.accumulated(&ctx.0, &ctx.1, &cells_a, &partials, b, None),
                 crate::broken::Breakage::None,
             ) - family.log_marginal(
-                &family.accumulate(&ctx.0, &ctx.1, &cells_b, &partials, b, None),
+                &family.accumulated(&ctx.0, &ctx.1, &cells_b, &partials, b, None),
                 crate::broken::Breakage::None,
             );
             let reference = quadrature_log_density(&e, &s, &cells_a, b, family.nu, family.lambda)
@@ -871,7 +905,7 @@ mod tests {
             rest: 2.0,
         };
         let partials = [partial(2.0), partial(1.0), partial(1.0)];
-        let stats = family.accumulate(&ctx.0, &ctx.1, &[0, 1, 1], &partials, 2, None);
+        let stats = family.accumulated(&ctx.0, &ctx.1, &[0, 1, 1], &partials, 2, None);
         assert_eq!(stats.sum, vec![2.0, 1.0]);
         let normaliser = 1.5 * 0.6_f64.ln() - libm::lgamma(1.5);
         let cell = |n: f64, e: f64| {
@@ -905,12 +939,12 @@ mod tests {
             weight: 0.5,
             rest: 2.0,
         }; 4];
-        let stats = family.accumulate(&ctx.0, &ctx.1, &[0; 4], &partials, 1, None);
+        let stats = family.accumulated(&ctx.0, &ctx.1, &[0; 4], &partials, 1, None);
         assert_eq!(stats.sum, vec![2.0]);
         let mut rng = chain_rng(2);
         let n = 100_000;
         let mean = (0..n)
-            .map(|_| family.draw(&stats, &mut rng).0[0])
+            .map(|_| family.draw_owned(&stats, &mut rng).0[0])
             .sum::<f64>()
             / n as f64;
         close(mean, 1.6 / 2.5, 0.01);
@@ -921,7 +955,7 @@ mod tests {
         // Inv-Gamma(1.5, 0.6) has no finite variance; its reciprocal is
         // Gamma(1.5, rate 0.6) with mean 2.5.
         let mean = (0..n)
-            .map(|_| 1.0 / prior.draw(&stats, &mut rng).0[0])
+            .map(|_| 1.0 / prior.draw_owned(&stats, &mut rng).0[0])
             .sum::<f64>()
             / n as f64;
         close(mean, 2.5, 0.05);
@@ -972,7 +1006,7 @@ mod tests {
                     .collect();
                 let cells: Vec<usize> = (0..n).map(|_| uniform_index(b, &mut rng)).collect();
                 let partials = gaussian_partials(&r, &w);
-                let soft = family.accumulate(
+                let soft = family.accumulated(
                     &ctx.0,
                     &ctx.1,
                     &cells,
@@ -980,7 +1014,7 @@ mod tests {
                     b,
                     Some(&indicator(&cells, b)),
                 );
-                let hard = family.accumulate(&ctx.0, &ctx.1, &cells, &partials, b, None);
+                let hard = family.accumulated(&ctx.0, &ctx.1, &cells, &partials, b, None);
                 assert_eq!(soft.all_occupied(), hard.all_occupied());
                 close(
                     family.log_marginal(&soft, crate::broken::Breakage::None),
@@ -1060,10 +1094,10 @@ mod tests {
                 let w_a = random_weights(n, b, &mut rng);
                 let w_b = random_weights(n, b, &mut rng);
                 let delta = family.log_marginal(
-                    &family.accumulate(&ctx.0, &ctx.1, &cells, &partials, b, Some(&w_a)),
+                    &family.accumulated(&ctx.0, &ctx.1, &cells, &partials, b, Some(&w_a)),
                     crate::broken::Breakage::None,
                 ) - family.log_marginal(
-                    &family.accumulate(&ctx.0, &ctx.1, &cells, &partials, b, Some(&w_b)),
+                    &family.accumulated(&ctx.0, &ctx.1, &cells, &partials, b, Some(&w_b)),
                     crate::broken::Breakage::None,
                 );
                 let dense = dense_log_density(&r, &prec, &w_a, b, family.sigma_mu_sq)
@@ -1083,7 +1117,7 @@ mod tests {
             let w = [0.9, 0.1, 0.3, 0.7, 0.5, 0.5, 0.8, 0.2];
             let cells = [0, 1, 0, 0];
             let partials = gaussian_partials(&values, &prec);
-            let stats = family.accumulate(&ctx.0, &ctx.1, &cells, &partials, 2, Some(&w));
+            let stats = family.accumulated(&ctx.0, &ctx.1, &cells, &partials, 2, Some(&w));
             let (mut a11, mut a12, mut a22, mut b1, mut b2) = (0.0, 0.0, 0.0, 0.0, 0.0);
             for i in 0..4 {
                 a11 += prec[i] * w[i * 2] * w[i * 2];
@@ -1102,7 +1136,7 @@ mod tests {
             let (mut m0, mut m1) = (0.0, 0.0);
             let (mut v0, mut v1, mut c01) = (0.0, 0.0, 0.0);
             for _ in 0..n {
-                let (values, slopes) = family.draw(&stats, &mut rng);
+                let (values, slopes) = family.draw_owned(&stats, &mut rng);
                 assert!(slopes.is_empty());
                 m0 += values[0];
                 m1 += values[1];
@@ -1126,7 +1160,7 @@ mod tests {
             let cells = [0, 1, 0, 0];
             let partials = gaussian_partials(&[1.0, 0.2, 0.4, 0.9], &[1.0; 4]);
             let w = indicator(&cells, 2);
-            let stats = family.accumulate(&ctx.0, &ctx.1, &cells, &partials, 2, Some(&w));
+            let stats = family.accumulated(&ctx.0, &ctx.1, &cells, &partials, 2, Some(&w));
             let whole = family.log_marginal(&stats, crate::broken::Breakage::None);
             let broken =
                 family.log_marginal(&stats, crate::broken::Breakage::DroppedSoftDeterminant);
@@ -1169,11 +1203,11 @@ mod tests {
                 linear: false,
             };
             let a = linear.log_marginal(
-                &linear.accumulate(&x, &t, &cells, &partials, 1, None),
+                &linear.accumulated(&x, &t, &cells, &partials, 1, None),
                 crate::broken::Breakage::None,
             );
             let b = constant.log_marginal(
-                &constant.accumulate(&x, &t, &cells, &partials, 1, None),
+                &constant.accumulated(&x, &t, &cells, &partials, 1, None),
                 crate::broken::Breakage::None,
             );
             close(a, b, 1e-12);
@@ -1187,7 +1221,7 @@ mod tests {
             let partials = gaussian_partials(&[1.0, 0.2], &[1.0, 1.0]);
             let cells = [0, 0];
             let family = linear_family();
-            let stats = family.accumulate(&x, &t, &cells, &partials, 1, None);
+            let stats = family.accumulated(&x, &t, &cells, &partials, 1, None);
             // A = [[2, 0], [0, 0.5]], b = (1.2, 0.4).
             let sigma = 0.25_f64;
             let p11 = 2.0 + 1.0 / sigma;
@@ -1208,7 +1242,7 @@ mod tests {
             let partials = gaussian_partials(&[1.0, 0.2, 0.4, 0.9], &[1.0, 2.0, 1.0, 1.0]);
             let cells = [0, 0, 0, 0];
             let family = linear_family();
-            let stats = family.accumulate(&x, &t, &cells, &partials, 1, None);
+            let stats = family.accumulated(&x, &t, &cells, &partials, 1, None);
             // The closed-form posterior mean, from the normal equations.
             let offsets = [0.5, -0.5, -0.25, 0.25];
             let values = [1.0, 0.2, 0.4, 0.9];
@@ -1231,7 +1265,7 @@ mod tests {
             let (mut m0, mut m1) = (0.0, 0.0);
             let (mut v0, mut v1, mut c01) = (0.0, 0.0, 0.0);
             for _ in 0..n {
-                let (values, slopes) = family.draw(&stats, &mut rng);
+                let (values, slopes) = family.draw_owned(&stats, &mut rng);
                 m0 += values[0];
                 m1 += slopes[0];
                 v0 += values[0] * values[0];

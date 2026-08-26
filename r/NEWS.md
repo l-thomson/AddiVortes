@@ -85,6 +85,9 @@
   `src/rust/vendor.tar.xz`; `core_version()` reports the core version.
 * `predict(interval = )` takes the mean and the interval from one pass
   over the draws rather than two; the values are unchanged.
+* The sampler keeps the working buffers of a backfitting step across
+  steps rather than allocating them per proposal; sampled values are
+  unchanged.
 * `thiessen(threads = )` runs the chains of a fit on up to that many
   threads, each chain on one thread with its own generator, and
   `predict()` on the fit, intervals included, splits its rows over the
