@@ -121,8 +121,9 @@ Everything else the core crate adds sits behind its `experimental` Cargo
 feature, which a released wheel does not enable, so a configuration or a
 saved model naming such an option is rejected with `RequiresFeatureError`.
 The further outcome families each have a constructor in
-`thiessen.families`, so naming one is portable, and an extension accepting
-them is built from source:
+`thiessen.families`, and the component options a constructor in
+`thiessen.params` or an entry of `GeometryParams(metric=)`, so naming one
+is portable, and an extension accepting them is built from source:
 
 ```sh
 pip install ./python --config-settings build-args="--features experimental"
@@ -132,8 +133,28 @@ pip install ./python --config-settings build-args="--features experimental"
 use. Such a build is outside semantic versioning: the configuration and
 the drawn values of a gated item may change in any release. The table of
 experimental items and their status is `docs/experimental.md` in the
-repository. A graduated item is exposed here as any other option, with no
-separate opt-in.
+repository, with the Python entry point of each. A graduated item is
+exposed here as any other option, with no separate opt-in.
+
+## The response selects the family
+
+`Model(outcome=None)`, the default, takes the family from the shape of
+`y` at `fit`, the rule of `glm` with "not declared" representable: a
+numeric array is the Gaussian family, a boolean array or a two-category
+pandas `Categorical` the probit family, an ordered `Categorical` the
+ordinal family (its categories the category count), a structured array
+of a boolean event indicator and a time, the layout of
+`sksurv.util.Surv.from_arrays`, the AFT family, and an array of shape
+`(n, 2)` of lower and upper bounds the interval-censored family, an
+infinite bound for one-sided censoring and an equal pair for an exact
+value. A named family is checked against the shape and a mismatch is an
+error naming both; the probit family also takes the numbers 0 and 1 and
+the ordinal family integer codes 0 to K - 1 with `categories` named.
+`FittedModel.log_likelihood`, `to_inference_data`, `Sampler` and
+`Sampler.set_response` take the same shapes. `FittedModel.predict_proba`
+gives the ordinal category probabilities, and `dfs`, `cutpoints`,
+`bandwidths`, `inclusion_weights` and `concentrations` the posterior
+quantities the experimental items sample, empty where none is.
 
 ## References
 

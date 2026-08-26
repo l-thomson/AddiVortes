@@ -24,7 +24,7 @@ from sklearn.utils.multiclass import type_of_target, unique_labels
 from sklearn.utils.validation import check_is_fitted, validate_data
 
 from . import _native
-from ._arrays import _as_response
+from ._arrays import _as_numeric
 from ._config import _config_json
 from ._convergence import _warn_convergence
 from ._encoding import Encoding, columns_of, resolve_mask
@@ -170,7 +170,7 @@ class _BaseAddiVortes(BaseEstimator):
         self._fitted: _native.Fitted = _native.fit(
             self._config(self._encoding.core_metric),
             design,
-            _as_response(y),
+            _as_numeric(y),
             seed,
             chains,
             threads,

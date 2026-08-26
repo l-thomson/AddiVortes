@@ -10,6 +10,32 @@ the core crate version the package builds against, which
 
 ### Added
 
+- The response selects the outcome family where `Model` and `Sampler`
+  name none: a numeric array the Gaussian family, a boolean array or a
+  two-category pandas `Categorical` the probit family, an ordered
+  `Categorical` the ordinal family, a structured survival array in the
+  scikit-survival layout the AFT family and an `(n, 2)` array of bounds
+  the interval-censored family. A named family is checked against the
+  shape and a mismatch raises `ValueError` naming both. `log_likelihood`,
+  `to_inference_data` and `Sampler.set_response` take the same shapes.
+  `ordinal(categories=None)`, the new default, takes the count from the
+  categories.
+- Every row of `docs/experimental.md` is reachable in an extension built
+  with the core's `experimental` feature: the Minkowski, Manhattan,
+  cosine, Gower and Mahalanobis metrics and the per-column composite as
+  entries of `GeometryParams(metric=)`, `GeometryParams(membership=
+  soft_membership())` and `precision=`, `StructureParams(inclusion=
+  weighted_inclusion() | dart_inclusion())`, and
+  `TermParams(cell=CellParams(basis="linear"))`. A default build accepts
+  the published defaults and raises `RequiresFeatureError` for the rest.
+- `FittedModel.predict_proba` (the ordinal category probabilities),
+  `dfs`, `cutpoints`, `bandwidths`, `inclusion_weights` and
+  `concentrations`, empty where the model samples none; `to_inference_data`
+  carries them as `df`, `cutpoint`, `bandwidth`, `inclusion_weight` and
+  `concentration`, its predictive replicates follow each family's own
+  observation model, and `observed_data` carries `time` and `event` or
+  `lower` and `upper` for a censored response.
+
 - `Model.fit(n_threads=)` and the estimators' `n_jobs` (joblib convention,
   `None` one thread, -1 every core): the chains of a fit run on up to that
   many threads, each chain on one thread with its own generator, and the

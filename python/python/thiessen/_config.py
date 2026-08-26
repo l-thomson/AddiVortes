@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 
 from ._params import Outcome
-from .params import MetricEntry, TermParams
+from .params import MetricEntry, TermParams, _metric_entry
 
 __all__ = ["_config_json"]
 
@@ -46,7 +46,7 @@ def _config_json(
 
     Parameters
     ----------
-    outcome : Gaussian, Probit or None
+    outcome : Outcome or None
         The outcome family; `None` takes the core's default.
     mean_params, variance_params : TermParams or None
         The two ensembles; `None` takes the core's defaults.
@@ -72,7 +72,7 @@ def _config_json(
     if outcome is not None and not isinstance(outcome, Outcome):
         raise TypeError(
             "outcome must be a family object from one of the family "
-            f"constructors, gaussian() or probit(); got {outcome!r}"
+            f"constructors, gaussian(), probit() and the rest; got {outcome!r}"
         )
     for name, group in (
         ("mean_params", mean_params),
@@ -84,7 +84,9 @@ def _config_json(
     mean = mean_params._core() if mean_params is not None else {}
     variance = variance_params._core() if variance_params is not None else {}
     if core_metric is not None:
-        mean.setdefault("geometry", {})["metric"] = list(core_metric)
+        mean.setdefault("geometry", {})["metric"] = [
+            _metric_entry(entry) for entry in core_metric
+        ]
     # The ensembles share one covariate space; the core requires the slots
     # to declare it identically while per-ensemble geometry awaits its
     # identification argument.

@@ -32,6 +32,22 @@ feature; a configuration naming one otherwise raises
 
 ::: thiessen.StructureParams
 
+::: thiessen.CellParams
+
+## Experimental component options
+
+Compiled only into an extension built with the core's `experimental`
+feature; a configuration naming one otherwise raises
+`RequiresFeatureError`. The experimental distance metrics are entries of
+`GeometryParams(metric=)` and the linear cell basis is
+`CellParams(basis="linear")`.
+
+::: thiessen.soft_membership
+
+::: thiessen.weighted_inclusion
+
+::: thiessen.dart_inclusion
+
 ## Model
 
 ::: thiessen.Model

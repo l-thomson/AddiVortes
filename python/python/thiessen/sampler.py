@@ -29,9 +29,17 @@ import numpy as np
 import numpy.typing as npt
 
 from . import _native
-from ._arrays import _as_design, _as_response
+from ._arrays import _as_design
 from ._config import _config_json
 from ._params import Outcome
+from ._response import (
+    _as_response,
+    _check_family,
+    _new_sampler,
+    _resolve_outcome,
+    _sampler_family,
+    _set_response,
+)
 from ._seed import SeedLike, _resolve_seed
 from .model import FittedModel
 from .params import TermParams
@@ -49,11 +57,15 @@ class Sampler:
     ----------
     X : array_like of shape (n_samples, n_features)
         The design, under the input-data contract of `thiessen.Model.fit`.
-    y : array_like of shape (n_samples,)
-        The response. Labels in {0, 1} under the probit family.
+    y : array_like
+        The response, in the shapes `thiessen.Model.fit` takes: a numeric
+        array, a boolean array or ``Categorical`` of labels, an ordered
+        ``Categorical``, a structured survival array or a two-column array
+        of bounds.
     outcome : Outcome, optional
         The outcome family, from a constructor of `thiessen.families`.
-        `None` takes the core's default.
+        `None` takes the family the response selects, as
+        `thiessen.Model.fit` does.
     mean_params : TermParams, optional
         The ensemble describing the average, as for `thiessen.Model`.
     variance_params : TermParams, optional
@@ -109,8 +121,9 @@ class Sampler:
         prior_only: bool = False,
         random_state: SeedLike = None,
     ) -> None:
+        response = _as_response(y)
         config = _config_json(
-            outcome,
+            _resolve_outcome(outcome, response),
             mean_params,
             variance_params,
             burn_in=0,
@@ -120,7 +133,7 @@ class Sampler:
         )
         seed = _resolve_seed(random_state)
         self.random_state = seed
-        self._sampler = _native.Sampler(config, _as_design(X), _as_response(y), seed)
+        self._sampler = _new_sampler(config, _as_design(X), response, seed)
 
     def step(self, n: int = 1) -> None:
         """Run `n` sweeps of the Gibbs loop.
@@ -162,16 +175,22 @@ class Sampler:
 
         Parameters
         ----------
-        y : array_like of shape (n_samples,)
-            The new response. Labels in {0, 1} under the probit family.
+        y : array_like
+            The new response, in the shape the constructor took for the
+            family: the times and event flags under the AFT family, the
+            bound pairs under the interval-censored family.
 
         Raises
         ------
         ThiessenError
             For a row-count mismatch, a non-finite value, a label outside
             {0, 1} under the probit family, or after `finish`.
+        ValueError
+            For a response the family does not take.
         """
-        self._sampler.set_response(_as_response(y))
+        response = _as_response(y)
+        _check_family(_sampler_family(self._sampler), response)
+        _set_response(self._sampler, response)
 
     def fitted_values(self) -> npt.NDArray[np.float64]:
         """Return the current mean function at the training rows.

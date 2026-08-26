@@ -16,6 +16,13 @@ in every build but a configuration naming one is rejected with
 versioning, its configuration and the values it draws may change in any
 release, and ``docs/experimental.md`` in the repository is the table of
 gated items.
+
+The response selects the family where `thiessen.Model` names none, and a
+named family is checked against the response: a numeric array is the
+Gaussian family, a boolean array or two-category ``Categorical`` the
+probit family, an ordered ``Categorical`` the ordinal family, a structured
+survival array the AFT family and a two-column array of bounds the
+interval-censored family.
 """
 
 from __future__ import annotations
@@ -183,9 +190,10 @@ class Ordinal(Outcome):
 
     Parameters
     ----------
-    categories : int, default=2
-        Number of ordered categories K, at least 2; the response holds
-        integer codes 0 to K - 1.
+    categories : int, optional
+        Number of ordered categories K, at least 2. `None` takes the
+        category count of an ordered ``Categorical`` response, and is an
+        error over integer codes.
     offset : float, optional
         The offset c. `None` resolves at fit to Phi^-1 of the share of
         rows above the first category.
@@ -196,7 +204,7 @@ class Ordinal(Outcome):
 
     def __init__(
         self,
-        categories: int = 2,
+        categories: int | None = None,
         offset: float | None = None,
         cutpoint_sd: float = 1.0,
     ) -> None:
@@ -372,10 +380,9 @@ def aft(nu: float = 6.0, q: float = 0.85) -> Aft:
 
     The lognormal accelerated failure time model (Wei 1992) for a
     right-censored time to event, the model of the BART package's
-    ``abart``. The times and the event indicator are data, not
-    parameters, and the fit entry points of this package take a plain
-    response, so a fit under this family is rejected until one taking a
-    censored time is added.
+    ``abart``. The response is a structured array of a boolean event
+    indicator and a time, the layout of ``sksurv.util.Surv.from_arrays``;
+    `predict` is on the log-time scale.
 
     Parameters
     ----------
@@ -402,10 +409,9 @@ def interval_censored(nu: float = 6.0, q: float = 0.85) -> IntervalCensored:
     """Return the interval-censored outcome family. Experimental.
 
     The interval-censoring observation scheme (Sun 2006) for a response
-    known only to lie between two row-specific bounds. The bounds are
-    data, not parameters, and the fit entry points of this package take a
-    plain response, so a fit under this family is rejected until one
-    taking a pair of bounds is added.
+    known only to lie between two row-specific bounds. The response is an
+    `(n, 2)` array of lower and upper bounds, an infinite bound for
+    one-sided censoring and an equal pair for an exact value.
 
     Parameters
     ----------
@@ -429,23 +435,25 @@ def interval_censored(nu: float = 6.0, q: float = 0.85) -> IntervalCensored:
 
 
 def ordinal(
-    categories: int = 2,
+    categories: int | None = None,
     offset: float | None = None,
     cutpoint_sd: float = 1.0,
 ) -> Ordinal:
     """Return the ordinal outcome family. Experimental.
 
     The ordered probit model of Albert and Chib (1993),
-    P(y <= k | x) = Phi(gamma_(k+1) - c - f(x)), for a response holding
-    integer codes 0 to K - 1. The latent variance is fixed at 1 and the
-    first cutpoint at 0 for identification, and the interior cutpoints
-    are drawn on the log-gap scale of Albert and Chib (2001). At K = 2
-    the model is `probit`.
+    P(y <= k | x) = Phi(gamma_(k+1) - c - f(x)), for an ordered
+    ``Categorical`` response or integer codes 0 to K - 1. The latent
+    variance is fixed at 1 and the first cutpoint at 0 for
+    identification, and the interior cutpoints are drawn on the log-gap
+    scale of Albert and Chib (2001). At K = 2 the model is `probit`.
+    `FittedModel.predict_proba` gives the category probabilities.
 
     Parameters
     ----------
-    categories : int, default=2
-        Number of ordered categories K, at least 2.
+    categories : int, optional
+        Number of ordered categories K, at least 2. `None` takes the
+        category count of an ordered ``Categorical`` response.
     offset : float, optional
         The offset c. `None` resolves at fit to Phi^-1 of the share of
         rows above the first category.

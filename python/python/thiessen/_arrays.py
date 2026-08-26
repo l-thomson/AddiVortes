@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-__all__ = ["_as_design", "_as_response"]
+__all__ = ["_as_design", "_as_numeric"]
 
 
 def _as_design(x: Any) -> npt.NDArray[np.float64]:
@@ -34,7 +34,7 @@ def _as_design(x: Any) -> npt.NDArray[np.float64]:
     return design
 
 
-def _as_response(y: Any) -> npt.NDArray[np.float64]:
+def _as_numeric(y: Any) -> npt.NDArray[np.float64]:
     """Coerce `y` to a one-dimensional C-contiguous float64 array.
 
     Parameters

@@ -16,11 +16,18 @@ import numpy as np
 import numpy.typing as npt
 
 from . import _native
-from ._arrays import _as_design, _as_response
+from ._arrays import _as_design
 from ._config import _config_json
 from ._convergence import _warn_convergence
 from ._inference import _to_inference_data
 from ._params import Outcome, Params
+from ._response import (
+    _as_response,
+    _check_family,
+    _fit,
+    _log_likelihood,
+    _resolve_outcome,
+)
 from ._seed import SeedLike, _resolve_seed
 from .params import TermParams
 
@@ -39,8 +46,14 @@ class Model(Params):
     ----------
     outcome : Outcome, optional
         The outcome family, from `gaussian`, `probit` or one of the
-        experimental constructors of `thiessen.families`. Default
-        ``gaussian()``.
+        experimental constructors of `thiessen.families`. `None`, the
+        default, takes the family the response selects at `fit`: the
+        Gaussian family for a numeric array, the probit family for a
+        boolean array or a two-category ``Categorical``, the ordinal
+        family for an ordered ``Categorical``, the AFT family for a
+        structured survival array and the interval-censored family for a
+        two-column array of bounds. A named family is checked against the
+        response and a mismatch is an error naming both.
     mean_params : TermParams, optional
         The ensemble describing the average. Default ``TermParams()``,
         whose tessellation count resolves to 200.
@@ -148,8 +161,17 @@ class Model(Params):
             training range; spherical columns are coordinates in radians
             and categorical columns are integer level codes, neither
             scaled.
-        y : array_like of shape (n_samples,)
-            The response. Labels in {0, 1} under the probit family.
+        y : array_like
+            The response, one observation per row of `X`: a numeric array
+            of shape (n_samples,); a boolean array or a two-category
+            pandas ``Categorical`` of labels, or the numbers 0 and 1 under
+            a named probit family; an ordered ``Categorical``, or integer
+            codes 0 to K - 1 under a named ordinal family; a structured
+            array of a boolean event indicator and a time, the layout of
+            ``sksurv.util.Surv.from_arrays``, under the AFT family; or an
+            array of shape (n_samples, 2) of lower and upper bounds, an
+            infinite bound for one-sided censoring and an equal pair for
+            an exact value, under the interval-censored family.
         random_state : int, numpy.random.Generator, numpy.random.RandomState or None
             The seed. `None` draws fresh entropy. The resolved seed is on
             the returned object.
@@ -182,14 +204,25 @@ class Model(Params):
             missing or non-finite values, a constant response, a constant
             column, fewer than two rows, or a row-count mismatch.
         ValueError
-            If `n_chains` or `n_threads` is not a positive integer.
+            If `n_chains` or `n_threads` is not a positive integer, or
+            for a response the named family does not take.
         """
         design = _as_design(X)
         response = _as_response(y)
+        outcome = _resolve_outcome(self.outcome, response)
+        config = _config_json(
+            outcome,
+            self.mean_params,
+            self.variance_params,
+            self.burn_in,
+            self.draws,
+            self.thinning,
+            self.prior_only,
+        )
         seed = _resolve_seed(random_state)
         chains = _resolve_chains(n_chains)
         threads = _resolve_threads(n_threads)
-        fitted = _native.fit(self._json(), design, response, seed, chains, threads)
+        fitted = _fit(config, design, response, seed, chains, threads)
         _emit_warnings(fitted, stacklevel=3)
         _warn_convergence(fitted, chains, design, stacklevel=3)
         return FittedModel(fitted, seed, chains, threads)
@@ -321,9 +354,36 @@ class FittedModel:
         -------
         numpy.ndarray of shape (n_samples,)
             The posterior mean of f(x), or of P(y = 1 | x) under the probit
-            family.
+            family. Under the AFT family it is f(x) on the log-time scale,
+            under the tobit and interval-censored families the uncensored
+            f(x), and under the ordinal family the expected category.
         """
         return self._fitted.predict(_as_design(X))
+
+    def predict_proba(self, X: Any) -> npt.NDArray[np.float64]:
+        """Return the posterior mean category probabilities at each row.
+
+        The ordinal family only; the scikit-learn name, one column per
+        category. Experimental, with the family.
+
+        Parameters
+        ----------
+        X : array_like of shape (n_samples, n_features)
+            The design.
+
+        Returns
+        -------
+        numpy.ndarray of shape (n_samples, n_categories)
+            Each row sums to one.
+
+        Raises
+        ------
+        ThiessenError
+            Under a family other than ordinal.
+        RequiresFeatureError
+            In a build without the core's ``experimental`` feature.
+        """
+        return self._fitted.predict_category_probabilities(_as_design(X))
 
     def predict_draws(self, X: Any) -> npt.NDArray[np.float64]:
         """Return the quantity of `predict` for every kept draw.
@@ -451,15 +511,22 @@ class FittedModel:
         ----------
         X : array_like of shape (n_samples, n_features)
             The design.
-        y : array_like of shape (n_samples,)
-            The response.
+        y : array_like
+            The response, in the shape `Model.fit` took for the family.
 
         Returns
         -------
         numpy.ndarray of shape (n_draws, n_samples)
             Draw-major.
+
+        Raises
+        ------
+        ValueError
+            For a response the fitted family does not take.
         """
-        return self._fitted.log_likelihood(_as_design(X), _as_response(y))
+        response = _as_response(y)
+        _check_family(self.model, response)
+        return _log_likelihood(self._fitted, _as_design(X), response)
 
     def sigma(self) -> npt.NDArray[np.float64]:
         """Return sigma per kept draw.
@@ -472,6 +539,72 @@ class FittedModel:
             gives s^2(x).
         """
         return self._fitted.sigma()
+
+    def dfs(self) -> npt.NDArray[np.float64]:
+        """Return the error degrees of freedom per kept draw.
+
+        Experimental, with the Student-t family.
+
+        Returns
+        -------
+        numpy.ndarray of shape (n_draws,)
+            Empty outside the Student-t family with a grid of degrees of
+            freedom, where none is sampled.
+        """
+        return self._fitted.dfs()
+
+    def cutpoints(self) -> npt.NDArray[np.float64]:
+        """Return the interior cutpoints per kept draw.
+
+        Experimental, with the ordinal family.
+
+        Returns
+        -------
+        numpy.ndarray of shape (n_draws, n_categories - 2)
+            Increasing within a draw, on the latent scale; the first
+            cutpoint is fixed at zero and not returned. Empty outside the
+            ordinal family and at two categories.
+        """
+        return self._fitted.cutpoints()
+
+    def bandwidths(self) -> npt.NDArray[np.float64]:
+        """Return the soft-membership bandwidth of each mean tessellation.
+
+        Experimental, with `soft_membership`.
+
+        Returns
+        -------
+        numpy.ndarray of shape (n_draws, n_tessellations)
+            On the scaled covariate space. Empty under hard membership.
+        """
+        return self._fitted.bandwidths()
+
+    def inclusion_weights(self) -> npt.NDArray[np.float64]:
+        """Return the sampled inclusion weight of each covariate per draw.
+
+        Experimental, with `dart_inclusion`. The prior weight the sampler
+        drew, the quantity Linero (2018) reports; not
+        `variable_inclusion_proportions`, which counts the usage the
+        tessellations realised.
+
+        Returns
+        -------
+        numpy.ndarray of shape (n_draws, n_features)
+            Each row sums to one. Empty outside the DART prior.
+        """
+        return self._fitted.inclusion_weights()
+
+    def concentrations(self) -> npt.NDArray[np.float64]:
+        """Return the Dirichlet concentration theta per kept draw.
+
+        Experimental, with `dart_inclusion`.
+
+        Returns
+        -------
+        numpy.ndarray of shape (n_draws,)
+            Empty outside the DART prior.
+        """
+        return self._fitted.concentrations()
 
     def cell_counts(self) -> npt.NDArray[np.float64]:
         """Return the mean cells per mean tessellation, per kept draw.
@@ -511,34 +644,42 @@ class FittedModel:
         X : array_like of shape (n_samples, n_features)
             The rows the observation dimension indexes, usually the training
             design.
-        y : array_like of shape (n_samples,)
-            The observed response.
+        y : array_like
+            The observed response, in the shape `Model.fit` took.
 
         Returns
         -------
         xarray.DataTree
             The `posterior` group carries `mu`, the mean function per draw,
-            with `sigma` under the Gaussian model only, and the per-draw cell
-            and dimension counts; `posterior_predictive` and `log_likelihood`
-            carry `y`; `observed_data` carries the response.
+            the per-draw cell and dimension counts, `sigma` under a model
+            with a global sampled scale, and, where the model samples
+            them, `df`, `cutpoint`, `bandwidth`, `inclusion_weight` and
+            `concentration`; `posterior_predictive` and `log_likelihood`
+            carry `y`; `observed_data` carries the response as `y`, or as
+            `time` and `event` under the AFT family and `lower` and
+            `upper` under the interval-censored family.
 
         Raises
         ------
         ImportError
             If arviz is not installed.
         ValueError
-            If `X` and `y` disagree on the number of rows.
+            If `X` and `y` disagree on the number of rows, or `y` is not
+            in the fitted family's shape.
 
         Notes
         -----
         The chain dimension of every group holds the chains of the fit. The
         predictive replicates are drawn in numpy from the fit's resolved
-        seed rather than by the core.
+        seed rather than by the core, each family under its own
+        observation model.
         """
+        response = _as_response(y)
+        _check_family(self.model, response)
         return _to_inference_data(
             self._fitted,
             _as_design(X),
-            _as_response(y),
+            response,
             self.random_state,
             self._n_chains,
         )
