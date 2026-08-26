@@ -306,13 +306,9 @@ pub(crate) struct Assignment {
     soft: Option<Vec<f64>>,
 }
 
-/// Add to `out[i]` the squared distance of row `i` of `x` to centre `k` of
-/// `t`, one active column at a time in `dims` order over the column-major
-/// design: the sums [`Geometry::key`] forms row by row, in the same order,
-/// for an all-Euclidean geometry.
-/// Adds the key of every row of `x` to every centre of `t` under an
-/// all-Euclidean geometry into the zeroed `b` by `n` column-major `keys`.
-/// `x` must have at least one row.
+/// The key of every row of `x` against every centre of `t` under an
+/// all-Euclidean geometry into the `b` by `n` column-major `keys`. `x`
+/// must have at least one row.
 fn add_all_keys(x: &Data, t: &Tessellation, keys: &mut [f64]) {
     let n = x.n_rows();
     for (k, out) in keys.chunks_exact_mut(n).enumerate() {
@@ -336,16 +332,73 @@ fn nearest_in(all: &[f64], n: usize, i: usize) -> (usize, f64) {
     (best_cell, best)
 }
 
+/// [`Tessellation::nearest`] for an all-Euclidean geometry: the same sum
+/// in the same order without the per-column metric dispatch.
+fn nearest_plain(t: &Tessellation, row: &[f64]) -> (usize, f64) {
+    let d = t.dims.len();
+    let mut best = f64::INFINITY;
+    let mut best_cell = 0;
+    for (k, centre) in t.centres.chunks_exact(d).enumerate() {
+        let mut key = 0.0;
+        for (&dim, &c) in t.dims.iter().zip(centre) {
+            let diff = row[dim] - c;
+            key += diff * diff;
+        }
+        if key < best {
+            best = key;
+            best_cell = k;
+        }
+    }
+    (best_cell, best)
+}
+
+/// The squared distance of every row of `x` to centre `k` of `t` into
+/// `out`, one active column at a time in `dims` order over the
+/// column-major design: the sums [`Geometry::key`] forms row by row, in
+/// the same order, for an all-Euclidean geometry.
 fn add_centre_keys(x: &Data, t: &Tessellation, k: usize, out: &mut [f64]) {
     let n = x.n_rows();
     let columns = x.columns();
-    for (&dim, &c) in t.dims.iter().zip(t.centre(k)) {
+    let out = &mut out[..n];
+    for (j, (&dim, &c)) in t.dims.iter().zip(t.centre(k)).enumerate() {
         let column = &columns[dim * n..(dim + 1) * n];
-        for (o, &v) in out.iter_mut().zip(column) {
-            let diff = v - c;
-            *o += diff * diff;
+        if j == 0 {
+            for i in 0..n {
+                let diff = column[i] - c;
+                out[i] = diff * diff;
+            }
+        } else {
+            for i in 0..n {
+                let diff = column[i] - c;
+                out[i] += diff * diff;
+            }
         }
     }
+}
+
+/// Replace each row's winner with centre `k` where `column` holds a
+/// smaller key: the strict comparison of [`nearest_in`], as selects
+/// rather than a branch because the comparison is a coin flip per row.
+/// The cell takes a mask rather than a select: on baseline x86-64 LLVM
+/// turns a select of the index back into a branch and the loop stops
+/// vectorising.
+fn take_nearer(column: &[f64], k: usize, cells: &mut [usize], best: &mut [f64]) {
+    let n = cells.len();
+    let (column, best) = (&column[..n], &mut best[..n]);
+    for i in 0..n {
+        let nearer = column[i] < best[i];
+        let mask = (nearer as usize).wrapping_neg();
+        best[i] = if nearer { column[i] } else { best[i] };
+        cells[i] ^= (cells[i] ^ k) & mask;
+    }
+}
+
+/// `scratch` with at least `len` elements, its contents unspecified.
+fn key_buffer(scratch: &mut Vec<f64>, len: usize) -> &mut [f64] {
+    if scratch.len() < len {
+        scratch.resize(len, 0.0);
+    }
+    &mut scratch[..len]
 }
 
 impl Clone for Assignment {
@@ -385,14 +438,14 @@ impl Assignment {
         out.cells.clear();
         out.keys.clear();
         if t.tau.is_none() && geometry.is_plain() && n > 0 {
-            scratch.clear();
-            scratch.resize(t.n_cells() * n, 0.0);
-            add_all_keys(x, t, scratch);
+            let b = t.n_cells();
+            let keys = key_buffer(scratch, b * n);
+            add_all_keys(x, t, keys);
             out.soft = None;
-            for i in 0..n {
-                let (cell, key) = nearest_in(scratch, n, i);
-                out.cells.push(cell);
-                out.keys.push(key);
+            out.cells.resize(n, 0);
+            out.keys.extend_from_slice(&keys[..n]);
+            for k in 1..b {
+                take_nearer(&keys[k * n..(k + 1) * n], k, &mut out.cells, &mut out.keys);
             }
             return;
         }
@@ -472,15 +525,9 @@ impl Assignment {
                 let added = new.n_cells() - 1;
                 out.clone_from(self);
                 if self.soft.is_none() && geometry.is_plain() {
-                    scratch.clear();
-                    scratch.resize(n, 0.0);
-                    add_centre_keys(x, new, added, scratch);
-                    for (i, &key) in scratch.iter().enumerate() {
-                        if key < out.keys[i] {
-                            out.keys[i] = key;
-                            out.cells[i] = added;
-                        }
-                    }
+                    let keys = key_buffer(scratch, n);
+                    add_centre_keys(x, new, added, keys);
+                    take_nearer(keys, added, &mut out.cells, &mut out.keys);
                     return;
                 }
                 if let Some(soft) = &mut out.soft {
@@ -500,12 +547,11 @@ impl Assignment {
             Delta::CentreMoved(moved) => {
                 out.clone_from(self);
                 if self.soft.is_none() && geometry.is_plain() {
-                    scratch.clear();
-                    scratch.resize(n, 0.0);
-                    add_centre_keys(x, new, moved, scratch);
-                    for (i, &key) in scratch.iter().enumerate() {
+                    let keys = key_buffer(scratch, n);
+                    add_centre_keys(x, new, moved, keys);
+                    for (i, &key) in keys.iter().enumerate() {
                         if self.cells[i] == moved {
-                            let (cell, key) = new.nearest(x.row(i), geometry);
+                            let (cell, key) = nearest_plain(new, x.row(i));
                             out.cells[i] = cell;
                             out.keys[i] = key;
                         } else if key < self.keys[i]
@@ -543,9 +589,14 @@ impl Assignment {
                 if let Some(soft) = &mut out.soft {
                     soft.drain(removed * n..(removed + 1) * n);
                 }
+                let plain = geometry.is_plain();
                 for i in 0..n {
                     if self.cells[i] == removed {
-                        let (cell, key) = new.nearest(x.row(i), geometry);
+                        let (cell, key) = if plain {
+                            nearest_plain(new, x.row(i))
+                        } else {
+                            new.nearest(x.row(i), geometry)
+                        };
                         out.cells[i] = cell;
                         out.keys[i] = key;
                     } else if self.cells[i] > removed {

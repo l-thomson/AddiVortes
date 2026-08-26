@@ -135,6 +135,11 @@
   the current tessellation's cell statistics in the pass that forms
   them, with each cell's statistics in one record; sampled values are
   unchanged and a sweep executes about a fifth fewer instructions.
+* The reassignment of the training rows after a dimension move takes
+  the nearest centre of every row in one branch-free pass per centre,
+  and the rows that lose their centre under a change or removal take a
+  plain Euclidean search; sampled values are unchanged and a sweep runs
+  about a fifth faster on one machine.
 * `thiessen(threads = )` runs the chains of a fit on up to that many
   threads, each chain on one thread with its own generator, and
   `predict()` on the fit, intervals included, splits its rows over the
