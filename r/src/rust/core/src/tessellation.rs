@@ -7,7 +7,7 @@ use crate::geometry::Geometry;
 
 /// One tessellation: b centres in a d-dimensional subspace of the scaled
 /// covariate space, one cell mean per centre.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "TessellationParts")]
 pub struct Tessellation {
     /// Row-major b by d centre coordinates (scaled space).
@@ -27,7 +27,38 @@ pub struct Tessellation {
     pub(crate) tau: Option<f64>,
 }
 
+impl Clone for Tessellation {
+    fn clone(&self) -> Self {
+        Self {
+            centres: self.centres.clone(),
+            dims: self.dims.clone(),
+            mus: self.mus.clone(),
+            betas: self.betas.clone(),
+            tau: self.tau,
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.centres.clone_from(&source.centres);
+        self.dims.clone_from(&source.dims);
+        self.mus.clone_from(&source.mus);
+        self.betas.clone_from(&source.betas);
+        self.tau = source.tau;
+    }
+}
+
 impl Tessellation {
+    /// No cells and no dimensions: a buffer a proposal is written into.
+    pub(crate) fn empty() -> Self {
+        Self {
+            centres: Vec::new(),
+            dims: Vec::new(),
+            mus: Vec::new(),
+            betas: Vec::new(),
+            tau: None,
+        }
+    }
+
     /// Number of cells b.
     pub fn n_cells(&self) -> usize {
         self.mus.len()
@@ -252,7 +283,7 @@ pub(crate) enum Delta {
 
 /// Cached nearest-centre assignment of every observation, with the winning
 /// key, for one tessellation; under soft membership also every key.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub(crate) struct Assignment {
     /// Cell index per observation.
     pub(crate) cells: Vec<usize>,
@@ -306,31 +337,67 @@ fn add_centre_keys(x: &Data, t: &Tessellation, k: usize, out: &mut [f64]) {
     }
 }
 
+impl Clone for Assignment {
+    fn clone(&self) -> Self {
+        Self {
+            cells: self.cells.clone(),
+            keys: self.keys.clone(),
+            soft: self.soft.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.cells.clone_from(&source.cells);
+        self.keys.clone_from(&source.keys);
+        self.soft.clone_from(&source.soft);
+    }
+}
+
 impl Assignment {
     /// Assignment of every row of `x` under `t`, computed in full.
     pub(crate) fn full(x: &Data, t: &Tessellation, geometry: &Geometry) -> Self {
+        let mut out = Self::default();
+        Self::full_into(x, t, geometry, &mut Vec::new(), &mut out);
+        out
+    }
+
+    /// [`full`](Self::full) written into `out`, with `scratch` as the
+    /// key buffer of the streaming path; both keep their capacity.
+    pub(crate) fn full_into(
+        x: &Data,
+        t: &Tessellation,
+        geometry: &Geometry,
+        scratch: &mut Vec<f64>,
+        out: &mut Self,
+    ) {
         let n = x.n_rows();
+        out.cells.clear();
+        out.keys.clear();
         if t.tau.is_none() && geometry.is_plain() && n > 0 {
-            let mut all = vec![0.0; t.n_cells() * n];
-            add_all_keys(x, t, &mut all);
-            return Self::argmin(&all, n);
+            scratch.clear();
+            scratch.resize(t.n_cells() * n, 0.0);
+            add_all_keys(x, t, scratch);
+            out.soft = None;
+            for i in 0..n {
+                let (cell, key) = nearest_in(scratch, n, i);
+                out.cells.push(cell);
+                out.keys.push(key);
+            }
+            return;
         }
-        let mut cells = Vec::with_capacity(n);
-        let mut keys = Vec::with_capacity(n);
         if t.tau.is_none() {
+            out.soft = None;
             for i in 0..n {
                 let (cell, key) = t.nearest(x.row(i), geometry);
-                cells.push(cell);
-                keys.push(key);
+                out.cells.push(cell);
+                out.keys.push(key);
             }
-            return Self {
-                cells,
-                keys,
-                soft: None,
-            };
+            return;
         }
         let b = t.n_cells();
-        let mut soft = vec![0.0; b * n];
+        let soft = out.soft.get_or_insert_with(Vec::new);
+        soft.clear();
+        soft.resize(b * n, 0.0);
         for i in 0..n {
             let row = x.row(i);
             let mut best = f64::INFINITY;
@@ -343,30 +410,8 @@ impl Assignment {
                     best_cell = k;
                 }
             }
-            cells.push(best_cell);
-            keys.push(best);
-        }
-        Self {
-            cells,
-            keys,
-            soft: Some(soft),
-        }
-    }
-
-    /// The winning cell and key of every row from column-major b by n
-    /// keys, the lowest index on ties as [`Tessellation::nearest`] picks.
-    fn argmin(all: &[f64], n: usize) -> Self {
-        let mut cells = Vec::with_capacity(n);
-        let mut keys = Vec::with_capacity(n);
-        for i in 0..n {
-            let (cell, key) = nearest_in(all, n, i);
-            cells.push(cell);
-            keys.push(key);
-        }
-        Self {
-            cells,
-            keys,
-            soft: None,
+            out.cells.push(best_cell);
+            out.keys.push(best);
         }
     }
 
@@ -394,36 +439,39 @@ impl Assignment {
         weights
     }
 
-    /// Assignment under `new`, which differs from the tessellation this
-    /// cache was built for by `delta`. Equal to [`Assignment::full`] on the
-    /// same inputs. With dims unchanged an untouched centre's key against
-    /// any observation is unchanged, so only pairs involving the touched
-    /// centre are recomputed.
-    pub(crate) fn updated(
+    /// The assignment under `new`, which differs from the tessellation
+    /// this cache was built for by `delta`, written into `out`; equal to
+    /// [`Assignment::full`] on the same inputs. With dims unchanged an
+    /// untouched centre's key against any observation is unchanged, so
+    /// only pairs involving the touched centre are recomputed. `scratch`
+    /// is the key buffer of the streaming paths.
+    pub(crate) fn updated_into(
         &self,
         x: &Data,
         new: &Tessellation,
         delta: Delta,
         geometry: &Geometry,
-    ) -> Self {
+        scratch: &mut Vec<f64>,
+        out: &mut Self,
+    ) {
         let n = x.n_rows();
         match delta {
-            Delta::Full => Self::full(x, new, geometry),
+            Delta::Full => Self::full_into(x, new, geometry, scratch, out),
             Delta::CentreAdded => {
                 let added = new.n_cells() - 1;
+                out.clone_from(self);
                 if self.soft.is_none() && geometry.is_plain() {
-                    let mut out = self.clone();
-                    let mut added_keys = vec![0.0; n];
-                    add_centre_keys(x, new, added, &mut added_keys);
-                    for (i, &key) in added_keys.iter().enumerate() {
+                    scratch.clear();
+                    scratch.resize(n, 0.0);
+                    add_centre_keys(x, new, added, scratch);
+                    for (i, &key) in scratch.iter().enumerate() {
                         if key < out.keys[i] {
                             out.keys[i] = key;
                             out.cells[i] = added;
                         }
                     }
-                    return out;
+                    return;
                 }
-                let mut out = self.clone();
                 if let Some(soft) = &mut out.soft {
                     soft.reserve(n);
                 }
@@ -437,14 +485,14 @@ impl Assignment {
                         out.cells[i] = added;
                     }
                 }
-                out
             }
             Delta::CentreMoved(moved) => {
+                out.clone_from(self);
                 if self.soft.is_none() && geometry.is_plain() {
-                    let mut out = self.clone();
-                    let mut moved_keys = vec![0.0; n];
-                    add_centre_keys(x, new, moved, &mut moved_keys);
-                    for (i, &key) in moved_keys.iter().enumerate() {
+                    scratch.clear();
+                    scratch.resize(n, 0.0);
+                    add_centre_keys(x, new, moved, scratch);
+                    for (i, &key) in scratch.iter().enumerate() {
                         if self.cells[i] == moved {
                             let (cell, key) = new.nearest(x.row(i), geometry);
                             out.cells[i] = cell;
@@ -456,9 +504,8 @@ impl Assignment {
                             out.keys[i] = key;
                         }
                     }
-                    return out;
+                    return;
                 }
-                let mut out = self.clone();
                 for i in 0..n {
                     let row = x.row(i);
                     let key = new.key(row, moved, geometry);
@@ -479,10 +526,9 @@ impl Assignment {
                         }
                     }
                 }
-                out
             }
             Delta::CentreRemoved(removed) => {
-                let mut out = self.clone();
+                out.clone_from(self);
                 if let Some(soft) = &mut out.soft {
                     soft.drain(removed * n..(removed + 1) * n);
                 }
@@ -495,9 +541,22 @@ impl Assignment {
                         out.cells[i] -= 1;
                     }
                 }
-                out
             }
         }
+    }
+
+    /// [`updated_into`](Self::updated_into) as a fresh assignment.
+    #[cfg(test)]
+    pub(crate) fn updated(
+        &self,
+        x: &Data,
+        new: &Tessellation,
+        delta: Delta,
+        geometry: &Geometry,
+    ) -> Self {
+        let mut out = Self::default();
+        self.updated_into(x, new, delta, geometry, &mut Vec::new(), &mut out);
+        out
     }
 }
 

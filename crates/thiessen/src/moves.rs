@@ -257,7 +257,7 @@ impl Move {
 /// Selection probabilities in state `t`: invalid moves fold their weight
 /// into their partner, then the valid mass is normalised.
 pub(crate) fn selection_probs(t: &Tessellation, prior: &Prior) -> [f64; 6] {
-    let valid: Vec<bool> = MOVES.iter().map(|m| m.valid(t, prior)).collect();
+    let valid = MOVES.map(|m| m.valid(t, prior));
     let mut probs = [0.0_f64; 6];
     for (i, &m) in MOVES.iter().enumerate() {
         if valid[i] {
@@ -294,56 +294,47 @@ pub(crate) fn select(t: &Tessellation, prior: &Prior, rng: &mut Rng) -> Move {
         .expect("some move is valid")]
 }
 
-/// A proposed tessellation with the change it makes to the assignment and
+/// The change a proposed tessellation makes to the assignment and
 /// ln[prior ratio x proposal ratio] excluding the selection ratio. Cell
 /// means in the proposal are placeholders; the sampler redraws every mean
 /// after accept or reject.
 pub(crate) struct Proposal {
-    pub tessellation: Tessellation,
     pub delta: Delta,
     pub log_structure_ratio: f64,
 }
 
-/// Propose `m` from `t`. Draw order: the move's picks, then coordinates in
-/// centre then dimension order.
-pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -> Proposal {
+/// Propose `m` from `t` into `out`, which keeps its capacity across
+/// calls. Draw order: the move's picks, then coordinates in centre then
+/// dimension order.
+pub(crate) fn propose(
+    m: Move,
+    t: &Tessellation,
+    prior: &Prior,
+    rng: &mut Rng,
+    out: &mut Tessellation,
+) -> Proposal {
     let (b, d) = (t.n_cells(), t.n_dims());
+    out.clone_from(t);
+    out.betas.clear();
     match m {
         // The new centre's coordinates are drawn from their prior, which
         // cancels the proposal density; the reverse uniform pick 1 / (b + 1)
         // cancels against the b + 1 orderings of the enlarged centre set.
         // What remains is the cell-count prior ratio.
         Move::AddCentre => {
-            let mut centres = t.centres.clone();
-            centres.extend(t.dims.iter().map(|&dim| prior.coordinate(dim, rng)));
-            let mut mus = t.mus.clone();
-            mus.push(0.0);
+            out.centres
+                .extend(t.dims.iter().map(|&dim| prior.coordinate(dim, rng)));
+            out.mus.push(0.0);
             Proposal {
-                tessellation: Tessellation {
-                    centres,
-                    dims: t.dims.clone(),
-                    mus,
-                    betas: Vec::new(),
-                    tau: t.tau,
-                },
                 delta: Delta::CentreAdded,
                 log_structure_ratio: prior.log_cell_count_ratio(b + 1),
             }
         }
         Move::RemoveCentre => {
             let removed = uniform_index(b, rng);
-            let mut centres = t.centres.clone();
-            centres.drain(removed * d..(removed + 1) * d);
-            let mut mus = t.mus.clone();
-            mus.remove(removed);
+            out.centres.drain(removed * d..(removed + 1) * d);
+            out.mus.remove(removed);
             Proposal {
-                tessellation: Tessellation {
-                    centres,
-                    dims: t.dims.clone(),
-                    mus,
-                    betas: Vec::new(),
-                    tau: t.tau,
-                },
                 delta: Delta::CentreRemoved(removed),
                 log_structure_ratio: -prior.log_cell_count_ratio(b),
             }
@@ -357,70 +348,45 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
                     weights.draw_unused(&t.dims, rng),
                     prior.log_weighted_add_ratio(d, weights.unused_weight(&t.dims)),
                 ),
-                None => {
-                    let unused: Vec<usize> = (0..prior.p).filter(|c| !t.dims.contains(c)).collect();
-                    (
-                        unused[uniform_index(unused.len(), rng)],
-                        prior.log_dim_count_ratio(d + 1),
-                    )
-                }
+                None => (
+                    unused_column(&t.dims, prior.p, uniform_index(prior.p - d, rng)),
+                    prior.log_dim_count_ratio(d + 1),
+                ),
             };
             #[cfg(not(feature = "experimental"))]
-            let (incoming, log_structure_ratio) = {
-                let unused: Vec<usize> = (0..prior.p).filter(|c| !t.dims.contains(c)).collect();
-                (
-                    unused[uniform_index(unused.len(), rng)],
-                    prior.log_dim_count_ratio(d + 1),
-                )
-            };
-            let mut dims = t.dims.clone();
-            dims.push(incoming);
-            let mut centres = Vec::with_capacity(b * (d + 1));
+            let (incoming, log_structure_ratio) = (
+                unused_column(&t.dims, prior.p, uniform_index(prior.p - d, rng)),
+                prior.log_dim_count_ratio(d + 1),
+            );
+            out.dims.push(incoming);
+            out.centres.clear();
             for k in 0..b {
-                centres.extend_from_slice(t.centre(k));
-                centres.push(prior.coordinate(incoming, rng));
+                out.centres.extend_from_slice(t.centre(k));
+                out.centres.push(prior.coordinate(incoming, rng));
             }
             Proposal {
-                tessellation: Tessellation {
-                    centres,
-                    dims,
-                    mus: t.mus.clone(),
-                    betas: Vec::new(),
-                    tau: t.tau,
-                },
                 delta: Delta::Full,
                 log_structure_ratio,
             }
         }
         Move::RemoveDimension => {
-            let out = uniform_index(d, rng);
-            let mut dims = t.dims.clone();
-            #[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
-            let outgoing = dims.remove(out);
-            let mut centres = Vec::with_capacity(b * (d - 1));
+            let removed = uniform_index(d, rng);
+            out.dims.remove(removed);
+            out.centres.clear();
             for k in 0..b {
                 for (j, &c) in t.centre(k).iter().enumerate() {
-                    if j != out {
-                        centres.push(c);
+                    if j != removed {
+                        out.centres.push(c);
                     }
                 }
             }
             Proposal {
-                tessellation: Tessellation {
-                    centres,
-                    dims,
-                    mus: t.mus.clone(),
-                    betas: Vec::new(),
-                    tau: t.tau,
-                },
                 delta: Delta::Full,
                 log_structure_ratio: {
                     #[cfg(feature = "experimental")]
                     match &prior.weights {
                         Some(weights) => {
-                            let smaller: Vec<usize> =
-                                t.dims.iter().copied().filter(|&c| c != outgoing).collect();
-                            -prior.log_weighted_add_ratio(d - 1, weights.unused_weight(&smaller))
+                            -prior.log_weighted_add_ratio(d - 1, weights.unused_weight(&out.dims))
                         }
                         None => -prior.log_dim_count_ratio(d),
                     }
@@ -433,18 +399,13 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
         // coordinate priors cancel the proposal densities.
         Move::Change => {
             let cell = uniform_index(b, rng);
-            let mut centres = t.centres.clone();
-            for (c, &dim) in centres[cell * d..(cell + 1) * d].iter_mut().zip(&t.dims) {
+            for (c, &dim) in out.centres[cell * d..(cell + 1) * d]
+                .iter_mut()
+                .zip(&t.dims)
+            {
                 *c = prior.coordinate(dim, rng);
             }
             Proposal {
-                tessellation: Tessellation {
-                    centres,
-                    dims: t.dims.clone(),
-                    mus: t.mus.clone(),
-                    betas: Vec::new(),
-                    tau: t.tau,
-                },
                 delta: Delta::CentreMoved(cell),
                 log_structure_ratio: 0.0,
             }
@@ -452,44 +413,56 @@ pub(crate) fn propose(m: Move, t: &Tessellation, prior: &Prior, rng: &mut Rng) -
         // Outgoing pick 1 / d, incoming pick 1 / (p - d), mirrored by the
         // reverse; the subset prior is uniform.
         Move::Swap => {
-            let out = uniform_index(d, rng);
+            let removed = uniform_index(d, rng);
             #[cfg(feature = "experimental")]
             let (incoming, log_structure_ratio) = match &prior.weights {
                 Some(weights) => {
                     let incoming = weights.draw_unused(&t.dims, rng);
                     let before = weights.unused_weight(&t.dims);
-                    let after = before - weights.w[incoming] + weights.w[t.dims[out]];
+                    let after = before - weights.w[incoming] + weights.w[t.dims[removed]];
                     (incoming, maths::ln(before) - maths::ln(after))
                 }
-                None => {
-                    let unused: Vec<usize> = (0..prior.p).filter(|c| !t.dims.contains(c)).collect();
-                    (unused[uniform_index(unused.len(), rng)], 0.0)
-                }
+                None => (
+                    unused_column(&t.dims, prior.p, uniform_index(prior.p - d, rng)),
+                    0.0,
+                ),
             };
             #[cfg(not(feature = "experimental"))]
-            let (incoming, log_structure_ratio) = {
-                let unused: Vec<usize> = (0..prior.p).filter(|c| !t.dims.contains(c)).collect();
-                (unused[uniform_index(unused.len(), rng)], 0.0)
-            };
-            let mut dims = t.dims.clone();
-            dims[out] = incoming;
-            let mut centres = t.centres.clone();
+            let (incoming, log_structure_ratio) = (
+                unused_column(&t.dims, prior.p, uniform_index(prior.p - d, rng)),
+                0.0,
+            );
+            out.dims[removed] = incoming;
             for k in 0..b {
-                centres[k * d + out] = prior.coordinate(incoming, rng);
+                out.centres[k * d + removed] = prior.coordinate(incoming, rng);
             }
             Proposal {
-                tessellation: Tessellation {
-                    centres,
-                    dims,
-                    mus: t.mus.clone(),
-                    betas: Vec::new(),
-                    tau: t.tau,
-                },
                 delta: Delta::Full,
                 log_structure_ratio,
             }
         }
     }
+}
+
+/// The `index`-th column in ascending order among those not in `dims`.
+fn unused_column(dims: &[usize], p: usize, index: usize) -> usize {
+    (0..p)
+        .filter(|c| !dims.contains(c))
+        .nth(index)
+        .expect("an unused column")
+}
+
+/// [`propose`] into a fresh tessellation.
+#[cfg(test)]
+pub(crate) fn propose_owned(
+    m: Move,
+    t: &Tessellation,
+    prior: &Prior,
+    rng: &mut Rng,
+) -> (Tessellation, Proposal) {
+    let mut out = Tessellation::empty();
+    let proposal = propose(m, t, prior, rng, &mut out);
+    (out, proposal)
 }
 
 /// ln q(reverse | proposed) - ln q(move | current).
@@ -668,8 +641,7 @@ mod tests {
         let t = tess(3, vec![1, 4]);
         for _ in 0..50 {
             let m = select(&t, &pr, &mut rng);
-            let prop = propose(m, &t, &pr, &mut rng);
-            let new = &prop.tessellation;
+            let (new, _) = propose_owned(m, &t, &pr, &mut rng);
             assert_eq!(new.centres.len(), new.n_cells() * new.n_dims());
             match m {
                 Move::AddCentre => assert_eq!(new.n_cells(), 4),
@@ -695,11 +667,11 @@ mod tests {
         let pr = prior(6);
         let mut rng = chain_rng(9);
         let t = tess(3, vec![0, 2]);
-        let add = propose(Move::AddCentre, &t, &pr, &mut rng);
-        let remove = propose(Move::RemoveCentre, &add.tessellation, &pr, &mut rng);
+        let (added, add) = propose_owned(Move::AddCentre, &t, &pr, &mut rng);
+        let (_, remove) = propose_owned(Move::RemoveCentre, &added, &pr, &mut rng);
         close(add.log_structure_ratio, -remove.log_structure_ratio);
-        let add = propose(Move::AddDimension, &t, &pr, &mut rng);
-        let remove = propose(Move::RemoveDimension, &add.tessellation, &pr, &mut rng);
+        let (added, add) = propose_owned(Move::AddDimension, &t, &pr, &mut rng);
+        let (_, remove) = propose_owned(Move::RemoveDimension, &added, &pr, &mut rng);
         close(add.log_structure_ratio, -remove.log_structure_ratio);
     }
 }
