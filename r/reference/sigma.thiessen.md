@@ -21,9 +21,11 @@ sigma(object, ...)
 
 ## Value
 
-A single number: the posterior mean of sigma under the Gaussian model,
-and 1 under the probit model, whose latent scale is fixed. The
-heteroscedastic model has no single residual scale; use
+A single number: the posterior mean of sigma under a model with a global
+residual scale (the Gaussian, tobit, AFT, interval-censored, Student-t
+and Laplace models; under the last two the scale of the t or Laplace
+errors), and 1 under the probit and ordinal models, whose latent scale
+is fixed. The heteroscedastic model has no single residual scale; use
 `predict(type = "variance")`.
 
 ## Examples

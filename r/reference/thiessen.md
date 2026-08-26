@@ -60,8 +60,11 @@ thiessen(
 
 - y:
 
-  The response: a numeric vector of length `nrow(x)`, or a two-level
-  factor. Under the probit model the values must be 0 and 1.
+  The response, with one value per row of `x`: a numeric vector, a
+  two-level factor, an ordered factor, or a
+  [`survival::Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) of
+  type `"right"` or `"interval2"`. Under the probit model a numeric
+  vector must hold 0 and 1.
 
 - control:
 
@@ -104,8 +107,11 @@ thiessen(
 An object of class `"thiessen"`: a list with the fitted state, the
 resolved configuration, the number of chains, the thread count, the
 number of kept draws, the convergence diagnostics where two or more
-chains ran, the seed used, the design, the response, the fitted values,
-the residuals, the hardhat blueprint where one applies, and the call.
+chains ran, the seed used, the design, the response the in-sample fit is
+measured against (the numeric response, the factor codes, or under a
+censored family the observed values on the model's scale, the log times
+under the AFT family), the fitted values, the residuals against that
+response, the hardhat blueprint where one applies, and the call.
 
 ## Details
 
@@ -115,9 +121,22 @@ encode it. Where `control` declares a `metric`, one entry per column,
 factors are passed as integer level codes instead and each factor column
 must declare `"categorical"`.
 
-A factor response must have two levels and becomes 0 and 1 with the
-first level as the zero, as `glm` treats one. An ordered factor is
-encoded as an unordered one; the ordering is not used.
+The response selects the outcome family where `control` names none: a
+numeric vector the Gaussian family, a two-level factor the probit family
+(0 and 1 with the first level as the zero, as `glm` treats one), an
+ordered factor the ordinal family (the
+[`MASS::polr`](https://rdrr.io/pkg/MASS/man/polr.html) convention), a
+[`survival::Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) of type
+`"right"` the AFT family and one of type `"interval2"` the
+interval-censored family (an `NA` bound is one-sided censoring and an
+equal pair an exact value). A family named in `control` is checked
+against the response and never coerced: the probit family also takes the
+numbers 0 and 1, and every other family takes only the shape that
+selects it. This is `glm`'s rule, the declared family authoritative and
+the response validated against it, with "not declared" representable.
+The families beyond the Gaussian and probit ones need a build with the
+core's `experimental` feature; see
+[`thiessen_control()`](https://l-thomson.github.io/thiessen/r/reference/thiessen_control.md).
 
 Missing (`NA`) and non-finite values in the covariates or the response
 are rejected with an error; no row is dropped silently.

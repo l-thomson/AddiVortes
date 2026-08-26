@@ -48,7 +48,12 @@
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">geometry_params</span><span class="op">(</span>metric <span class="op">=</span> <span class="cn">NULL</span>, sigma_c <span class="op">=</span> <span class="fl">0.8</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">geometry_params</span><span class="op">(</span></span>
+<span>  metric <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  sigma_c <span class="op">=</span> <span class="fl">0.8</span>,</span>
+<span>  membership <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  precision <span class="op">=</span> <span class="cn">NULL</span></span>
+<span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -59,10 +64,10 @@
 <dd><p>The metric of each covariate column, in column order: a
 list whose entries are <code>"euclidean"</code>, <code>"categorical"</code>, or
 <code>list(spherical = list(sphere = i))</code> for one coordinate of the sphere
-labelled <code>i</code>, its latitudes first and its longitude last, in radians.
-<code>NULL</code>, the default, is Euclidean on every column. Entries are
-matched case-sensitively, so <code>"Euclidean"</code> is rejected. Non-Euclidean
-columns are not scaled.</p></dd>
+labelled <code>i</code>, its latitudes first and its longitude last, in radians;
+or one of the experimental entries below. <code>NULL</code>, the default, is
+Euclidean on every column. Entries are matched case-sensitively, so
+<code>"Euclidean"</code> is rejected. Non-Euclidean columns are not scaled.</p></dd>
 
 
 <dt id="arg-sigma-c">sigma_c<a class="anchor" aria-label="anchor" href="#arg-sigma-c"></a></dt>
@@ -71,14 +76,45 @@ centre coordinate. A Euclidean column is min-max scaled to
 [-0.5, 0.5] over its training range inside the sampler and <code>sigma_c</code>
 is on that scale, so 1 is the full range of a column. Default 0.8.</p></dd>
 
+
+<dt id="arg-membership">membership<a class="anchor" aria-label="anchor" href="#arg-membership"></a></dt>
+<dd><p>How an observation belongs to a tessellation's
+cells: <code>"hard"</code>, the published rule, or <code><a href="soft_membership.html">soft_membership()</a></code>. <code>NULL</code>,
+the default, is <code>"hard"</code>.</p></dd>
+
+
+<dt id="arg-precision">precision<a class="anchor" aria-label="anchor" href="#arg-precision"></a></dt>
+<dd><p>The precision matrix of the Mahalanobis metric, a
+square numeric matrix over the columns of the encoded design,
+required exactly when an entry of <code>metric</code> is <code>"mahalanobis"</code>; it is
+checked at fit to be symmetric and positive definite. <code>NULL</code>, the
+default, is none. Experimental, as the metric it serves.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>An object of class <code>"geometry_params"</code>.</p>
     </div>
     <div class="section level2">
+    <h2 id="experimental-metrics">Experimental metrics<a class="anchor" aria-label="anchor" href="#experimental-metrics"></a></h2>
+
+
+
+<p>The entries beyond <code>"euclidean"</code>, <code>"categorical"</code> and the sphere are
+compiled only into a core built with its <code>experimental</code> feature (see
+<a href="experimental_outcomes.html">experimental_outcomes</a> for the policy) and are named as the core
+stores them: <code>list(minkowski = list(p = 3))</code> for the Minkowski distance
+of order p &gt;= 1, <code>"manhattan"</code> for its order-1 case, <code>"cosine"</code> for the
+cosine distance, <code>list(gower = list(kind = "numeric"))</code> or
+<code>list(gower = list(kind = "categorical"))</code> for one column of the Gower
+distance, and <code>"mahalanobis"</code> for the Mahalanobis distance under
+<code>precision</code>. The Minkowski, Manhattan, cosine and Gower entries take a
+<code>group</code> label (default 0), <code>list(cosine = list(group = 1))</code>, so the
+columns sharing a label form one composite distance.</p>
+    </div>
+    <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
-    <div class="dont-index"><p><code><a href="term_params.html">term_params()</a></code></p></div>
+    <div class="dont-index"><p><code><a href="term_params.html">term_params()</a></code>, <code><a href="soft_membership.html">soft_membership()</a></code></p></div>
     </div>
 
     <div class="section level2">

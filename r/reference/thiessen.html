@@ -116,8 +116,10 @@ data frame. A numeric vector is taken as one column.</p></dd>
 
 
 <dt id="arg-y">y<a class="anchor" aria-label="anchor" href="#arg-y"></a></dt>
-<dd><p>The response: a numeric vector of length <code>nrow(x)</code>, or a
-two-level factor. Under the probit model the values must be 0 and 1.</p></dd>
+<dd><p>The response, with one value per row of <code>x</code>: a numeric
+vector, a two-level factor, an ordered factor, or a
+<code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">survival::Surv()</a></code> of type <code>"right"</code> or <code>"interval2"</code>. Under the
+probit model a numeric vector must hold 0 and 1.</p></dd>
 
 
 <dt id="arg-control">control<a class="anchor" aria-label="anchor" href="#arg-control"></a></dt>
@@ -161,7 +163,10 @@ the right side the covariates, <code>.</code> for every remaining column.</p></d
 the resolved configuration, the number of chains, the thread count,
 the number of kept draws, the
 convergence diagnostics where two or more chains ran, the seed used,
-the design, the response, the fitted values, the residuals, the
+the design, the response the in-sample fit is measured against (the
+numeric response, the factor codes, or under a censored family the
+observed values on the model's scale, the log times under the AFT
+family), the fitted values, the residuals against that response, the
 hardhat blueprint where one applies, and the call.</p>
     </div>
     <div class="section level2">
@@ -171,9 +176,20 @@ level as reference, as <code>model.matrix</code> and upstream AddiVortes encode 
 Where <code>control</code> declares a <code>metric</code>, one entry per column, factors are
 passed as integer level codes instead and each factor column must declare
 <code>"categorical"</code>.</p>
-<p>A factor response must have two levels and becomes 0 and 1 with the first
-level as the zero, as <code>glm</code> treats one. An ordered factor is encoded as
-an unordered one; the ordering is not used.</p>
+<p>The response selects the outcome family where <code>control</code> names none: a
+numeric vector the Gaussian family, a two-level factor the probit family
+(0 and 1 with the first level as the zero, as <code>glm</code> treats one), an
+ordered factor the ordinal family (the <code><a href="https://rdrr.io/pkg/MASS/man/polr.html" class="external-link">MASS::polr</a></code> convention), a
+<code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">survival::Surv()</a></code> of type <code>"right"</code> the AFT family and one of type
+<code>"interval2"</code> the interval-censored family (an <code>NA</code> bound is one-sided
+censoring and an equal pair an exact value). A family named in
+<code>control</code> is checked against the response and never coerced: the
+probit family also takes the numbers 0 and 1, and every other family
+takes only the shape that selects it. This is <code>glm</code>'s rule, the
+declared family authoritative and the response validated against it,
+with "not declared" representable. The families beyond the Gaussian
+and probit ones need a build with the core's <code>experimental</code> feature;
+see <code><a href="thiessen_control.html">thiessen_control()</a></code>.</p>
 <p>Missing (<code>NA</code>) and non-finite values in the covariates or the response
 are rejected with an error; no row is dropped silently.</p>
 <p><code><a href="https://rdrr.io/r/stats/update.html" class="external-link">stats::update()</a></code> works on a fit: the call is stored, so

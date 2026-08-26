@@ -67,7 +67,7 @@ schedule. An argument left at its default gives the core's default, so
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">thiessen_control</span><span class="op">(</span></span>
-<span>  outcome <span class="op">=</span> <span class="fu"><a href="gaussian_outcome.html">gaussian_outcome</a></span><span class="op">(</span><span class="op">)</span>,</span>
+<span>  outcome <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  mean_params <span class="op">=</span> <span class="fu"><a href="term_params.html">term_params</a></span><span class="op">(</span><span class="op">)</span>,</span>
 <span>  variance_params <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  general_params <span class="op">=</span> <span class="cn">NULL</span>,</span>
@@ -81,7 +81,8 @@ schedule. An argument left at its default gives the core's default, so
 
 <dl><dt id="arg-outcome">outcome<a class="anchor" aria-label="anchor" href="#arg-outcome"></a></dt>
 <dd><p>The outcome family, from <code><a href="gaussian_outcome.html">gaussian_outcome()</a></code>,
-<code><a href="probit_outcome.html">probit_outcome()</a></code> or one of the experimental constructors above.</p></dd>
+<code><a href="probit_outcome.html">probit_outcome()</a></code> or one of the experimental constructors above.
+<code>NULL</code>, the default, takes the family the response selects.</p></dd>
 
 
 <dt id="arg-mean-params">mean_params<a class="anchor" aria-label="anchor" href="#arg-mean-params"></a></dt>
@@ -122,6 +123,12 @@ x; it needs the Gaussian family with nu &gt; 2, and the paper's count is
 ensemble's size without spelling the group, since that count is the
 single number most fits tune. Every other setting is named in its
 group.</p>
+<p><code>outcome</code> left <code>NULL</code> takes the family from the response at fit: a
+numeric vector the Gaussian family, a two-level factor the probit
+family, an ordered factor the ordinal family, and a <code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">survival::Surv()</a></code>
+the AFT or the interval-censored family by its type. A named family is
+checked against the response and a mismatch is an error naming both;
+see <code><a href="thiessen.html">thiessen()</a></code>.</p>
 <p>The models reachable with <code><a href="gaussian_outcome.html">gaussian_outcome()</a></code> and <code><a href="probit_outcome.html">probit_outcome()</a></code>
 are the published method and follow semantic versioning. Everything
 else the core crate adds sits behind its <code>experimental</code> Cargo feature,
@@ -154,8 +161,15 @@ Statistics</em> 34(3), 859-871. <a href="https://doi.org/10.1080/10618600.2024.2
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="fu">thiessen_control</span><span class="op">(</span>tessellations <span class="op">=</span> <span class="fl">50</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> &lt;thiessen_control&gt;</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   outcome         gaussian_outcome(nu = 6, q = 0.85)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   outcome         from the response</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   mean_params     term_params(tessellations = 50, k = 3, lambda_c = 5)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   variance_params none (constant spread)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   general_params  general_params(burn_in = 200, draws = 1000, thinning = 1, prior_only = FALSE)</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="fu">thiessen_control</span><span class="op">(</span>outcome <span class="op">=</span> <span class="fu"><a href="probit_outcome.html">probit_outcome</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> &lt;thiessen_control&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   outcome         probit_outcome()</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   mean_params     term_params(k = 3, lambda_c = 5)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   variance_params none (constant spread)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   general_params  general_params(burn_in = 200, draws = 1000, thinning = 1, prior_only = FALSE)</span>
 <span class="r-in"><span></span></span>

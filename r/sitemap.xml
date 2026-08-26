@@ -13,8 +13,10 @@
 <url><loc>https://l-thomson.github.io/thiessen/r/news/index.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/aft_outcome.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/as_draws_df.thiessen.html</loc></url>
+<url><loc>https://l-thomson.github.io/thiessen/r/reference/cell_params.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/core_experimental.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/core_version.html</loc></url>
+<url><loc>https://l-thomson.github.io/thiessen/r/reference/dart_inclusion.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/experimental_outcomes.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/fitted.thiessen.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/gaussian_outcome.html</loc></url>
@@ -34,11 +36,13 @@
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/print.params.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/print.thiessen.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/print.thiessen_control.html</loc></url>
+<url><loc>https://l-thomson.github.io/thiessen/r/reference/print.thiessen_option.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/print.thiessen_outcome.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/print.thiessen_sampler.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/probit_outcome.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/reexports.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/sigma.thiessen.html</loc></url>
+<url><loc>https://l-thomson.github.io/thiessen/r/reference/soft_membership.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/structure_params.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/student_t_outcome.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/summary.thiessen.html</loc></url>
@@ -50,5 +54,6 @@
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/thiessen_sampler.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/tobit_outcome.html</loc></url>
 <url><loc>https://l-thomson.github.io/thiessen/r/reference/variable_inclusion.html</loc></url>
+<url><loc>https://l-thomson.github.io/thiessen/r/reference/weighted_inclusion.html</loc></url>
 </urlset>
 

@@ -31,9 +31,13 @@ right-censored time to event, the model of the BART package's `abart`:
 ln T = f(x) + e with e ~ N(0, sigma^2), the log time of a censored row
 drawn from its truncated conditional before each sweep.
 
-The times and the event indicator are data, not parameters. The fit
-entry points of this package take a plain response, so a fit under this
-family is rejected until one taking a censored time is added.
+The times and the event indicator are data, not parameters: the response
+is a [`survival::Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) of
+type `"right"`, which selects this family by itself.
+[`predict()`](https://rdrr.io/r/stats/predict.html) and the fitted
+values are f(x) on the log-time scale, the `abart` convention, and
+[`log_lik()`](https://mc-stan.org/rstantools/reference/log_lik.html) is
+the censored likelihood of a `Surv` response.
 
 ## Experimental
 

@@ -18,7 +18,7 @@ default, so `thiessen_control()` is the published configuration.
 
 ``` r
 thiessen_control(
-  outcome = gaussian_outcome(),
+  outcome = NULL,
   mean_params = term_params(),
   variance_params = NULL,
   general_params = NULL,
@@ -33,7 +33,8 @@ thiessen_control(
   The outcome family, from
   [`gaussian_outcome()`](https://l-thomson.github.io/thiessen/r/reference/gaussian_outcome.md),
   [`probit_outcome()`](https://l-thomson.github.io/thiessen/r/reference/probit_outcome.md)
-  or one of the experimental constructors above.
+  or one of the experimental constructors above. `NULL`, the default,
+  takes the family the response selects.
 
 - mean_params:
 
@@ -75,6 +76,14 @@ set on `mean_params` apply to `variance_params` as well.
 One shortcut: `thiessen_control(tessellations = 200)` sets the mean
 ensemble's size without spelling the group, since that count is the
 single number most fits tune. Every other setting is named in its group.
+
+`outcome` left `NULL` takes the family from the response at fit: a
+numeric vector the Gaussian family, a two-level factor the probit
+family, an ordered factor the ordinal family, and a
+[`survival::Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) the AFT
+or the interval-censored family by its type. A named family is checked
+against the response and a mismatch is an error naming both; see
+[`thiessen()`](https://l-thomson.github.io/thiessen/r/reference/thiessen.md).
 
 The models reachable with
 [`gaussian_outcome()`](https://l-thomson.github.io/thiessen/r/reference/gaussian_outcome.md)
@@ -119,8 +128,15 @@ Statistics* 34(3), 859-871.
 ``` r
 thiessen_control(tessellations = 50)
 #> <thiessen_control>
-#>   outcome         gaussian_outcome(nu = 6, q = 0.85)
+#>   outcome         from the response
 #>   mean_params     term_params(tessellations = 50, k = 3, lambda_c = 5)
+#>   variance_params none (constant spread)
+#>   general_params  general_params(burn_in = 200, draws = 1000, thinning = 1, prior_only = FALSE)
+
+thiessen_control(outcome = probit_outcome())
+#> <thiessen_control>
+#>   outcome         probit_outcome()
+#>   mean_params     term_params(k = 3, lambda_c = 5)
 #>   variance_params none (constant spread)
 #>   general_params  general_params(burn_in = 200, draws = 1000, thinning = 1, prior_only = FALSE)
 

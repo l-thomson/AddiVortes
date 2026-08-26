@@ -264,15 +264,32 @@ Compiled only into a core built with its `experimental` feature; see
   : The covariate space of the ensembles
 - [`structure_params()`](https://l-thomson.github.io/thiessen/r/reference/structure_params.md)
   : The covariate-inclusion prior of the ensembles
+- [`cell_params()`](https://l-thomson.github.io/thiessen/r/reference/cell_params.md)
+  : The within-cell response surface of the ensembles
 - [`general_params()`](https://l-thomson.github.io/thiessen/r/reference/general_params.md)
   : The sweep schedule of a fit
 - [`print(`*`<term_params>`*`)`](https://l-thomson.github.io/thiessen/r/reference/print.params.md)
   [`print(`*`<geometry_params>`*`)`](https://l-thomson.github.io/thiessen/r/reference/print.params.md)
   [`print(`*`<structure_params>`*`)`](https://l-thomson.github.io/thiessen/r/reference/print.params.md)
+  [`print(`*`<cell_params>`*`)`](https://l-thomson.github.io/thiessen/r/reference/print.params.md)
   [`print(`*`<general_params>`*`)`](https://l-thomson.github.io/thiessen/r/reference/print.params.md)
   : Print a parameter group
 - [`print(`*`<thiessen_control>`*`)`](https://l-thomson.github.io/thiessen/r/reference/print.thiessen_control.md)
   : Print a control object
+
+## Experimental component options
+
+Values of the parameter groups compiled only into a core built with its
+`experimental` feature; see `experimental_outcomes` for the policy.
+
+- [`soft_membership()`](https://l-thomson.github.io/thiessen/r/reference/soft_membership.md)
+  **\[experimental\]** : Soft membership of observations in cells
+- [`weighted_inclusion()`](https://l-thomson.github.io/thiessen/r/reference/weighted_inclusion.md)
+  **\[experimental\]** : Fixed inclusion weights over the covariates
+- [`dart_inclusion()`](https://l-thomson.github.io/thiessen/r/reference/dart_inclusion.md)
+  **\[experimental\]** : The DART sparsity prior over the covariates
+- [`print(`*`<thiessen_option>`*`)`](https://l-thomson.github.io/thiessen/r/reference/print.thiessen_option.md)
+  : Print a component option
 
 ## Fitted-model methods
 

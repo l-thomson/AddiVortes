@@ -14,6 +14,9 @@ print(x, ...)
 # S3 method for class 'structure_params'
 print(x, ...)
 
+# S3 method for class 'cell_params'
+print(x, ...)
+
 # S3 method for class 'general_params'
 print(x, ...)
 ```
@@ -25,7 +28,8 @@ print(x, ...)
   A parameter group from
   [`term_params()`](https://l-thomson.github.io/thiessen/r/reference/term_params.md),
   [`geometry_params()`](https://l-thomson.github.io/thiessen/r/reference/geometry_params.md),
-  [`structure_params()`](https://l-thomson.github.io/thiessen/r/reference/structure_params.md)
+  [`structure_params()`](https://l-thomson.github.io/thiessen/r/reference/structure_params.md),
+  [`cell_params()`](https://l-thomson.github.io/thiessen/r/reference/cell_params.md)
   or
   [`general_params()`](https://l-thomson.github.io/thiessen/r/reference/general_params.md).
 

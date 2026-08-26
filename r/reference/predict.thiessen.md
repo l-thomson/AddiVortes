@@ -9,7 +9,7 @@ Posterior predictions from a fitted model
 predict(
   object,
   newdata = NULL,
-  type = c("mean", "draws", "latent", "variance"),
+  type = c("mean", "draws", "latent", "variance", "probs"),
   interval = c("none", "credible", "prediction"),
   level = 0.95,
   threads = NULL,
@@ -33,9 +33,13 @@ predict(
 - type:
 
   The quantity: `"mean"`, the posterior mean of the response (the
-  probability under the probit model); `"draws"`, that quantity for
-  every kept draw; `"latent"`, the mean function f for every kept draw;
-  `"variance"`, the variance of y given f for every kept draw.
+  probability under the probit model, the expected category under the
+  ordinal model, f(x) on the log-time scale under the AFT model);
+  `"draws"`, that quantity for every kept draw; `"latent"`, the mean
+  function f for every kept draw; `"variance"`, the variance of y given
+  f for every kept draw; `"probs"`, under the ordinal model only, the
+  posterior-mean probability of each category, the
+  [`MASS::polr`](https://rdrr.io/pkg/MASS/man/polr.html) name.
 
 - interval:
 
@@ -60,8 +64,10 @@ predict(
 
 For `type = "mean"` and `interval = "none"`, a numeric vector of length
 `nrow(newdata)`; with an interval, a matrix of that many rows with
-columns `fit`, `lower` and `upper`. For the other types, a matrix of one
-row per kept draw and one column per row of `newdata`.
+columns `fit`, `lower` and `upper`. For `type = "probs"`, a matrix of
+one row per row of `newdata` and one column per category, named by the
+levels of the response. For the other types, a matrix of one row per
+kept draw and one column per row of `newdata`.
 
 ## Details
 

@@ -1,8 +1,14 @@
 # Posterior draws of a fitted model
 
 The variables are `mu[i]`, the mean function at training row i; `sigma`,
-under the Gaussian model only; and `cell_count` and `dimension_count`,
-the mean cells and mean active covariates per mean tessellation.
+where the model has a global residual scale; `cell_count` and
+`dimension_count`, the mean cells and mean active covariates per mean
+tessellation; and the quantities the experimental models sample where
+the fit has them: `df`, the error degrees of freedom under a Student-t
+grid; `cutpoint[k]`, the interior cutpoints of the ordinal model;
+`bandwidth[j]`, the soft-membership bandwidth of tessellation j;
+`inclusion_weight[j]` and `concentration`, the DART inclusion weight of
+covariate j and the Dirichlet concentration.
 
 ## Usage
 

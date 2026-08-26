@@ -16,7 +16,7 @@ library(thiessen)
 
 thiessen_control()
 #> <thiessen_control>
-#>   outcome         gaussian_outcome(nu = 6, q = 0.85)
+#>   outcome         from the response
 #>   mean_params     term_params(k = 3, lambda_c = 5)
 #>   variance_params none (constant spread)
 #>   general_params  general_params(burn_in = 200, draws = 1000, thinning = 1, prior_only = FALSE)
@@ -33,7 +33,13 @@ from masking [`stats::gaussian()`](https://rdrr.io/r/stats/family.html),
 which [`glm()`](https://rdrr.io/r/stats/glm.html) takes, and both
 families carry it rather than only the one that would clash. Attaching
 `variance_params` with a positive tessellation count extends the
-Gaussian family to the heteroscedastic model.
+Gaussian family to the heteroscedastic model. `outcome` left `NULL`, the
+default, takes the family from the response at fit: a numeric vector the
+Gaussian family and a two-level factor the probit family, with the
+experimental families selected by their own response shapes
+([`docs/experimental.md`](https://github.com/l-thomson/thiessen/blob/dev/docs/experimental.md)).
+A family named here is checked against the response and a mismatch is an
+error naming both.
 
 ``` r
 

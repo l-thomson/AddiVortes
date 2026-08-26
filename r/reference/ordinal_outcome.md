@@ -5,14 +5,16 @@
 ## Usage
 
 ``` r
-ordinal_outcome(categories = 2, offset = NULL, cutpoint_sd = 1)
+ordinal_outcome(categories = NULL, offset = NULL, cutpoint_sd = 1)
 ```
 
 ## Arguments
 
 - categories:
 
-  Number of ordered categories K, at least 2. Default 2.
+  Number of ordered categories K, at least 2. `NULL`, the default, is
+  the number of levels of the response; a count that differs from it is
+  an error.
 
 - offset:
 
@@ -31,11 +33,16 @@ An object of class `c("thiessen_ordinal", "thiessen_outcome")`.
 ## Details
 
 The ordered probit model of Albert and Chib (1993), P(y \<= k \| x) =
-Phi(gamma\_(k+1) - c - f(x)), for a response holding integer codes 0 to
-K - 1. The latent variance is fixed at 1 and the first cutpoint at 0 for
-identification, and the interior cutpoints are drawn on the log-gap
-scale of Albert and Chib (2001). At K = 2 the model is
+Phi(gamma\_(k+1) - c - f(x)), for an ordered factor response (the
+[`MASS::polr`](https://rdrr.io/pkg/MASS/man/polr.html) convention), its
+levels the categories 0 to K - 1 in order. The latent variance is fixed
+at 1 and the first cutpoint at 0 for identification, and the interior
+cutpoints are drawn on the log-gap scale of Albert and Chib (2001). At K
+= 2 the model is
 [`probit_outcome()`](https://l-thomson.github.io/thiessen/r/reference/probit_outcome.md).
+[`predict()`](https://rdrr.io/r/stats/predict.html) is the expected
+category on the code scale, and `predict(type = "probs")` the category
+probabilities with the levels as column names.
 
 ## Experimental
 

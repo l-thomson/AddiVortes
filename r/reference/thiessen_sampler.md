@@ -17,8 +17,12 @@ thiessen_sampler(x, y, control = thiessen_control(), seed = NULL)
 
 - y:
 
-  The response: a numeric vector of length `nrow(x)`. Labels in {0, 1}
-  under the probit family.
+  The response, one value per row of `x`, in the shapes
+  [`thiessen()`](https://l-thomson.github.io/thiessen/r/reference/thiessen.md)
+  takes: a numeric vector (labels in {0, 1} under the probit family), a
+  two-level or ordered factor, or a
+  [`survival::Surv()`](https://rdrr.io/pkg/survival/man/Surv.html). It
+  selects the family where `control` names none.
 
 - control:
 
@@ -92,8 +96,13 @@ The returned object holds the loop's verbs:
 - `$set_response(y)`:
 
   Replace the response, keeping the tessellations, the cell values and
-  sigma^2; the next sweep conditions on it. Labels in {0, 1} under the
-  probit family.
+  sigma^2; the next sweep conditions on it. Takes the shapes
+  [`thiessen()`](https://l-thomson.github.io/thiessen/r/reference/thiessen.md)
+  takes, checked against the sampler's family: labels in {0, 1} or a
+  two-level factor under the probit family, an ordered factor under the
+  ordinal family, a `Surv` under the AFT and interval-censored families.
+  Under the censored families the latents reset to the new observed
+  values.
 
 - `$fitted_values()`:
 

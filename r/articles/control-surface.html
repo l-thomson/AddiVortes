@@ -83,7 +83,7 @@ surface is read by another. The full mapping is <a href="https://github.com/l-th
 <span></span>
 <span><span class="fu"><a href="../reference/thiessen_control.html">thiessen_control</a></span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="co">#&gt; &lt;thiessen_control&gt;</span></span>
-<span><span class="co">#&gt;   outcome         gaussian_outcome(nu = 6, q = 0.85)</span></span>
+<span><span class="co">#&gt;   outcome         from the response</span></span>
 <span><span class="co">#&gt;   mean_params     term_params(k = 3, lambda_c = 5)</span></span>
 <span><span class="co">#&gt;   variance_params none (constant spread)</span></span>
 <span><span class="co">#&gt;   general_params  general_params(burn_in = 200, draws = 1000, thinning = 1, prior_only = FALSE)</span></span></code></pre></div>
@@ -98,7 +98,13 @@ the sigma^2 prior’s degrees of freedom and calibration quantile, and
 <code><a href="https://rdrr.io/r/stats/family.html" class="external-link">stats::gaussian()</a></code>, which <code><a href="https://rdrr.io/r/stats/glm.html" class="external-link">glm()</a></code> takes, and both
 families carry it rather than only the one that would clash. Attaching
 <code>variance_params</code> with a positive tessellation count extends
-the Gaussian family to the heteroscedastic model.</p>
+the Gaussian family to the heteroscedastic model. <code>outcome</code>
+left <code>NULL</code>, the default, takes the family from the response
+at fit: a numeric vector the Gaussian family and a two-level factor the
+probit family, with the experimental families selected by their own
+response shapes (<a href="https://github.com/l-thomson/thiessen/blob/dev/docs/experimental.md" class="external-link"><code>docs/experimental.md</code></a>).
+A family named here is checked against the response and a mismatch is an
+error naming both.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/gaussian_outcome.html">gaussian_outcome</a></span><span class="op">(</span>nu <span class="op">=</span> <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="co">#&gt; gaussian_outcome(nu = 3, q = 0.85)</span></span>

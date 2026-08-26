@@ -13,7 +13,8 @@ term_params(
   k = 3,
   lambda_c = 5,
   geometry = NULL,
-  structure = NULL
+  structure = NULL,
+  cell = NULL
 )
 ```
 
@@ -53,6 +54,12 @@ term_params(
   `NULL` takes the core's defaults. Shared between the ensembles like
   `geometry`.
 
+- cell:
+
+  The within-cell response surface, from
+  [`cell_params()`](https://l-thomson.github.io/thiessen/r/reference/cell_params.md).
+  `NULL` takes the core's default, one constant value per cell.
+
 ## Value
 
 An object of class `"term_params"`.
@@ -61,7 +68,8 @@ An object of class `"term_params"`.
 
 [`thiessen_control()`](https://l-thomson.github.io/thiessen/r/reference/thiessen_control.md),
 [`geometry_params()`](https://l-thomson.github.io/thiessen/r/reference/geometry_params.md),
-[`structure_params()`](https://l-thomson.github.io/thiessen/r/reference/structure_params.md)
+[`structure_params()`](https://l-thomson.github.io/thiessen/r/reference/structure_params.md),
+[`cell_params()`](https://l-thomson.github.io/thiessen/r/reference/cell_params.md)
 
 ## Examples
 

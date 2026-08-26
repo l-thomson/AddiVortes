@@ -61,8 +61,11 @@ numeric vector is taken as one column.</p></dd>
 
 
 <dt id="arg-y">y<a class="anchor" aria-label="anchor" href="#arg-y"></a></dt>
-<dd><p>The response: a numeric vector of length <code>nrow(x)</code>. Labels in
-{0, 1} under the probit family.</p></dd>
+<dd><p>The response, one value per row of <code>x</code>, in the shapes
+<code><a href="thiessen.html">thiessen()</a></code> takes: a numeric vector (labels in {0, 1} under the
+probit family), a two-level or ordered factor, or a
+<code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">survival::Surv()</a></code>. It selects the family where <code>control</code> names
+none.</p></dd>
 
 
 <dt id="arg-control">control<a class="anchor" aria-label="anchor" href="#arg-control"></a></dt>
@@ -122,7 +125,12 @@ settings of the control play no part here.</p>
 <dt><code>$set_response(y)</code></dt>
 <dd><p>Replace the response, keeping the
 tessellations, the cell values and sigma^2; the next sweep
-conditions on it. Labels in {0, 1} under the probit family.</p></dd>
+conditions on it. Takes the shapes <code><a href="thiessen.html">thiessen()</a></code> takes, checked
+against the sampler's family: labels in {0, 1} or a two-level
+factor under the probit family, an ordered factor under the
+ordinal family, a <code>Surv</code> under the AFT and interval-censored
+families. Under the censored families the latents reset to the
+new observed values.</p></dd>
 
 <dt><code>$fitted_values()</code></dt>
 <dd><p>The current mean function at the training

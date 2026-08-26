@@ -76,9 +76,11 @@ Pr(sigma &lt; sigma_hat) = q. Default 0.85.</p></dd>
 right-censored time to event, the model of the BART package's <code>abart</code>:
 ln T = f(x) + e with e ~ N(0, sigma^2), the log time of a censored row
 drawn from its truncated conditional before each sweep.</p>
-<p>The times and the event indicator are data, not parameters. The fit
-entry points of this package take a plain response, so a fit under
-this family is rejected until one taking a censored time is added.</p>
+<p>The times and the event indicator are data, not parameters: the
+response is a <code><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">survival::Surv()</a></code> of type <code>"right"</code>, which selects this
+family by itself. <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> and the fitted values are f(x) on the
+log-time scale, the <code>abart</code> convention, and <code><a href="https://mc-stan.org/rstantools/reference/log_lik.html" class="external-link">log_lik()</a></code> is the
+censored likelihood of a <code>Surv</code> response.</p>
     </div>
     <div class="section level2">
     <h2 id="experimental">Experimental<a class="anchor" aria-label="anchor" href="#experimental"></a></h2>

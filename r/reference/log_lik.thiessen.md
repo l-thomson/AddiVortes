@@ -24,8 +24,11 @@ log_lik(object, newdata = NULL, y = NULL, ...)
 
 - y:
 
-  The response at `newdata`. Taken from `newdata` where the fit came
-  from a formula and `newdata` carries the response column.
+  The response at `newdata`, in the shape
+  [`thiessen()`](https://l-thomson.github.io/thiessen/r/reference/thiessen.md)
+  took: a `Surv` under the AFT and interval-censored families. Taken
+  from `newdata` where the fit came from a formula and `newdata` carries
+  the response column.
 
 - ...:
 

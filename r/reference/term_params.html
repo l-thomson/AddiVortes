@@ -59,7 +59,8 @@ heteroscedastic model, one as <code>variance_params</code>.</p>
 <span>  k <span class="op">=</span> <span class="fl">3</span>,</span>
 <span>  lambda_c <span class="op">=</span> <span class="fl">5</span>,</span>
 <span>  geometry <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  structure <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  structure <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  cell <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -99,6 +100,11 @@ covariate space: set it on <code>mean_params</code> and it applies to
 <code><a href="structure_params.html">structure_params()</a></code>. <code>NULL</code> takes the core's defaults. Shared
 between the ensembles like <code>geometry</code>.</p></dd>
 
+
+<dt id="arg-cell">cell<a class="anchor" aria-label="anchor" href="#arg-cell"></a></dt>
+<dd><p>The within-cell response surface, from <code><a href="cell_params.html">cell_params()</a></code>.
+<code>NULL</code> takes the core's default, one constant value per cell.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
@@ -106,7 +112,8 @@ between the ensembles like <code>geometry</code>.</p></dd>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
-    <div class="dont-index"><p><code><a href="thiessen_control.html">thiessen_control()</a></code>, <code><a href="geometry_params.html">geometry_params()</a></code>, <code><a href="structure_params.html">structure_params()</a></code></p></div>
+    <div class="dont-index"><p><code><a href="thiessen_control.html">thiessen_control()</a></code>, <code><a href="geometry_params.html">geometry_params()</a></code>,
+<code><a href="structure_params.html">structure_params()</a></code>, <code><a href="cell_params.html">cell_params()</a></code></p></div>
     </div>
 
     <div class="section level2">

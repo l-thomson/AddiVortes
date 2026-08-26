@@ -33,9 +33,15 @@ an exact value and an infinite endpoint one-sided censoring. The
 censoring is taken as independent of the response, so the bounds enter
 the likelihood only through the interval probability.
 
-The bounds are data, not parameters. The fit entry points of this
-package take a plain response, so a fit under this family is rejected
-until one taking a pair of bounds is added.
+The bounds are data, not parameters: the response is a
+[`survival::Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) of type
+`"interval2"`, `Surv(lower, upper, type = "interval2")`, in which an
+`NA` bound is one-sided censoring and an equal pair an exact value; it
+selects this family by itself.
+[`predict()`](https://rdrr.io/r/stats/predict.html) and the fitted
+values are the uncensored f(x), and
+[`log_lik()`](https://mc-stan.org/rstantools/reference/log_lik.html) is
+the interval likelihood of a `Surv` response.
 
 ## Experimental
 
