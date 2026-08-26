@@ -12,6 +12,7 @@ predict(
   type = c("mean", "draws", "latent", "variance"),
   interval = c("none", "credible", "prediction"),
   level = 0.95,
+  threads = NULL,
   ...
 )
 ```
@@ -46,6 +47,11 @@ predict(
 
   The mass of a central interval. Default 0.95.
 
+- threads:
+
+  The number of threads, a whole number; `NULL`, the default, is the
+  count the fit was made with.
+
 - ...:
 
   Ignored.
@@ -56,6 +62,11 @@ For `type = "mean"` and `interval = "none"`, a numeric vector of length
 `nrow(newdata)`; with an interval, a matrix of that many rows with
 columns `fit`, `lower` and `upper`. For the other types, a matrix of one
 row per kept draw and one column per row of `newdata`.
+
+## Details
+
+The rows of `newdata` are split over `threads` threads, each chunk
+evaluated on a thread of its own; the values do not depend on the count.
 
 ## Examples
 

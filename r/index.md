@@ -154,8 +154,8 @@ Cost is linear in the sweeps and close to linear in the rows and in the
 tessellation count. The default schedule is 1200 sweeps, 200 of burn-in
 and 1000 draws. As one calibration point, 600 sweeps of n = 1000 and p =
 3 with 100 tessellations take about 7 seconds on one core of a 2025
-laptop. Chains run in turn rather than in parallel, so `chains = 2`
-costs twice one chain.
+laptop. The chains run on `threads` threads, so `chains = 2` with
+`threads = 2` costs about one chain, and on one thread twice one.
 
 ## Priors
 

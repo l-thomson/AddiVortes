@@ -144,7 +144,7 @@
 <div class="section level2">
 <h2 id="runtime">Runtime<a class="anchor" aria-label="anchor" href="#runtime"></a>
 </h2>
-<p>Cost is linear in the sweeps and close to linear in the rows and in the tessellation count. The default schedule is 1200 sweeps, 200 of burn-in and 1000 draws. As one calibration point, 600 sweeps of n = 1000 and p = 3 with 100 tessellations take about 7 seconds on one core of a 2025 laptop. Chains run in turn rather than in parallel, so <code>chains = 2</code> costs twice one chain.</p>
+<p>Cost is linear in the sweeps and close to linear in the rows and in the tessellation count. The default schedule is 1200 sweeps, 200 of burn-in and 1000 draws. As one calibration point, 600 sweeps of n = 1000 and p = 3 with 100 tessellations take about 7 seconds on one core of a 2025 laptop. The chains run on <code>threads</code> threads, so <code>chains = 2</code> with <code>threads = 2</code> costs about one chain, and on one thread twice one.</p>
 </div>
 <div class="section level2">
 <h2 id="priors">Priors<a class="anchor" aria-label="anchor" href="#priors"></a>

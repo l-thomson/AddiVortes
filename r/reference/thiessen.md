@@ -14,10 +14,26 @@ rather than many splits.
 thiessen(x, ...)
 
 # Default S3 method
-thiessen(x, y, control = thiessen_control(), seed = NULL, chains = 1, ...)
+thiessen(
+  x,
+  y,
+  control = thiessen_control(),
+  seed = NULL,
+  chains = 1,
+  threads = 1,
+  ...
+)
 
 # S3 method for class 'data.frame'
-thiessen(x, y, control = thiessen_control(), seed = NULL, chains = 1, ...)
+thiessen(
+  x,
+  y,
+  control = thiessen_control(),
+  seed = NULL,
+  chains = 1,
+  threads = 1,
+  ...
+)
 
 # S3 method for class 'formula'
 thiessen(
@@ -26,6 +42,7 @@ thiessen(
   control = thiessen_control(),
   seed = NULL,
   chains = 1,
+  threads = 1,
   ...
 )
 ```
@@ -65,6 +82,14 @@ thiessen(
   pooled. Two or more chains give the convergence diagnostics; one chain
   does not.
 
+- threads:
+
+  The number of threads, a whole number. The chains are spread over at
+  most this many threads, each chain on one thread with its own
+  generator, so the draws do not depend on it;
+  [`predict()`](https://rdrr.io/r/stats/predict.html) on the fit splits
+  the rows over the same number. Default 1.
+
 - formula:
 
   A two-sided formula. The left side names the response and the right
@@ -77,10 +102,10 @@ thiessen(
 ## Value
 
 An object of class `"thiessen"`: a list with the fitted state, the
-resolved configuration, the number of chains and of kept draws, the
-convergence diagnostics where two or more chains ran, the seed used, the
-design, the response, the fitted values, the residuals, the hardhat
-blueprint where one applies, and the call.
+resolved configuration, the number of chains, the thread count, the
+number of kept draws, the convergence diagnostics where two or more
+chains ran, the seed used, the design, the response, the fitted values,
+the residuals, the hardhat blueprint where one applies, and the call.
 
 ## Details
 
@@ -101,11 +126,11 @@ are rejected with an error; no row is dropped silently.
 the call is stored, so `update(fit, seed = 2)` refits with that argument
 replaced.
 
-With `chains` of two or more, the chains are run in turn with the seeds
-the core derives from `seed`, their draws are pooled, and the fit
-carries rank-normalised split R-hat and the bulk and tail effective
-sample sizes of sigma and of the mean function at up to twenty training
-rows
+With `chains` of two or more, the chains are run together with the seeds
+the core derives from `seed`, each on one of `threads` threads, their
+draws are pooled, and the fit carries rank-normalised split R-hat and
+the bulk and tail effective sample sizes of sigma and of the mean
+function at up to twenty training rows
 ([`posterior::summarise_draws()`](https://mc-stan.org/posterior/reference/draws_summary.html)).
 A fit warns, and [`print()`](https://rdrr.io/r/base/print.html) and
 [`summary()`](https://rdrr.io/r/base/summary.html) repeat the warning,
