@@ -13,6 +13,14 @@ fn weighted(weights: Vec<f64>) -> Inclusion {
     Inclusion::Weighted { weights }
 }
 
+fn dart() -> Inclusion {
+    Inclusion::Dart {
+        a: 0.5,
+        b: 1.0,
+        rho: None,
+    }
+}
+
 #[test]
 fn equal_weights_reproduce_the_uniform_chain() {
     let (config, x, y) = fixture();
@@ -119,17 +127,7 @@ fn dart_defaults_parse_and_round_trip() {
 #[test]
 fn a_dart_fit_runs_and_round_trips() {
     let (config, x, y) = fixture();
-    let fitted = fit(
-        &config.with_inclusion(Inclusion::Dart {
-            a: 0.5,
-            b: 1.0,
-            rho: None,
-        }),
-        &x,
-        &y,
-        SEED,
-    )
-    .unwrap();
+    let fitted = fit(&config.with_inclusion(dart()), &x, &y, SEED).unwrap();
     let json = serde_json::to_string(&fitted).unwrap();
     let back: thiessen::Fitted = serde_json::from_str(&json).unwrap();
     assert_eq!(fitted.predict(&x).unwrap(), back.predict(&x).unwrap());
@@ -155,11 +153,7 @@ fn dart_concentrates_on_the_informative_column() {
     // uses both columns; concentration needs a varying subset, so the
     // test lowers omega.
     let fitted = fit(
-        &config.with_omega(0.5).with_inclusion(Inclusion::Dart {
-            a: 0.5,
-            b: 1.0,
-            rho: None,
-        }),
+        &config.with_omega(0.5).with_inclusion(dart()),
         &x,
         &noisy,
         SEED,
@@ -167,4 +161,93 @@ fn dart_concentrates_on_the_informative_column() {
     .unwrap();
     let proportions = fitted.variable_inclusion_proportions();
     assert!(proportions[0] > 2.0 * proportions[1], "{proportions:?}");
+}
+
+#[test]
+fn a_dart_fit_keeps_its_weights_and_concentration() {
+    let (config, x, y) = fixture();
+    let config = config.with_inclusion(dart());
+    let fitted = fit(&config, &x, &y, SEED).unwrap();
+
+    let weights = fitted.inclusion_weight_draws();
+    assert_eq!(weights.len(), fitted.n_draws());
+    assert_eq!(fitted.concentration_draws().len(), fitted.n_draws());
+    for draw in weights {
+        assert_eq!(draw.len(), x.n_cols());
+        assert!((draw.iter().sum::<f64>() - 1.0).abs() < 1e-9, "{draw:?}");
+    }
+    assert!(fitted.concentration_draws().iter().all(|t| *t > 0.0));
+}
+
+/// The weights kept are those the sampler used, not merely of the right
+/// shape: the same schedule driven by hand records the same values.
+#[test]
+fn the_kept_weights_are_the_ones_the_sampler_drew() {
+    let (config, x, y) = fixture();
+    let config = config.with_inclusion(dart());
+    let fitted = fit(&config, &x, &y, SEED).unwrap();
+
+    let mut sampler = thiessen::Sampler::new(&config, &x, &y, SEED).unwrap();
+    let schedule = &config.general_params;
+    for _ in 0..schedule.burn_in {
+        sampler.step();
+    }
+    let mut expected = Vec::new();
+    for _ in 0..schedule.draws {
+        for _ in 0..schedule.thinning {
+            sampler.step();
+        }
+        let (s, theta) = sampler.inclusion_state().expect("dart state");
+        expected.push((s.to_vec(), theta));
+        sampler.keep();
+    }
+
+    assert_eq!(
+        fitted.inclusion_weight_draws(),
+        expected.iter().map(|(s, _)| s.clone()).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        fitted.concentration_draws(),
+        expected.iter().map(|(_, t)| *t).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn another_inclusion_prior_keeps_neither() {
+    let (config, x, y) = fixture();
+    let uniform = fit(&config.clone(), &x, &y, SEED).unwrap();
+    assert!(uniform.inclusion_weight_draws().is_empty());
+    assert!(uniform.concentration_draws().is_empty());
+
+    let weighted = fit(
+        &config.with_inclusion(weighted(vec![0.5, 0.5])),
+        &x,
+        &y,
+        SEED,
+    )
+    .unwrap();
+    assert!(weighted.inclusion_weight_draws().is_empty());
+    assert!(weighted.concentration_draws().is_empty());
+}
+
+#[test]
+fn the_dart_state_survives_a_round_trip_and_a_payload_without_it() {
+    let (config, x, y) = fixture();
+    let fitted = fit(&config.clone().with_inclusion(dart()), &x, &y, SEED).unwrap();
+    let json = serde_json::to_string(&fitted).unwrap();
+    assert!(json.contains(r#""inclusion_weights":"#), "{json}");
+    let back: thiessen::Fitted = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        back.inclusion_weight_draws(),
+        fitted.inclusion_weight_draws()
+    );
+    assert_eq!(back.concentration_draws(), fitted.concentration_draws());
+
+    // A payload written before the fields existed carries neither name.
+    let uniform = fit(&config, &x, &y, SEED).unwrap();
+    let json = serde_json::to_string(&uniform).unwrap();
+    assert!(!json.contains("inclusion_weights"), "{json}");
+    assert!(!json.contains("concentration"), "{json}");
+    let back: thiessen::Fitted = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.predict(&x).unwrap(), uniform.predict(&x).unwrap());
 }

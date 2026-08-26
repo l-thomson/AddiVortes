@@ -1239,12 +1239,17 @@ impl Sampler {
             .map(StudentTOutcome::df);
         #[cfg(not(feature = "experimental"))]
         let df = None;
+        #[cfg(feature = "experimental")]
+        let inclusion = self.inclusion_state().map(|(s, theta)| (s.to_vec(), theta));
+        #[cfg(not(feature = "experimental"))]
+        let inclusion = None;
         self.kept.push(
             sigma_sq,
             self.mean.tessellations().to_vec(),
             variance,
             cutpoints,
             df,
+            inclusion,
         );
         self.accumulate_fit();
     }
