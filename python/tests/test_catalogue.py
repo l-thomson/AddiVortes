@@ -131,7 +131,7 @@ def test_every_row_fits_predicts_and_round_trips(item, tmp_path):
     x, _ = _fixture()
     model, y = ROWS[item]
 
-    fitted = model.fit(x, y, random_state=1)
+    fitted = model.fit(x, y, random_state=1, n_chains=1)
 
     assert fitted.n_draws == 20
     assert fitted.predict(x).shape == (48,)
@@ -156,7 +156,7 @@ def test_every_row_reports_the_feature_without_it(item):
     model, y = ROWS[item]
 
     with pytest.raises(RequiresFeatureError):
-        model.fit(x, y, random_state=1)
+        model.fit(x, y, random_state=1, n_chains=1)
 
 
 @pytest.mark.parametrize(
@@ -171,7 +171,7 @@ def test_the_published_defaults_fit_in_every_build(mean_params, gaussian_fixture
     x, y = gaussian_fixture
 
     fitted = Model(mean_params=mean_params, burn_in=10, draws=20).fit(
-        x, y, random_state=1
+        x, y, random_state=1, n_chains=1
     )
 
     assert fitted.n_draws == 20
@@ -181,7 +181,7 @@ def test_the_experimental_accessors_are_empty_where_nothing_is_sampled(
     gaussian_fixture,
 ):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     assert fitted.dfs().size == 0
     assert fitted.cutpoints().size == 0
@@ -193,7 +193,7 @@ def test_the_experimental_accessors_are_empty_where_nothing_is_sampled(
 @default_build
 def test_predict_proba_reports_the_feature_without_it(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     with pytest.raises(RequiresFeatureError):
         fitted.predict_proba(x)
@@ -204,7 +204,7 @@ def test_a_survival_array_reaches_the_aft_family():
     x, _ = _fixture()
     model, y = ROWS["aft"]
 
-    fitted = model.fit(x, y, random_state=1)
+    fitted = model.fit(x, y, random_state=1, n_chains=1)
 
     assert fitted.model == "aft"
     assert "aft" in fitted.config["outcome"]
@@ -229,7 +229,7 @@ def test_the_censored_families_pool_chains(item):
 def test_a_driven_aft_sampler_matches_fit_bit_for_bit():
     x, _ = _fixture()
     model, y = ROWS["aft"]
-    through_fit = model.fit(x, y, random_state=1)
+    through_fit = model.fit(x, y, random_state=1, n_chains=1)
 
     sampler = Sampler(x, y, mean_params=TermParams(tessellations=8), random_state=1)
     sampler.step(10)
@@ -260,7 +260,7 @@ def test_a_two_column_array_reaches_the_interval_censored_family():
     x, _ = _fixture()
     model, y = ROWS["interval_censored"]
 
-    fitted = model.fit(x, y, random_state=1)
+    fitted = model.fit(x, y, random_state=1, n_chains=1)
 
     assert fitted.model == "interval_censored"
     assert fitted.log_likelihood(x, y).shape == (20, 48)
@@ -271,7 +271,7 @@ def test_an_ordered_categorical_reaches_the_ordinal_family():
     x, _ = _fixture()
     model, y = ROWS["ordinal"]
 
-    fitted = model.fit(x, y, random_state=1)
+    fitted = model.fit(x, y, random_state=1, n_chains=1)
 
     assert fitted.model == "ordinal"
     assert fitted.config["outcome"]["ordinal"]["categories"] == 3
@@ -288,7 +288,9 @@ def test_the_ordinal_category_count_is_checked_against_the_categories():
     _, y = ROWS["ordinal"]
 
     with pytest.raises(ValueError, match="2 categories but the response has 3"):
-        Model(outcome=ordinal(categories=2), **SMALL).fit(x, y, random_state=1)
+        Model(outcome=ordinal(categories=2), **SMALL).fit(
+            x, y, random_state=1, n_chains=1
+        )
 
 
 @experimental
@@ -297,8 +299,10 @@ def test_integer_codes_need_a_named_category_count():
     codes = np.arange(48) % 3
 
     with pytest.raises(ValueError, match="categories"):
-        Model(outcome=ordinal(), **SMALL).fit(x, codes, random_state=1)
-    fitted = Model(outcome=ordinal(categories=3), **SMALL).fit(x, codes, random_state=1)
+        Model(outcome=ordinal(), **SMALL).fit(x, codes, random_state=1, n_chains=1)
+    fitted = Model(outcome=ordinal(categories=3), **SMALL).fit(
+        x, codes, random_state=1, n_chains=1
+    )
     assert fitted.predict_proba(x).shape == (48, 3)
 
 
@@ -315,7 +319,7 @@ def test_integer_codes_need_a_named_category_count():
 def test_the_posterior_carries_the_sampled_quantities(item, variables):
     x, _ = _fixture()
     model, y = ROWS[item]
-    fitted = model.fit(x, y, random_state=1)
+    fitted = model.fit(x, y, random_state=1, n_chains=1)
 
     posterior = fitted.to_inference_data(x, y)["posterior"].dataset
 
@@ -326,14 +330,16 @@ def test_the_posterior_carries_the_sampled_quantities(item, variables):
 def test_the_accessors_have_one_row_per_draw():
     x, _ = _fixture()
 
-    grid = ROWS["student_t_grid"][0].fit(x, ROWS["student_t_grid"][1], random_state=1)
+    grid = ROWS["student_t_grid"][0].fit(
+        x, ROWS["student_t_grid"][1], random_state=1, n_chains=1
+    )
     assert grid.dfs().shape == (20,)
     assert set(grid.dfs()) <= {3.0, 6.0, 12.0}
 
-    soft = ROWS["soft"][0].fit(x, ROWS["soft"][1], random_state=1)
+    soft = ROWS["soft"][0].fit(x, ROWS["soft"][1], random_state=1, n_chains=1)
     assert soft.bandwidths().shape == (20, 8)
 
-    dart = ROWS["dart"][0].fit(x, ROWS["dart"][1], random_state=1)
+    dart = ROWS["dart"][0].fit(x, ROWS["dart"][1], random_state=1, n_chains=1)
     assert dart.inclusion_weights().shape == (20, 2)
     np.testing.assert_allclose(dart.inclusion_weights().sum(axis=1), 1.0)
     assert dart.concentrations().shape == (20,)
@@ -343,7 +349,7 @@ def test_the_accessors_have_one_row_per_draw():
 def test_the_observed_data_carries_the_censoring_columns():
     x, _ = _fixture()
     model, y = ROWS["aft"]
-    fitted = model.fit(x, y, random_state=1)
+    fitted = model.fit(x, y, random_state=1, n_chains=1)
 
     observed = fitted.to_inference_data(x, y)["observed_data"].dataset
 

@@ -78,7 +78,7 @@ class _BaseAddiVortes(BaseEstimator):
         thinning: int = 1,
         prior_only: bool = False,
         categorical_features: str | Sequence[Any] | None = None,
-        n_chains: int = 1,
+        n_chains: int = 4,
         n_jobs: int | None = None,
         random_state: SeedLike = None,
     ) -> None:
@@ -232,7 +232,7 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
         treatment-contrast indicators, the first level as reference, unless
         its entry in the geometry's ``metric`` is ``'categorical'``, in which
         case it passes as integer level codes.
-    n_chains : int, default=1
+    n_chains : int, default=4
         The number of chains to run. Each chain has its own seed, derived
         from the resolved seed in the core, and the draws of the chains are
         pooled. Two or more chains warn where R-hat exceeds 1.01 or an
@@ -297,7 +297,7 @@ class AddiVortesRegressor(RegressorMixin, _BaseAddiVortes):
         thinning: int = 1,
         prior_only: bool = False,
         categorical_features: str | Sequence[Any] | None = None,
-        n_chains: int = 1,
+        n_chains: int = 4,
         n_jobs: int | None = None,
         random_state: SeedLike = None,
     ) -> None:
@@ -444,7 +444,7 @@ class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
         treatment-contrast indicators, the first level as reference, unless
         its entry in the geometry's ``metric`` is ``'categorical'``, in which
         case it passes as integer level codes.
-    n_chains : int, default=1
+    n_chains : int, default=4
         The number of chains to run. Each chain has its own seed, derived
         from the resolved seed in the core, and the draws of the chains are
         pooled. Two or more chains warn where R-hat exceeds 1.01 or an
@@ -502,7 +502,7 @@ class AddiVortesClassifier(ClassifierMixin, _BaseAddiVortes):
         thinning: int = 1,
         prior_only: bool = False,
         categorical_features: str | Sequence[Any] | None = None,
-        n_chains: int = 1,
+        n_chains: int = 4,
         n_jobs: int | None = None,
         random_state: SeedLike = None,
     ) -> None:

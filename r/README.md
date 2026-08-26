@@ -59,16 +59,16 @@ fit
 #> AddiVortes fit
 #> Call: thiessen(x = x, y = y, seed = 1)
 #> gaussian model, 200 observations, 2 covariates
-#> 200 tessellations, 1000 draws kept after 200 burn-in, thinning 1
-#> In-sample RMSE 0.07918, seed 1
-#> 1 chain; R-hat and effective sample sizes need two or more chains
+#> 200 tessellations, 4000 draws kept after 200 burn-in, thinning 1
+#> In-sample RMSE 0.07966, seed 1
+#> 4 chains, largest R-hat 1.008, smallest effective sample size 899
 ```
 
 ``` r
 head(predict(fit, x))
-#> [1] 0.2181837 0.1508115 0.3662940 0.4198369 0.2212262 0.6757635
+#> [1] 0.2161658 0.1520645 0.3659401 0.4203385 0.2189898 0.6780119
 sigma(fit)
-#> [1] 0.09331458
+#> [1] 0.09372794
 ```
 
 `plot(fit)` traces the per-draw sampler diagnostics, one panel each. It
@@ -103,8 +103,8 @@ and those of CRAN AddiVortes and the BART family.
 ## Working with a fit
 
 A formula interface takes data frames, with factor covariates encoded as
-`model.matrix` encodes them, and `chains = 2` or more adds R-hat and
-effective sample size diagnostics.
+`model.matrix` encodes them, and the default four `chains` carry R-hat
+and effective sample size diagnostics.
 
 `posterior::as_draws_df()`, `summarise_draws()`, `posterior_predict()`,
 `posterior_epred()`, `log_lik()` and `predictive_interval()` work on a
@@ -140,10 +140,20 @@ Euclidean column.
 
 Cost is linear in the sweeps and close to linear in the rows and in the
 tessellation count. The default schedule is 1200 sweeps, 200 of burn-in
-and 1000 draws. As one calibration point, 600 sweeps of n = 1000 and p =
-3 with 100 tessellations take about 7 seconds on one core of a 2025
-laptop. The chains run on `threads` threads, so `chains = 2` with
-`threads = 2` costs about one chain, and on one thread twice one.
+and 1000 draws, and a default fit runs four chains of it on
+`getOption("mc.cores", 1L)` threads, so a session that sets nothing pays
+four chains on one core. As one calibration point, 600 sweeps of n =
+1000 and p = 3 with 100 tessellations take about 7 seconds on one core
+of a 2025 laptop. `options(mc.cores = 4)` runs the chains on four cores
+for the same draws; the fit then takes less than half the one-thread
+time (about 45 per cent at n = 200 on four cores of a 2025 laptop), so
+it costs under two chains rather than four.
+
+A default fit is short for the diagnostics it carries: on Friedman \#1
+with n = 200 and p = 10 the smallest effective sample size over the
+monitored points is about 100 (threshold 400) and the largest R-hat
+about 1.05 (threshold 1.01), so the fit warns. More draws per chain,
+`general_params(draws = )`, is the answer; `thinning` is not.
 
 ## Priors
 

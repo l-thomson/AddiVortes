@@ -157,6 +157,38 @@ Three levels become two indicator columns under the Euclidean metric, or stay
 as one column of codes under the categorical metric, which then takes the Eskin
 mismatch weight.
 
+## Chains and threads
+
+The estimators run `n_chains=4` chains, the number the convergence checks
+are designed for, on `n_jobs=None` threads, which is one under the joblib
+convention, so an estimator that sets nothing pays four chains on one core.
+`n_jobs=-1` runs the chains on every core for the same draws; on Friedman #1
+with n = 200 and p = 10 the fit is then about 2.7 times faster on four cores
+of a 2025 laptop. A fit at the default schedule warns on that data (smallest
+effective sample size about 290 against 400, largest R-hat about 1.014
+against 1.01); more `draws` per chain is the answer.
+
+```python exec="on" source="above" result="text"
+import warnings
+
+import numpy as np
+from thiessen import TermParams
+from thiessen.estimators import AddiVortesRegressor
+
+rng = np.random.default_rng(0)
+x = rng.uniform(size=(200, 3))
+y = 3.0 * (x[:, 0] - 0.4) ** 2 + 0.5 * x[:, 1] + rng.normal(scale=0.1, size=200)
+
+model = AddiVortesRegressor(
+    mean_params=TermParams(tessellations=25), burn_in=50, draws=100, n_jobs=-1
+)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    model.fit(x, y)
+print("chains:", model.n_chains)
+print("R^2:", round(model.score(x, y), 4))
+```
+
 ## Seeds
 
 `random_state` takes an integer, a `numpy.random.Generator`, a

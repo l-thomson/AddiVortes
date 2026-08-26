@@ -162,7 +162,7 @@ jobs:
           x = np.linspace(0.0, 1.0, 40).reshape(-1, 1)
           y = 3.0 * x[:, 0] ** 2 - x[:, 0]
           model = Model(mean_params=TermParams(tessellations=10), burn_in=20, draws=30)
-          assert model.fit(x, y, random_state=1).n_draws == 30
+          assert model.fit(x, y, random_state=1, n_chains=1).n_draws == 30
           "
 
   alls-green:

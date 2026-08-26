@@ -25,7 +25,7 @@ def fit_chains(fixture, n_chains=2, **params):
 
 def test_the_chains_pool_their_draws(gaussian_fixture):
     x, y = gaussian_fixture
-    one = Model(**SMALL).fit(x, y, random_state=1)
+    one = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     two = fit_chains(gaussian_fixture)
 
@@ -37,7 +37,7 @@ def test_the_chains_pool_their_draws(gaussian_fixture):
 
 def test_the_first_chain_is_the_one_chain_fit(gaussian_fixture):
     x, y = gaussian_fixture
-    one = Model(**SMALL).fit(x, y, random_state=1)
+    one = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     two = fit_chains(gaussian_fixture)
 
@@ -88,7 +88,7 @@ def test_one_chain_does_not_warn(gaussian_fixture):
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        Model(**SMALL).fit(x, y, random_state=1)
+        Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
 
 def test_a_pooled_fit_pickles_with_its_chain_count(gaussian_fixture):
@@ -164,12 +164,12 @@ def test_the_thread_count_survives_a_pickle(gaussian_fixture):
 def test_the_thread_count_must_be_a_positive_integer(gaussian_fixture, n_threads):
     x, y = gaussian_fixture
     with pytest.raises((ValueError, TypeError)):
-        Model(**SMALL).fit(x, y, random_state=1, n_threads=n_threads)
+        Model(**SMALL).fit(x, y, random_state=1, n_threads=n_threads, n_chains=1)
 
 
 def test_the_thread_count_can_be_set_on_a_fitted_model(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
     mean = fitted.predict(x)
     interval = fitted.prediction_interval(x)
 
@@ -180,3 +180,14 @@ def test_the_thread_count_can_be_set_on_a_fitted_model(gaussian_fixture):
     np.testing.assert_array_equal(fitted.prediction_interval(x), interval)
     with pytest.raises(ValueError):
         fitted.n_threads = 0
+
+
+def test_a_fit_defaults_to_four_chains_on_one_thread(gaussian_fixture):
+    x, y = gaussian_fixture
+
+    with pytest.warns(UserWarning):
+        fitted = Model(**SMALL).fit(x, y, random_state=1)
+
+    assert fitted.n_chains == 4
+    assert fitted.n_threads == 1
+    assert fitted.n_draws == 4 * SMALL["draws"]

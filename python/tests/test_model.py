@@ -21,7 +21,7 @@ from .conftest import SMALL
 
 def test_gaussian_fit_predicts_at_every_row(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     assert isinstance(fitted, FittedModel)
     assert fitted.model == "gaussian"
@@ -33,7 +33,7 @@ def test_gaussian_fit_predicts_at_every_row(gaussian_fixture):
 
 def test_defaults_come_from_the_core(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     config = fitted.config
     assert config["outcome"] == {"gaussian": {"nu": 6.0, "q": 0.85}}
@@ -46,7 +46,7 @@ def test_defaults_come_from_the_core(gaussian_fixture):
 
 def test_posterior_accessors_have_one_value_per_draw(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     assert fitted.sigma().shape == (20,)
     assert fitted.cell_counts().shape == (20,)
@@ -58,7 +58,7 @@ def test_posterior_accessors_have_one_value_per_draw(gaussian_fixture):
 
 def test_intervals_and_quantiles(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     quantiles = fitted.predict_quantiles(x, [0.1, 0.5, 0.9])
     assert quantiles.shape == (48, 3)
@@ -75,14 +75,14 @@ def test_intervals_and_quantiles(gaussian_fixture):
 
 def test_log_likelihood_is_draw_major(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     assert fitted.log_likelihood(x, y).shape == (20, 48)
 
 
 def test_probit_predicts_probabilities(probit_fixture):
     x, y = probit_fixture
-    fitted = Model(outcome=probit(), **SMALL).fit(x, y, random_state=1)
+    fitted = Model(outcome=probit(), **SMALL).fit(x, y, random_state=1, n_chains=1)
 
     probabilities = fitted.predict(x)
     assert np.all((probabilities >= 0.0) & (probabilities <= 1.0))
@@ -96,7 +96,7 @@ def test_probit_predicts_probabilities(probit_fixture):
 def test_heteroscedastic_variance_varies_by_row(gaussian_fixture):
     x, y = gaussian_fixture
     fitted = Model(variance_params=TermParams(tessellations=5), **SMALL).fit(
-        x, y, random_state=1
+        x, y, random_state=1, n_chains=1
     )
 
     variance = fitted.predict_variance(x)
@@ -107,7 +107,7 @@ def test_heteroscedastic_variance_varies_by_row(gaussian_fixture):
 
 def test_gaussian_variance_is_constant_across_rows(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     variance = fitted.predict_variance(x)
     assert np.ptp(variance[0]) == 0.0
@@ -115,7 +115,7 @@ def test_gaussian_variance_is_constant_across_rows(gaussian_fixture):
 
 def test_prior_only_ignores_the_response(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(prior_only=True, **SMALL).fit(x, y, random_state=1)
+    fitted = Model(prior_only=True, **SMALL).fit(x, y, random_state=1, n_chains=1)
 
     assert fitted.in_sample_rmse > 0.0
     assert fitted.config["general_params"]["prior_only"] is True
@@ -123,7 +123,7 @@ def test_prior_only_ignores_the_response(gaussian_fixture):
 
 def test_pickle_round_trip_preserves_predictions(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     restored = pickle.loads(pickle.dumps(fitted))
 
@@ -138,7 +138,7 @@ def test_warnings_report_more_features_than_observations():
     y = rng.uniform(size=4)
 
     with pytest.warns(UserWarning, match="more features"):
-        fitted = Model(**SMALL).fit(x, y, random_state=1)
+        fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     assert any("more features" in warning for warning in fitted.warnings)
 
@@ -157,7 +157,7 @@ def test_metric_accepts_a_spherical_column():
         ),
         burn_in=10,
         draws=20,
-    ).fit(x, y, random_state=1)
+    ).fit(x, y, random_state=1, n_chains=1)
 
     assert fitted.predict(x).shape == (n,)
 
@@ -174,7 +174,7 @@ def test_metric_accepts_a_categorical_column():
         mean_params=TermParams(tessellations=8, geometry=geometry),
         burn_in=10,
         draws=20,
-    ).fit(x, y, random_state=1)
+    ).fit(x, y, random_state=1, n_chains=1)
 
     assert fitted.predict(x).shape == (n,)
 
@@ -202,7 +202,7 @@ def test_the_ensembles_share_the_declared_geometry(gaussian_fixture):
         variance_params=TermParams(tessellations=5),
         burn_in=10,
         draws=20,
-    ).fit(x, y, random_state=1)
+    ).fit(x, y, random_state=1, n_chains=1)
 
     config = fitted.config
     assert config["variance_params"]["geometry"] == config["mean_params"]["geometry"]

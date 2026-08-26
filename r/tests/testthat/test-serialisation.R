@@ -1,6 +1,6 @@
 test_that("a fit survives a round trip through saveRDS", {
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
   path <- tempfile(fileext = ".rds")
   on.exit(unlink(path), add = TRUE)
 
@@ -15,7 +15,7 @@ test_that("a fit read in a new session predicts the same values", {
   skip_on_cran()
   skip_if_not_installed("callr")
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
   path <- tempfile(fileext = ".rds")
   on.exit(unlink(path), add = TRUE)
   saveRDS(fit, path)
@@ -32,7 +32,7 @@ test_that("a fit read in a new session predicts the same values", {
 
 test_that("a restored fit revives its state once and reuses it", {
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
 
   restored <- unserialize(serialize(fit, NULL))
 
@@ -43,7 +43,7 @@ test_that("a restored fit revives its state once and reuses it", {
 
 test_that("a state the build cannot read errors with the package's class", {
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
   fit$state$payload <- swap_payload_name(
     fit$state$payload, "gaussian", "crackles"
   )

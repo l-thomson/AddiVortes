@@ -53,7 +53,7 @@ def test_draws_equal_the_core_snapshot(gaussian_fixture):
     x, y = gaussian_fixture
     stored = _stored()
 
-    fitted = _core_model().fit(x, y, random_state=SEED)
+    fitted = _core_model().fit(x, y, random_state=SEED, n_chains=1)
 
     assert fitted.n_draws == stored.shape[0]
     np.testing.assert_array_equal(fitted.sigma(), stored[:, 0])
@@ -71,7 +71,7 @@ def test_probit_draws_equal_the_core_snapshot(gaussian_fixture):
     threshold = np.sort(y)[y.size // 2]
     labels = (y >= threshold).astype(np.float64)
 
-    fitted = _core_model(outcome=probit()).fit(x, labels, random_state=SEED)
+    fitted = _core_model(outcome=probit()).fit(x, labels, random_state=SEED, n_chains=1)
 
     assert fitted.n_draws == stored.shape[0]
     np.testing.assert_array_equal(fitted.predict_latent(x[POINTS]), stored)
@@ -87,7 +87,7 @@ def test_heteroscedastic_draws_equal_the_core_snapshot(gaussian_fixture):
     scaled = y - noise + noise * (0.2 + 2.0 * x[:, 0])
 
     model = _core_model(variance_params=TermParams(tessellations=5))
-    fitted = model.fit(x, scaled, random_state=SEED)
+    fitted = model.fit(x, scaled, random_state=SEED, n_chains=1)
 
     assert fitted.n_draws == stored.shape[0]
     np.testing.assert_array_equal(fitted.predict_draws(x[POINTS]), stored[:, :3])
