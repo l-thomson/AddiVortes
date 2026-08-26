@@ -27,9 +27,14 @@ $(STATLIB):
 	else \
 	  offline=""; \
 	fi; \
+	if [ "$$THIESSEN_EXPERIMENTAL" = "1" ]; then \
+	  features="--features experimental"; \
+	else \
+	  features=""; \
+	fi; \
 	export CARGO_HOME="$(CARGOTMP)" && \
 	export LIBRARY_PATH="$(LIBRARY_PATH);$(CARGOTMP)/libgcc_mock" && \
-	cargo build --jobs 2 $$offline --target=$(TARGET) --lib --release \
+	cargo build --jobs 2 $$offline $$features --target=$(TARGET) --lib --release \
 	  --manifest-path=./rust/Cargo.toml --target-dir="$(TARGET_DIR)"
 	rm -Rf "$(CARGOTMP)"
 

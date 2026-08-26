@@ -19,17 +19,20 @@
 #' single number most fits tune. Every other setting is named in its
 #' group.
 #'
-#' The models reachable here are the published method and follow semantic
-#' versioning. Everything else the core crate adds sits behind its
-#' `experimental` Cargo feature, which this package does not enable, so a
-#' configuration or a saved fit naming such an option is rejected with the
-#' core's message naming the feature. The outcome families it gates are
-#' tobit, accelerated failure time, interval-censored and ordinal: none is
-#' a function in this package, and [core_experimental()] reports the
-#' setting of the build in use. Each graduates on its own once calibrated
-#' and is then accepted as any other option, with no separate opt-in; until
-#' then it can be built in R against [thiessen_sampler()]. The table of
-#' experimental items and their status is
+#' The models reachable with [gaussian_outcome()] and [probit_outcome()]
+#' are the published method and follow semantic versioning. Everything
+#' else the core crate adds sits behind its `experimental` Cargo feature,
+#' which a released build does not enable, so a configuration or a saved
+#' fit naming such an option is rejected with the condition class
+#' `thiessen_requires_feature`. The families it gates each have a
+#' constructor here ([tobit_outcome()], [aft_outcome()],
+#' [interval_censored_outcome()], [ordinal_outcome()],
+#' [student_t_outcome()] and [laplace_outcome()]), so naming one is
+#' portable, and a build accepting them is installed from source with
+#' `THIESSEN_EXPERIMENTAL=1` in the environment; [core_experimental()]
+#' reports the setting of the build in use. Each item graduates on its own
+#' once calibrated and is then accepted as any other option, with no
+#' separate opt-in. The table of experimental items and their status is
 #' [`docs/experimental.md`](https://github.com/l-thomson/thiessen/blob/dev/docs/experimental.md).
 #'
 #' The core's calibration suite covers the configurations listed in
@@ -38,8 +41,8 @@
 #' of the documented options is valid to run and is not separately
 #' verified.
 #'
-#' @param outcome The outcome family, from [gaussian_outcome()] or
-#'   [probit_outcome()].
+#' @param outcome The outcome family, from [gaussian_outcome()],
+#'   [probit_outcome()] or one of the experimental constructors above.
 #' @param mean_params The ensemble describing the average, from
 #'   [term_params()].
 #' @param variance_params The ensemble describing the spread, from

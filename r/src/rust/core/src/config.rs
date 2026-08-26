@@ -17,7 +17,7 @@ use crate::outcome::{RequiredData, Sigma2Mode};
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[cfg_attr(not(feature = "experimental"), serde(try_from = "StableOutcome"))]
+#[cfg_attr(not(feature = "experimental"), serde(from = "StableOutcome"))]
 pub enum Outcome {
     /// y = f(x) + e, e ~ N(0, sigma^2) (Stone and Gosling 2025). With
     /// `variance_params.tessellations` above 0 the spread is the
@@ -74,11 +74,17 @@ pub enum Outcome {
     /// of its own. Experimental (`docs/experimental.md`).
     #[cfg(feature = "experimental")]
     Laplace(LaplaceParams),
+    /// An outcome this build gates; [`Config::validate`] reports it.
+    #[cfg(not(feature = "experimental"))]
+    #[doc(hidden)]
+    #[serde(skip)]
+    Gated(Gated),
 }
 
 /// The stable variants plus the gated names, so a build without the
-/// feature rejects a gated outcome by naming the feature rather than
-/// with an unknown-variant error.
+/// feature carries a gated outcome through to [`Config::validate`]
+/// rather than failing inside the deserialiser, which has no channel for
+/// a typed error.
 #[cfg(not(feature = "experimental"))]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -94,37 +100,44 @@ enum StableOutcome {
 }
 
 #[cfg(not(feature = "experimental"))]
-impl TryFrom<StableOutcome> for Outcome {
-    type Error = crate::error::Error;
-
-    fn try_from(outcome: StableOutcome) -> Result<Self> {
+impl From<StableOutcome> for Outcome {
+    fn from(outcome: StableOutcome) -> Self {
         match outcome {
-            StableOutcome::Gaussian(params) => Ok(Outcome::Gaussian(params)),
-            StableOutcome::Probit(params) => Ok(Outcome::Probit(params)),
-            StableOutcome::Tobit(_) => Err(crate::error::Error::RequiresFeature {
-                item: "the `tobit` outcome".into(),
-                feature: "experimental",
-            }),
-            StableOutcome::Aft(_) => Err(crate::error::Error::RequiresFeature {
-                item: "the `aft` outcome".into(),
-                feature: "experimental",
-            }),
-            StableOutcome::IntervalCensored(_) => Err(crate::error::Error::RequiresFeature {
-                item: "the `interval_censored` outcome".into(),
-                feature: "experimental",
-            }),
-            StableOutcome::Ordinal(_) => Err(crate::error::Error::RequiresFeature {
-                item: "the `ordinal` outcome".into(),
-                feature: "experimental",
-            }),
-            StableOutcome::StudentT(_) => Err(crate::error::Error::RequiresFeature {
-                item: "the `student_t` outcome".into(),
-                feature: "experimental",
-            }),
-            StableOutcome::Laplace(_) => Err(crate::error::Error::RequiresFeature {
-                item: "the `laplace` outcome".into(),
-                feature: "experimental",
-            }),
+            StableOutcome::Gaussian(params) => Outcome::Gaussian(params),
+            StableOutcome::Probit(params) => Outcome::Probit(params),
+            StableOutcome::Tobit(_) => Outcome::Gated(Gated("the `tobit` outcome")),
+            StableOutcome::Aft(_) => Outcome::Gated(Gated("the `aft` outcome")),
+            StableOutcome::IntervalCensored(_) => {
+                Outcome::Gated(Gated("the `interval_censored` outcome"))
+            }
+            StableOutcome::Ordinal(_) => Outcome::Gated(Gated("the `ordinal` outcome")),
+            StableOutcome::StudentT(_) => Outcome::Gated(Gated("the `student_t` outcome")),
+            StableOutcome::Laplace(_) => Outcome::Gated(Gated("the `laplace` outcome")),
+        }
+    }
+}
+
+/// A configuration value this build gates, carried from the deserialiser
+/// to [`Config::validate`], which reports it as
+/// [`Error::RequiresFeature`](crate::Error::RequiresFeature). serde's
+/// error channel is a string, so a value rejected inside `Deserialize`
+/// reaches a caller untyped; deserialising states the shape and
+/// `validate` states the policy, as they already do for every other
+/// field. Present only without the feature, and never serialised: a
+/// configuration holding one does not pass `validate`.
+#[cfg(not(feature = "experimental"))]
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Gated(pub(crate) &'static str);
+
+#[cfg(not(feature = "experimental"))]
+impl Gated {
+    /// The item, as [`Error::RequiresFeature`](crate::Error::RequiresFeature)
+    /// names it.
+    pub(crate) fn requires_feature(self) -> crate::error::Error {
+        crate::error::Error::RequiresFeature {
+            item: self.0.into(),
+            feature: "experimental",
         }
     }
 }
@@ -210,12 +223,39 @@ impl Outcome {
         Outcome::Laplace(LaplaceParams::default())
     }
 
+    /// Every outcome family this build carries, at its defaults. A
+    /// binding reads the family names and their parameters from here,
+    /// so neither keeps a list of its own.
+    pub fn catalogue() -> Vec<Self> {
+        #[cfg(not(feature = "experimental"))]
+        let gated: [Self; 0] = [];
+        #[cfg(feature = "experimental")]
+        let gated = [
+            Outcome::Tobit(TobitParams::default()),
+            Outcome::Aft(AftParams::default()),
+            Outcome::IntervalCensored(IntervalCensoredParams::default()),
+            Outcome::Ordinal(OrdinalParams::default()),
+            Outcome::StudentT(StudentTParams::default()),
+            Outcome::Laplace(LaplaceParams::default()),
+        ];
+        [Outcome::gaussian(), Outcome::probit()]
+            .into_iter()
+            .chain(gated)
+            .collect()
+    }
+
     /// What the outcome does with sigma^2; scale validity derives from
     /// this value, never from a per-outcome table.
     pub(crate) fn sigma2_mode(&self) -> Sigma2Mode {
         match self {
             Outcome::Gaussian(_) => Sigma2Mode::Sampled,
             Outcome::Probit(_) => Sigma2Mode::Fixed(1.0),
+            // `Config::validate` rejects a gated outcome before any of
+            // the tables below it is read, so this arm and its
+            // counterparts are never taken; each answers as the Gaussian
+            // model does rather than panicking.
+            #[cfg(not(feature = "experimental"))]
+            Outcome::Gated(_) => Sigma2Mode::Sampled,
             #[cfg(feature = "experimental")]
             Outcome::Tobit(_) => Sigma2Mode::Sampled,
             #[cfg(feature = "experimental")]
@@ -236,6 +276,8 @@ impl Outcome {
         match self {
             Outcome::Gaussian(_) => RequiredData::Continuous,
             Outcome::Probit(_) => RequiredData::Binary,
+            #[cfg(not(feature = "experimental"))]
+            Outcome::Gated(_) => RequiredData::Continuous,
             #[cfg(feature = "experimental")]
             Outcome::Tobit(_) => RequiredData::Continuous,
             #[cfg(feature = "experimental")]
@@ -585,17 +627,17 @@ pub struct GeometryParams {
     /// (scaled space). Default 0.8.
     pub sigma_c: f64,
     /// How an observation belongs to a tessellation's cells. Default
-    /// hard, the published rule. Experimental (`docs/experimental.md`).
-    #[cfg(feature = "experimental")]
+    /// hard, the published rule. Every other value is experimental
+    /// (`docs/experimental.md`).
     #[serde(skip_serializing_if = "Membership::is_hard")]
     pub membership: Membership,
     /// The precision matrix of the Mahalanobis metric, row-major p x p
     /// over the encoded design; required exactly when a column's metric
-    /// is [`Metric::Mahalanobis`]. Checked at fit: symmetric, positive
+    /// is the Mahalanobis one. Checked at fit: symmetric, positive
     /// definite. The active-subspace distance uses the principal
     /// submatrix on the active columns, which is not the conditional
-    /// precision. Experimental (`docs/experimental.md`).
-    #[cfg(feature = "experimental")]
+    /// precision. The field has no published value, so any value is
+    /// experimental (`docs/experimental.md`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub precision: Option<Vec<f64>>,
 }
@@ -605,9 +647,7 @@ impl Default for GeometryParams {
         Self {
             metric: Vec::new(),
             sigma_c: 0.8,
-            #[cfg(feature = "experimental")]
             membership: Membership::Hard,
-            #[cfg(feature = "experimental")]
             precision: None,
         }
     }
@@ -615,15 +655,21 @@ impl Default for GeometryParams {
 
 /// How an observation belongs to a tessellation's cells,
 /// [`GeometryParams::membership`].
-#[cfg(feature = "experimental")]
 #[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(not(feature = "experimental"), serde(from = "StableMembership"))]
 #[non_exhaustive]
 pub enum Membership {
     /// Every observation belongs wholly to its nearest centre, the
     /// published rule. The default.
     #[default]
     Hard,
+    /// A membership rule this build gates; [`Config::validate`] reports
+    /// it.
+    #[cfg(not(feature = "experimental"))]
+    #[doc(hidden)]
+    #[serde(skip)]
+    Gated(Gated),
     /// Kernel-weighted membership (SBART's softening of the tree split,
     /// Linero and Yang 2018, carried to the Voronoi assignment):
     /// observation i takes weight w_ik proportional to
@@ -639,6 +685,8 @@ pub enum Membership {
     /// only: the linear basis has no derived weighted update, and the
     /// variance ensemble's inverse-gamma cells have no closed-form
     /// weighted conditional. Experimental (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
     Soft {
         /// Rate of the exponential bandwidth prior, on the scaled
         /// covariate space. Default 10, so the prior mean bandwidth is
@@ -654,7 +702,6 @@ fn default_soft_rate() -> f64 {
     10.0
 }
 
-#[cfg(feature = "experimental")]
 impl Membership {
     /// Whether this is the default, for compact serialisation.
     fn is_hard(&self) -> bool {
@@ -662,6 +709,8 @@ impl Membership {
     }
 
     /// The soft membership with the default bandwidth prior.
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
     pub fn soft() -> Self {
         Membership::Soft {
             rate: default_soft_rate(),
@@ -669,16 +718,41 @@ impl Membership {
     }
 }
 
+/// The published rule plus the gated names; as [`StableOutcome`].
+#[cfg(not(feature = "experimental"))]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum StableMembership {
+    Hard,
+    Soft(serde::de::IgnoredAny),
+}
+
+#[cfg(not(feature = "experimental"))]
+impl From<StableMembership> for Membership {
+    fn from(membership: StableMembership) -> Self {
+        match membership {
+            StableMembership::Hard => Membership::Hard,
+            StableMembership::Soft(_) => Membership::Gated(Gated("`soft` membership")),
+        }
+    }
+}
+
 /// The covariate-inclusion prior over the columns of one term group:
 /// which covariates a tessellation may use, and with what prior weight.
-#[cfg(feature = "experimental")]
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(not(feature = "experimental"), serde(from = "StableInclusion"))]
 #[non_exhaustive]
 pub enum Inclusion {
     /// Dimensions drawn uniformly, the published prior. The default.
     #[default]
     Uniform,
+    /// An inclusion prior this build gates; [`Config::validate`] reports
+    /// it.
+    #[cfg(not(feature = "experimental"))]
+    #[doc(hidden)]
+    #[serde(skip)]
+    Gated(Gated),
     /// A fixed weight per column (bartMachine `cov_prior_vec`, Kapelner
     /// and Bleich 2016): the subset prior given the dimension count is
     /// proportional to the product of the member weights, proposals pick
@@ -690,6 +764,8 @@ pub enum Inclusion {
     /// so they reproduce the default draws exactly. Nothing is sampled:
     /// the sampler's conditional updates are untouched. Experimental
     /// (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
     Weighted {
         /// One weight per column, in column order.
         weights: Vec<f64>,
@@ -707,6 +783,8 @@ pub enum Inclusion {
     /// component of the term group; in validation it is model-grade,
     /// because the sampled weights change the posterior. Experimental
     /// (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
     Dart {
         /// Beta shape a of the concentration prior. Default 0.5.
         #[serde(default = "default_dart_a")]
@@ -730,11 +808,31 @@ fn default_dart_b() -> f64 {
     1.0
 }
 
-#[cfg(feature = "experimental")]
 impl Inclusion {
     /// Whether this is the default, for compact serialisation.
     fn is_uniform(&self) -> bool {
         matches!(self, Inclusion::Uniform)
+    }
+}
+
+/// The published prior plus the gated names; as [`StableOutcome`].
+#[cfg(not(feature = "experimental"))]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum StableInclusion {
+    Uniform,
+    Weighted(serde::de::IgnoredAny),
+    Dart(serde::de::IgnoredAny),
+}
+
+#[cfg(not(feature = "experimental"))]
+impl From<StableInclusion> for Inclusion {
+    fn from(inclusion: StableInclusion) -> Self {
+        match inclusion {
+            StableInclusion::Uniform => Inclusion::Uniform,
+            StableInclusion::Weighted(_) => Inclusion::Gated(Gated("`weighted` inclusion")),
+            StableInclusion::Dart(_) => Inclusion::Gated(Gated("`dart` inclusion")),
+        }
     }
 }
 
@@ -744,8 +842,8 @@ impl Inclusion {
 #[serde(default, deny_unknown_fields)]
 pub struct StructureParams {
     /// The covariate-inclusion prior. Default uniform, the published
-    /// prior. Experimental (`docs/experimental.md`).
-    #[cfg(feature = "experimental")]
+    /// prior. Every other value is experimental
+    /// (`docs/experimental.md`).
     #[serde(skip_serializing_if = "Inclusion::is_uniform")]
     pub inclusion: Inclusion,
     /// Dimension-count prior parameter omega; omega / p is the prior
@@ -762,22 +860,27 @@ pub struct StructureParams {
 #[serde(default, deny_unknown_fields)]
 pub struct CellParams {
     /// The within-cell response surface. Default constant, the
-    /// published basis. Experimental (`docs/experimental.md`).
-    #[cfg(feature = "experimental")]
+    /// published basis. Every other value is experimental
+    /// (`docs/experimental.md`).
     #[serde(skip_serializing_if = "Basis::is_constant")]
     pub basis: Basis,
 }
 
 /// The within-cell response surface of one term group,
 /// [`CellParams::basis`].
-#[cfg(feature = "experimental")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(not(feature = "experimental"), serde(from = "StableBasis"))]
 #[non_exhaustive]
 pub enum Basis {
     /// One value per cell, the published model. The default.
     #[default]
     Constant,
+    /// A cell basis this build gates; [`Config::validate`] reports it.
+    #[cfg(not(feature = "experimental"))]
+    #[doc(hidden)]
+    #[serde(skip)]
+    Gated(Gated),
     /// The cell value tilts across the region: mu + beta' (x_A - c) over
     /// the active covariates, centred at the cell's centre, so mu keeps
     /// its role as the level there. Slopes take the cell-value prior
@@ -788,14 +891,34 @@ pub enum Basis {
     /// scaled space. Mean slot only; the variance ensemble's
     /// inverse-gamma cells keep the constant basis. Experimental
     /// (`docs/experimental.md`).
+    #[cfg(feature = "experimental")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "experimental")))]
     Linear,
 }
 
-#[cfg(feature = "experimental")]
 impl Basis {
     /// Whether this is the default, for compact serialisation.
     fn is_constant(&self) -> bool {
         matches!(self, Basis::Constant)
+    }
+}
+
+/// The published basis plus the gated names; as [`StableOutcome`].
+#[cfg(not(feature = "experimental"))]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum StableBasis {
+    Constant,
+    Linear,
+}
+
+#[cfg(not(feature = "experimental"))]
+impl From<StableBasis> for Basis {
+    fn from(basis: StableBasis) -> Self {
+        match basis {
+            StableBasis::Constant => Basis::Constant,
+            StableBasis::Linear => Basis::Gated(Gated("the `linear` cell basis")),
+        }
     }
 }
 
@@ -1073,6 +1196,8 @@ impl Config {
             (Outcome::Probit(_), _) => "probit",
             (Outcome::Gaussian(_), 0) => "gaussian",
             (Outcome::Gaussian(_), _) => "heteroscedastic",
+            #[cfg(not(feature = "experimental"))]
+            (Outcome::Gated(_), _) => "gaussian",
             #[cfg(feature = "experimental")]
             (Outcome::Tobit(_), _) => "tobit",
             #[cfg(feature = "experimental")]
@@ -1125,6 +1250,11 @@ impl Config {
     pub(crate) fn sigma2_prior(&self) -> (f64, f64) {
         match &self.outcome {
             Outcome::Gaussian(params) => (params.nu, params.q),
+            #[cfg(not(feature = "experimental"))]
+            Outcome::Gated(_) => {
+                let defaults = GaussianParams::default();
+                (defaults.nu, defaults.q)
+            }
             #[cfg(feature = "experimental")]
             Outcome::Tobit(params) => (params.nu, params.q),
             #[cfg(feature = "experimental")]
@@ -1156,6 +1286,47 @@ impl Config {
             .unwrap_or_else(|| 3.0_f64.min(p as f64))
     }
 
+    /// The first value this build gates, if any: the outcome, then each
+    /// term group's metric entries, membership, precision, inclusion
+    /// prior and cell basis. `precision` has no published value, so any
+    /// value is gated.
+    #[cfg(not(feature = "experimental"))]
+    fn gated(&self) -> Option<Gated> {
+        fn in_term(params: &TermParams) -> Option<Gated> {
+            params
+                .geometry
+                .metric
+                .iter()
+                .find_map(|metric| match metric {
+                    crate::geometry::Metric::Gated(gated) => Some(*gated),
+                    _ => None,
+                })
+                .or(match params.geometry.membership {
+                    Membership::Gated(gated) => Some(gated),
+                    Membership::Hard => None,
+                })
+                .or_else(|| {
+                    params
+                        .geometry
+                        .precision
+                        .is_some()
+                        .then_some(Gated("`geometry.precision`"))
+                })
+                .or(match params.structure.inclusion {
+                    Inclusion::Gated(gated) => Some(gated),
+                    Inclusion::Uniform => None,
+                })
+                .or(match params.cell.basis {
+                    Basis::Gated(gated) => Some(gated),
+                    Basis::Constant => None,
+                })
+        }
+        match self.outcome {
+            Outcome::Gated(gated) => Some(gated),
+            _ => in_term(&self.mean_params).or_else(|| in_term(&self.variance_params)),
+        }
+    }
+
     /// The resolved counts and omega, written back at fit.
     pub(crate) fn resolve(&mut self, omega: f64) {
         self.mean_params.tessellations = Some(self.mean_tessellations());
@@ -1168,10 +1339,15 @@ impl Config {
     ///
     /// # Errors
     ///
+    /// `RequiresFeature` naming the first value this build gates;
     /// `InvalidHyperparameter` naming the field. The omega <= p check and
     /// the `metric` length check need the data and run at the fit
     /// boundary.
     pub fn validate(&self) -> Result<()> {
+        #[cfg(not(feature = "experimental"))]
+        if let Some(gated) = self.gated() {
+            return Err(gated.requires_feature());
+        }
         if self.mean_tessellations() < 1 {
             return Err(invalid("mean_params.tessellations", "must be at least 1"));
         }
@@ -1273,6 +1449,9 @@ impl Config {
                     }
                 }
             }
+            // Reported at the top of this function.
+            #[cfg(not(feature = "experimental"))]
+            Outcome::Gated(_) => {}
             #[cfg(feature = "experimental")]
             Outcome::Ordinal(params) => {
                 if params.categories < 2 {
@@ -1575,6 +1754,26 @@ mod tests {
             })
             .validate()
             .is_ok());
+    }
+
+    #[test]
+    fn the_catalogue_names_each_family_once() {
+        let names: Vec<String> = Outcome::catalogue()
+            .iter()
+            .map(|outcome| {
+                let tagged = serde_json::to_value(outcome).unwrap();
+                tagged.as_object().unwrap().keys().next().unwrap().clone()
+            })
+            .collect();
+        let mut unique = names.clone();
+        unique.sort();
+        unique.dedup();
+
+        assert_eq!(unique.len(), names.len(), "{names:?}");
+        #[cfg(not(feature = "experimental"))]
+        assert_eq!(names, ["gaussian", "probit"]);
+        #[cfg(feature = "experimental")]
+        assert_eq!(names.len(), 8, "{names:?}");
     }
 
     #[test]

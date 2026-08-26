@@ -16,7 +16,7 @@ What this package adds on top:
 | seed rule | an integer reaches the core unchanged, so `Model` and the estimators draw alike |
 | stub sync | `_native.pyi` declares every name the extension exposes, and no others |
 | estimator contract | `sklearn.utils.estimator_checks.parametrize_with_checks`, with no expected failures |
-| exposure policy | the extension is built without the `experimental` feature and exposes no gated name |
+| exposure policy | every family the core carries has a constructor, and a family the extension gates raises `RequiresFeatureError` |
 
 The seed parity test parses the core's snapshot file rather than holding a copy
 of it, so a regenerated snapshot cannot leave the two out of step.

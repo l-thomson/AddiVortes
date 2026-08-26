@@ -18,8 +18,18 @@ create_exception!(
     "Invalid configuration, data or fitted model."
 );
 
+create_exception!(
+    _native,
+    RequiresFeatureError,
+    ThiessenError,
+    "The configuration names an item the core gates behind its `experimental` feature."
+);
+
 fn core_error(error: thiessen::Error) -> PyErr {
-    ThiessenError::new_err(error.to_string())
+    match error {
+        thiessen::Error::RequiresFeature { .. } => RequiresFeatureError::new_err(error.to_string()),
+        _ => ThiessenError::new_err(error.to_string()),
+    }
 }
 
 fn config(json: &str) -> PyResult<thiessen::Config> {
@@ -379,15 +389,31 @@ fn fit(
     Ok(Fitted { inner })
 }
 
+/// The configuration of a saved model, the rest of the payload ignored.
+#[derive(serde::Deserialize)]
+struct SavedConfig {
+    config: thiessen::Config,
+}
+
 /// Load a fitted model from the JSON of `Fitted.to_json`, predicting on
 /// `n_threads` threads.
 #[pyfunction]
 #[pyo3(signature = (json, n_threads = 1))]
 fn fitted_from_json(json: &str, n_threads: usize) -> PyResult<Fitted> {
     let mut inner: thiessen::Fitted =
-        serde_json::from_str(json).map_err(|e| ThiessenError::new_err(e.to_string()))?;
+        serde_json::from_str(json).map_err(|error| saved_error(json, error))?;
     inner.set_threads(n_threads);
     Ok(Fitted { inner })
+}
+
+/// The error of a payload that failed to load. Loading validates the
+/// saved configuration, and serde reports a failure as text, so the
+/// configuration is validated again here to recover its type.
+fn saved_error(json: &str, error: serde_json::Error) -> PyErr {
+    match serde_json::from_str::<SavedConfig>(json).map(|saved| saved.config.validate()) {
+        Ok(Err(typed)) => core_error(typed),
+        _ => ThiessenError::new_err(error.to_string()),
+    }
 }
 
 /// Validate a configuration without data.
@@ -406,8 +432,8 @@ fn default_config() -> PyResult<String> {
 /// The default parameters of each outcome family, as JSON.
 #[pyfunction]
 fn outcome_defaults() -> PyResult<String> {
-    let families = [thiessen::Outcome::gaussian(), thiessen::Outcome::probit()];
-    serde_json::to_string(&families).map_err(|e| ThiessenError::new_err(e.to_string()))
+    serde_json::to_string(&thiessen::Outcome::catalogue())
+        .map_err(|e| ThiessenError::new_err(e.to_string()))
 }
 
 #[pymodule]
@@ -415,6 +441,10 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("CORE_VERSION", thiessen::VERSION)?;
     m.add("EXPERIMENTAL", cfg!(feature = "experimental"))?;
     m.add("ThiessenError", m.py().get_type::<ThiessenError>())?;
+    m.add(
+        "RequiresFeatureError",
+        m.py().get_type::<RequiresFeatureError>(),
+    )?;
     m.add_class::<Fitted>()?;
     m.add_class::<Sampler>()?;
     m.add_function(wrap_pyfunction!(fit, m)?)?;

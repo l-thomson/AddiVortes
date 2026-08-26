@@ -61,15 +61,22 @@ test_that("every core option is reachable from the surface", {
 })
 
 test_that("every outcome family option is a constructor argument", {
-  expect_identical(names(formals(gaussian_outcome)), c("nu", "q"))
-  expect_identical(
-    sort(names(unclass(gaussian_outcome()))),
-    sort(names(formals(gaussian_outcome)))
+  catalogue <- jsonlite::fromJSON(
+    core_outcome_defaults(),
+    simplifyVector = FALSE
   )
-  expect_identical(names(formals(probit_outcome)), "offset")
-  expect_identical(
-    names(unclass(probit_outcome())), names(formals(probit_outcome))
-  )
+  for (family in catalogue) {
+    kind <- names(family)[[1L]]
+    constructor <- get(
+      paste0(kind, "_outcome"),
+      envir = asNamespace("thiessen")
+    )
+
+    expect_setequal(names(formals(constructor)), names(family[[kind]]))
+    expect_setequal(
+      names(unclass(constructor())), names(formals(constructor))
+    )
+  }
 })
 
 test_that("the factor encoding is the shared fixture", {

@@ -26,6 +26,7 @@ numpy = "0.29"
 # extension does not link libpython, and the workspace `cargo test` and
 # `cargo clippy --all-targets` would fail to build this target.
 pyo3 = { version = "0.29", features = ["abi3-py39"] }
+serde = { version = "1.0.166", features = ["derive"] }
 # `float_roundtrip` so a saved model reloads bit-exact; the default parser
 # is accurate to within one ULP, which moves the draws.
 serde_json = { version = "1.0.100", features = ["float_roundtrip"] }

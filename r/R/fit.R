@@ -56,14 +56,17 @@
 #' writes one and a later session reads it and predicts the same values,
 #' with no refit. A fit written by a build with the core's `experimental`
 #' feature and read by a build without it errors with the condition class
-#' `thiessen_error`, naming the feature, at the first call that needs the
-#' state.
+#' `thiessen_requires_feature`, naming the item and the feature, at the
+#' first call that needs the state.
 #'
 #' @section Conditions:
 #'
 #' Errors raised by this package and by the core carry the condition class
 #' `thiessen_error`, and its warnings carry `thiessen_warning`, so either
-#' can be handled or silenced by class rather than by message. The
+#' can be handled or silenced by class rather than by message. An error
+#' naming the core's `experimental` feature carries
+#' `thiessen_requires_feature` before it, so a configuration needing an
+#' opt-in build is told apart from an invalid one. The
 #' convergence warning fires on any short schedule, so silencing it
 #' deliberately is a routine need:
 #'

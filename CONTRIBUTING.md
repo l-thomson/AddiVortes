@@ -154,6 +154,14 @@ takes the "Sampled values changed" line but does not force a minor bump.
 Release notes carry the sentence "Options behind the `experimental`
 feature are outside the semver promise; see docs/experimental.md".
 
+The bindings build the core without the feature, and every released
+artefact ships that way; the opt-in is a build-time one,
+`THIESSEN_EXPERIMENTAL=1` for the R package and maturin `build-args` for
+the wheel, documented in [docs/experimental.md](docs/experimental.md).
+Both binding suites run in either build, so an assertion that depends on
+the setting branches or skips on it, and CI carries one opt-in leg per
+binding.
+
 An item graduates by the stabilisation rule stated once in the
 crate-root documentation (`crates/thiessen/src/lib.rs`, Stability). The
 stabilising pull request removes the `cfg` gate, marks the item's row in

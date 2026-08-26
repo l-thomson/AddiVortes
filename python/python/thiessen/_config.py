@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-from .families import Gaussian, Probit
+from ._params import Outcome
 from .params import MetricEntry, TermParams
 
 __all__ = ["_config_json"]
@@ -33,7 +33,7 @@ def _plain(value: Any) -> Any:
 
 
 def _config_json(
-    outcome: Gaussian | Probit | None,
+    outcome: Outcome | None,
     mean_params: TermParams | None,
     variance_params: TermParams | None,
     burn_in: int,
@@ -69,10 +69,10 @@ def _config_json(
     TypeError
         For a group that is not its parameter object.
     """
-    if outcome is not None and not isinstance(outcome, (Gaussian, Probit)):
+    if outcome is not None and not isinstance(outcome, Outcome):
         raise TypeError(
-            "outcome must be a family object from gaussian() or probit(); "
-            f"got {outcome!r}"
+            "outcome must be a family object from one of the family "
+            f"constructors, gaussian() or probit(); got {outcome!r}"
         )
     for name, group in (
         ("mean_params", mean_params),

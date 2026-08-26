@@ -32,6 +32,18 @@ reference:
   - gaussian_outcome
   - probit_outcome
   - print.thiessen_outcome
+- title: Experimental outcome families
+  desc: >
+    Compiled only into a core built with its `experimental` feature; see
+    `experimental_outcomes`.
+  contents:
+  - tobit_outcome
+  - aft_outcome
+  - interval_censored_outcome
+  - ordinal_outcome
+  - student_t_outcome
+  - laplace_outcome
+  - experimental_outcomes
 - title: Parameter groups
   contents:
   - term_params

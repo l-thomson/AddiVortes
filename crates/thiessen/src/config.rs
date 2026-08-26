@@ -223,6 +223,27 @@ impl Outcome {
         Outcome::Laplace(LaplaceParams::default())
     }
 
+    /// Every outcome family this build carries, at its defaults. A
+    /// binding reads the family names and their parameters from here,
+    /// so neither keeps a list of its own.
+    pub fn catalogue() -> Vec<Self> {
+        #[cfg(not(feature = "experimental"))]
+        let gated: [Self; 0] = [];
+        #[cfg(feature = "experimental")]
+        let gated = [
+            Outcome::Tobit(TobitParams::default()),
+            Outcome::Aft(AftParams::default()),
+            Outcome::IntervalCensored(IntervalCensoredParams::default()),
+            Outcome::Ordinal(OrdinalParams::default()),
+            Outcome::StudentT(StudentTParams::default()),
+            Outcome::Laplace(LaplaceParams::default()),
+        ];
+        [Outcome::gaussian(), Outcome::probit()]
+            .into_iter()
+            .chain(gated)
+            .collect()
+    }
+
     /// What the outcome does with sigma^2; scale validity derives from
     /// this value, never from a per-outcome table.
     pub(crate) fn sigma2_mode(&self) -> Sigma2Mode {
@@ -1733,6 +1754,26 @@ mod tests {
             })
             .validate()
             .is_ok());
+    }
+
+    #[test]
+    fn the_catalogue_names_each_family_once() {
+        let names: Vec<String> = Outcome::catalogue()
+            .iter()
+            .map(|outcome| {
+                let tagged = serde_json::to_value(outcome).unwrap();
+                tagged.as_object().unwrap().keys().next().unwrap().clone()
+            })
+            .collect();
+        let mut unique = names.clone();
+        unique.sort();
+        unique.dedup();
+
+        assert_eq!(unique.len(), names.len(), "{names:?}");
+        #[cfg(not(feature = "experimental"))]
+        assert_eq!(names, ["gaussian", "probit"]);
+        #[cfg(feature = "experimental")]
+        assert_eq!(names.len(), 8, "{names:?}");
     }
 
     #[test]

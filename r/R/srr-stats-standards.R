@@ -17,8 +17,9 @@
 #'   (docs/testing.md, section Upstream comparison).
 #' @srrstats {G1.2} CONTRIBUTING.md, section Stable and experimental, is
 #'   the life cycle statement: the stable surface is the published models,
-#'   and everything else carries the experimental tier. `thiessen_sampler()`
-#'   carries a lifecycle badge.
+#'   and everything else carries the experimental tier.
+#'   `thiessen_sampler()` and the experimental outcome families carry a
+#'   lifecycle badge.
 #' @srrstats {G1.3} Statistical terms (tessellation, cell, burn-in,
 #'   thinning, kept draw, R-hat, effective sample size) are defined where
 #'   first used in `thiessen()`, `thiessen_control()` and the vignettes.
@@ -208,7 +209,10 @@
 #'   `thiessen_warning`, so they can be suppressed selectively; tested in
 #'   test-convergence.R and test-fit.R.
 #' @srrstats {BS2.15} Errors carry the condition class `thiessen_error`
-#'   and are trappable with `tryCatch()`; tested across the suite.
+#'   and are trappable with `tryCatch()`; tested across the suite. An
+#'   error naming the core's `experimental` feature carries
+#'   `thiessen_requires_feature` before it; tested in
+#'   test-experimental.R.
 #' @srrstats {BS3.0} `thiessen()` documents that missing and non-finite
 #'   values are rejected and that no row is dropped silently.
 #' @srrstats {BS4.0} The Gibbs backfitting sampler with

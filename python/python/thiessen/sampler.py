@@ -31,8 +31,8 @@ import numpy.typing as npt
 from . import _native
 from ._arrays import _as_design, _as_response
 from ._config import _config_json
+from ._params import Outcome
 from ._seed import SeedLike, _resolve_seed
-from .families import Gaussian, Probit
 from .model import FittedModel
 from .params import TermParams
 
@@ -51,8 +51,8 @@ class Sampler:
         The design, under the input-data contract of `thiessen.Model.fit`.
     y : array_like of shape (n_samples,)
         The response. Labels in {0, 1} under the probit family.
-    outcome : Gaussian or Probit, optional
-        The outcome family, from `thiessen.gaussian` or `thiessen.probit`.
+    outcome : Outcome, optional
+        The outcome family, from a constructor of `thiessen.families`.
         `None` takes the core's default.
     mean_params : TermParams, optional
         The ensemble describing the average, as for `thiessen.Model`.
@@ -103,7 +103,7 @@ class Sampler:
         X: Any,
         y: Any,
         *,
-        outcome: Gaussian | Probit | None = None,
+        outcome: Outcome | None = None,
         mean_params: TermParams | None = None,
         variance_params: TermParams | None = None,
         prior_only: bool = False,

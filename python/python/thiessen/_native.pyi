@@ -10,6 +10,7 @@ CORE_VERSION: str
 EXPERIMENTAL: bool
 
 class ThiessenError(ValueError): ...
+class RequiresFeatureError(ThiessenError): ...
 
 class Fitted:
     @property

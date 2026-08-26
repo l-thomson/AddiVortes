@@ -6,8 +6,27 @@ crate adds is compiled only with the Cargo feature `experimental`, is
 tested to the same standard, and is outside the semver promise: its
 configuration surface and sampled values may change in any release, with
 a changelog line. Enabling the feature does not change the draws of a
-configuration that uses no experimental option. The Python and R packages
-build the core without the feature.
+configuration that uses no experimental option.
+
+The Python and R packages build the core without the feature by default,
+and every released artefact ships that way. The opt-in is a build-time
+one, since the feature is a `#[cfg]` in the core and an experimental
+item's sampled values may change in a patch release:
+
+```sh
+THIESSEN_EXPERIMENTAL=1 R CMD INSTALL r
+pip install ./python --config-settings build-args="--features experimental"
+```
+
+A binding reports its own setting, `core_experimental()` in R and
+`thiessen._native.EXPERIMENTAL` in Python. A configuration or a saved fit
+naming a gated item in a build without the feature is rejected by
+`Config::validate` with `Error::RequiresFeature`, which reaches R as the
+condition class `thiessen_requires_feature` and Python as
+`RequiresFeatureError`. The outcome families have a constructor in both
+bindings whatever the build carries, so a script naming one is portable.
+A fit saved from a build with the feature does not load in one without
+it.
 
 The stabilisation rule is stated once, in the crate-root documentation
 (`crates/thiessen/src/lib.rs`, Stability): graduation is a pull request

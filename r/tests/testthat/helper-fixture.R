@@ -33,19 +33,20 @@ small_control <- function(...) {
   )
 }
 
-# Replace the first occurrence of `from` in a raw payload with `to`. The
-# names must have equal byte length, so the encoding's length prefixes
-# still frame the payload and only the name itself is unreadable.
+# Replace the first occurrence of the name `from` in a raw MessagePack
+# payload with `to`. A name of fewer than 32 bytes is a fixstr: one byte
+# holding 0xa0 plus the length, then the bytes, so the prefix is rewritten
+# with the name and the payload still frames.
 swap_payload_name <- function(payload, from, to) {
-  from <- charToRaw(from)
-  to <- charToRaw(to)
-  stopifnot(length(from) == length(to))
+  stopifnot(nchar(from) < 32L, nchar(to) < 32L)
+  from <- c(as.raw(160L + nchar(from)), charToRaw(from))
+  to <- c(as.raw(160L + nchar(to)), charToRaw(to))
   span <- length(from) - 1L
   for (start in which(payload == from[[1L]])) {
     if (start + span <= length(payload) &&
           identical(payload[start:(start + span)], from)) {
-      payload[start:(start + span)] <- to
-      return(payload)
+      return(c(payload[seq_len(start - 1L)], to,
+               payload[-seq_len(start + span)]))
     }
   }
   stop("the name is not in the payload")

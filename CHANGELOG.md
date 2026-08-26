@@ -173,6 +173,9 @@ says "Sampled values changed" with the reason.
   identification argument. Validated by a marginal Laplace-likelihood
   quadrature known-answer test and SBC and Geweke at both sizes.
   Outside the semver promise (docs/experimental.md).
+- `Outcome::catalogue()`: every outcome family the build carries, at its
+  defaults. A binding renders its family constructors from it rather than
+  keeping a list of names.
 - `Fitted::pool`, the kept draws of chains of the same model and data as
   one fitted model in chain order, with `Error::MismatchedChains` for
   chains that disagree. Chain seeds come from `chain_seed`; the pooled
@@ -244,6 +247,15 @@ says "Sampled values changed" with the reason.
 
 ### Changed
 
+- A configuration naming an item the build gates behind `experimental` is
+  reported by `Config::validate` as `Error::RequiresFeature` naming the
+  item, in place of a serde unknown-variant or unknown-field error, so a
+  caller matches the error rather than its text. `geometry.membership`,
+  `geometry.precision`, `structure.inclusion` and `cell.basis` are fields
+  of every build with only their experimental variants gated: a build
+  without the feature accepts the published defaults `"hard"`, `"uniform"`
+  and `"constant"`, which are what the model does when the field is
+  absent. Serialised output and sampled values are unchanged.
 - Breaking: the `Model` enum is gone. The outcome layer is the whole
   selection surface: `Fitted::model_name()` returns "gaussian",
   "probit" or "heteroscedastic", `Fitted::outcome()` and

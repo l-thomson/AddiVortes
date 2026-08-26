@@ -9,10 +9,11 @@ import scikit-learn.
 
 from __future__ import annotations
 
+import abc
 import inspect
 from typing import Any
 
-__all__ = ["Params"]
+__all__ = ["Outcome", "Params"]
 
 
 def _is_default(value: Any, default: Any) -> bool:
@@ -128,3 +129,16 @@ class Params:
             if not _is_default(getattr(self, name), signature.parameters[name].default)
         )
         return f"{self._display_name()}({shown})"
+
+
+class Outcome(Params, abc.ABC):
+    """The base of the outcome families.
+
+    A family is told from a parameter group by this type, so the group of
+    an ensemble passed where a family belongs is rejected at the boundary
+    rather than serialised as one.
+    """
+
+    @abc.abstractmethod
+    def _core(self) -> dict[str, Any]:
+        """Return the configuration's ``outcome`` group, the tagged form."""

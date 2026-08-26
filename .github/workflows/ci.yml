@@ -598,12 +598,65 @@ jobs:
       - run: python -m pytest
         working-directory: python
 
+  # The opt-in build of each binding: the released artefacts have the core's
+  # `experimental` feature off, and the suites branch on the setting, so both
+  # states are run.
+  py-experimental:
+    name: py-experimental
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install pytest pandas
+        working-directory: python
+      - run: >-
+          pip install -e ".[sklearn,arviz]"
+          --config-settings build-args="--features experimental"
+        working-directory: python
+      - run: python -c "from thiessen import _native; assert _native.EXPERIMENTAL"
+        working-directory: python
+      - run: python -m pytest
+        working-directory: python
+
+  r-experimental:
+    name: r-experimental
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: r-lib/actions/setup-r@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2
+        with:
+          working-directory: r
+          extra-packages: any::testthat
+      - run: R CMD INSTALL r
+        env:
+          THIESSEN_EXPERIMENTAL: "1"
+      - run: stopifnot(thiessen::core_experimental())
+        shell: Rscript {0}
+      - run: testthat::test_local("r")
+        shell: Rscript {0}
+        env:
+          NOT_CRAN: "true"
+
   alls-green:
     name: alls-green
     if: always()
     needs: [fmt, clippy, test, deny, doc, semver, calibration-full,
             perf-instructions, suite, coverage, cff,
-            py-lint, py-test, py-coverage, py-docs, r-source, r-check, r-docs]
+            py-lint, py-test, py-coverage, py-docs, py-experimental,
+            r-source, r-check, r-docs, r-experimental]
     runs-on: ubuntu-latest
     steps:
       - uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # release/v1
