@@ -4,11 +4,12 @@
 \alias{ordinal_outcome}
 \title{The ordinal outcome family}
 \usage{
-ordinal_outcome(categories = 2, offset = NULL, cutpoint_sd = 1)
+ordinal_outcome(categories = NULL, offset = NULL, cutpoint_sd = 1)
 }
 \arguments{
-\item{categories}{Number of ordered categories K, at least 2. Default
-2.}
+\item{categories}{Number of ordered categories K, at least 2. \code{NULL},
+the default, is the number of levels of the response; a count that
+differs from it is an error.}
 
 \item{offset}{The offset c. \code{NULL}, the default, resolves at fit to
 Phi^-1 of the share of rows above the first category.}
@@ -24,11 +25,14 @@ An object of class \code{c("thiessen_ordinal", "thiessen_outcome")}.
 }
 \details{
 The ordered probit model of Albert and Chib (1993),
-P(y <= k | x) = Phi(gamma_(k+1) - c - f(x)), for a response holding
-integer codes 0 to K - 1. The latent variance is fixed at 1 and the
-first cutpoint at 0 for identification, and the interior cutpoints are
-drawn on the log-gap scale of Albert and Chib (2001). At K = 2 the
-model is \code{\link[=probit_outcome]{probit_outcome()}}.
+P(y <= k | x) = Phi(gamma_(k+1) - c - f(x)), for an ordered factor
+response (the \code{MASS::polr} convention), its levels the categories 0 to
+K - 1 in order. The latent variance is fixed at 1 and the first
+cutpoint at 0 for identification, and the interior cutpoints are drawn
+on the log-gap scale of Albert and Chib (2001). At K = 2 the model is
+\code{\link[=probit_outcome]{probit_outcome()}}. \code{\link[=predict]{predict()}} is the expected category on the code
+scale, and \code{predict(type = "probs")} the category probabilities with
+the levels as column names.
 }
 \section{Experimental}{
 

@@ -42,7 +42,12 @@
 #'   \item{`$n_kept()`}{The number of draws kept so far.}
 #'   \item{`$set_response(y)`}{Replace the response, keeping the
 #'     tessellations, the cell values and sigma^2; the next sweep
-#'     conditions on it. Labels in \{0, 1\} under the probit family.}
+#'     conditions on it. Takes the shapes [thiessen()] takes, checked
+#'     against the sampler's family: labels in \{0, 1\} or a two-level
+#'     factor under the probit family, an ordered factor under the
+#'     ordinal family, a `Surv` under the AFT and interval-censored
+#'     families. Under the censored families the latents reset to the
+#'     new observed values.}
 #'   \item{`$fitted_values()`}{The current mean function at the training
 #'     rows: f(x_i), or c + f(x_i) under the probit family.}
 #'   \item{`$noise_variances()`}{The current variance of y given f at each
@@ -55,8 +60,11 @@
 #'
 #' @param x A numeric matrix of covariates, one row per observation. A
 #'   numeric vector is taken as one column.
-#' @param y The response: a numeric vector of length `nrow(x)`. Labels in
-#'   \{0, 1\} under the probit family.
+#' @param y The response, one value per row of `x`, in the shapes
+#'   [thiessen()] takes: a numeric vector (labels in \{0, 1\} under the
+#'   probit family), a two-level or ordered factor, or a
+#'   [survival::Surv()]. It selects the family where `control` names
+#'   none.
 #' @param control An object of class `"thiessen_control"`, from
 #'   [thiessen_control()].
 #' @param seed The seed. `NULL`, the default, draws one from R's stream,
@@ -89,17 +97,19 @@ thiessen_sampler <- function(x, y, control = thiessen_control(), seed = NULL) {
     thiessen_abort("`control` must come from `thiessen_control()`.")
   }
   design <- as_design(x)
-  if (!is.numeric(y) || length(y) != nrow(design)) {
+  response <- as_response(y)
+  if (response$n != nrow(design)) {
     thiessen_abort(sprintf(
-      "`y` must be a numeric vector of length %d.", nrow(design)
+      "`y` must have one value per row of `x`, %d values.", nrow(design)
     ))
   }
-  y <- as.double(y)
+  control <- resolve_outcome(control, response)
+  kind <- attr(control$outcome, "kind")
   resolved <- resolve_seed(seed)
   handle <- core_call(
-    core_sampler_new(config_json(control), design, y, resolved, 0L)
+    new_sampler_handle(config_json(control), design, response, resolved, 0L)
   )
-  current_y <- y
+  current <- response
 
   self <- new.env(parent = emptyenv())
   self$step <- function(n = 1) {
@@ -115,11 +125,10 @@ thiessen_sampler <- function(x, y, control = thiessen_control(), seed = NULL) {
     core_call(core_sampler_n_kept(handle))
   }
   self$set_response <- function(y) {
-    if (!is.numeric(y)) {
-      thiessen_abort("`y` must be a numeric vector.")
-    }
-    core_call(core_sampler_set_response(handle, as.double(y)))
-    current_y <<- as.double(y)
+    response <- as_response(y)
+    check_outcome_response(kind, response)
+    core_call(set_sampler_response(handle, response))
+    current <<- response
     invisible(NULL)
   }
   self$fitted_values <- function() {
@@ -130,7 +139,7 @@ thiessen_sampler <- function(x, y, control = thiessen_control(), seed = NULL) {
   }
   self$finish <- function() {
     fit <- core_call(core_finish(list(handle), 1L))
-    assemble_fit(fit, design = design, y = current_y, seed = resolved,
+    assemble_fit(fit, design = design, response = current, seed = resolved,
                  call = sys.call(-1L))
   }
   class(self) <- "thiessen_sampler"

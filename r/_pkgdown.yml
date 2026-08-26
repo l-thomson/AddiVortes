@@ -49,9 +49,19 @@ reference:
   - term_params
   - geometry_params
   - structure_params
+  - cell_params
   - general_params
   - print.params
   - print.thiessen_control
+- title: Experimental component options
+  desc: >
+    Values of the parameter groups compiled only into a core built with its
+    `experimental` feature; see `experimental_outcomes` for the policy.
+  contents:
+  - soft_membership
+  - weighted_inclusion
+  - dart_inclusion
+  - print.thiessen_option
 - title: Fitted-model methods
   contents:
   - predict.thiessen

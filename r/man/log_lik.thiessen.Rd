@@ -12,8 +12,10 @@
 \item{newdata}{New covariates, as \code{\link[=predict.thiessen]{predict.thiessen()}} takes them.
 \code{NULL}, the default, is the training rows.}
 
-\item{y}{The response at \code{newdata}. Taken from \code{newdata} where the fit
-came from a formula and \code{newdata} carries the response column.}
+\item{y}{The response at \code{newdata}, in the shape \code{\link[=thiessen]{thiessen()}} took:
+a \code{Surv} under the AFT and interval-censored families. Taken from
+\code{newdata} where the fit came from a formula and \code{newdata} carries the
+response column.}
 
 \item{...}{Ignored.}
 }

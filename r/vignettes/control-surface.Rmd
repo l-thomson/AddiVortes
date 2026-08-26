@@ -34,7 +34,13 @@ prior's degrees of freedom and calibration quantile, and
 `gaussian_outcome()` from masking `stats::gaussian()`, which `glm()` takes,
 and both families carry it rather than only the one that would clash.
 Attaching `variance_params` with a positive tessellation count extends the
-Gaussian family to the heteroscedastic model.
+Gaussian family to the heteroscedastic model. `outcome` left `NULL`, the
+default, takes the family from the response at fit: a numeric vector the
+Gaussian family and a two-level factor the probit family, with the
+experimental families selected by their own response shapes
+([`docs/experimental.md`](https://github.com/l-thomson/thiessen/blob/dev/docs/experimental.md)).
+A family named here is checked against the response and a mismatch is an
+error naming both.
 
 ```{r}
 gaussian_outcome(nu = 3)

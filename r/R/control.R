@@ -19,6 +19,13 @@
 #' single number most fits tune. Every other setting is named in its
 #' group.
 #'
+#' `outcome` left `NULL` takes the family from the response at fit: a
+#' numeric vector the Gaussian family, a two-level factor the probit
+#' family, an ordered factor the ordinal family, and a [survival::Surv()]
+#' the AFT or the interval-censored family by its type. A named family is
+#' checked against the response and a mismatch is an error naming both;
+#' see [thiessen()].
+#'
 #' The models reachable with [gaussian_outcome()] and [probit_outcome()]
 #' are the published method and follow semantic versioning. Everything
 #' else the core crate adds sits behind its `experimental` Cargo feature,
@@ -43,6 +50,7 @@
 #'
 #' @param outcome The outcome family, from [gaussian_outcome()],
 #'   [probit_outcome()] or one of the experimental constructors above.
+#'   `NULL`, the default, takes the family the response selects.
 #' @param mean_params The ensemble describing the average, from
 #'   [term_params()].
 #' @param variance_params The ensemble describing the spread, from
@@ -65,6 +73,8 @@
 #' @examples
 #' thiessen_control(tessellations = 50)
 #'
+#' thiessen_control(outcome = probit_outcome())
+#'
 #' thiessen_control(
 #'   outcome = gaussian_outcome(nu = 10),
 #'   mean_params = term_params(tessellations = 200, lambda_c = 25),
@@ -72,7 +82,7 @@
 #'   general_params = general_params(burn_in = 500, draws = 2000)
 #' )
 #' @export
-thiessen_control <- function(outcome = gaussian_outcome(),
+thiessen_control <- function(outcome = NULL,
                              mean_params = term_params(),
                              variance_params = NULL,
                              general_params = NULL,
@@ -83,7 +93,7 @@ thiessen_control <- function(outcome = gaussian_outcome(),
   if (is.null(general_params)) {
     general_params <- thiessen::general_params()
   }
-  if (!inherits(outcome, "thiessen_outcome")) {
+  if (!is.null(outcome) && !inherits(outcome, "thiessen_outcome")) {
     thiessen_abort(
       "`outcome` must come from `gaussian_outcome()` or `probit_outcome()`."
     )
@@ -126,7 +136,11 @@ thiessen_control <- function(outcome = gaussian_outcome(),
 print.thiessen_control <- function(x, ...) {
   cat("<thiessen_control>\n")
   shown <- list(
-    outcome = format(x$outcome),
+    outcome = if (is.null(x$outcome)) {
+      "from the response"
+    } else {
+      format(x$outcome)
+    },
     mean_params = format(x$mean_params),
     variance_params = if (is.null(x$variance_params)) {
       "none (constant spread)"

@@ -94,6 +94,26 @@
 * `print()` and `format()` on an outcome family or a parameter group give
   the constructor call that builds it: the string parses back to the
   object.
+* The response selects the outcome family where `thiessen_control()`
+  names none (its `outcome` now defaults to `NULL`): a numeric vector the
+  Gaussian family, a two-level factor the probit family, an ordered
+  factor the ordinal family (previously encoded as an unordered one), a
+  `survival::Surv()` of type `"right"` the AFT family and one of type
+  `"interval2"` the interval-censored family. A named family is checked
+  against the response and a mismatch is an error naming both. The same
+  shapes are taken by the formula method, by `thiessen_sampler()` and its
+  `$set_response()`, and by `log_lik(y = )`. `predict(type = "probs")`
+  gives the ordinal category probabilities; `sigma()` is 1 under the
+  ordinal family.
+* Experimental component options, gated as the outcome families are:
+  the Minkowski, Manhattan, cosine, Gower and Mahalanobis entries of
+  `geometry_params(metric = )` with `precision` for the last and a
+  `group` label for composites; `geometry_params(membership =
+  soft_membership())`; `structure_params(inclusion = weighted_inclusion()
+  or dart_inclusion())`; and `term_params(cell = cell_params(basis =
+  "linear"))`. The draws carry `df`, `cutpoint[k]`, `bandwidth[j]`,
+  `inclusion_weight[j]` and `concentration` where the model samples
+  them.
 * Builds and links the core crate offline from vendored sources, the core
   as source under `src/rust/core` and the third-party crates in
   `src/rust/vendor.tar.xz`; `core_version()` reports the core version.

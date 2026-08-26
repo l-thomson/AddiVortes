@@ -7,7 +7,7 @@
 \method{predict}{thiessen}(
   object,
   newdata = NULL,
-  type = c("mean", "draws", "latent", "variance"),
+  type = c("mean", "draws", "latent", "variance", "probs"),
   interval = c("none", "credible", "prediction"),
   level = 0.95,
   threads = NULL,
@@ -23,9 +23,12 @@ type; a fit from a matrix takes a numeric matrix with the fitted
 columns. \code{NULL}, the default, predicts at the training rows.}
 
 \item{type}{The quantity: \code{"mean"}, the posterior mean of the response
-(the probability under the probit model); \code{"draws"}, that quantity for
-every kept draw; \code{"latent"}, the mean function f for every kept draw;
-\code{"variance"}, the variance of y given f for every kept draw.}
+(the probability under the probit model, the expected category under
+the ordinal model, f(x) on the log-time scale under the AFT model);
+\code{"draws"}, that quantity for every kept draw; \code{"latent"}, the mean
+function f for every kept draw; \code{"variance"}, the variance of y given
+f for every kept draw; \code{"probs"}, under the ordinal model only, the
+posterior-mean probability of each category, the \code{MASS::polr} name.}
 
 \item{interval}{\code{"none"}, the default; \code{"credible"} for the interval of
 the posterior mean; \code{"prediction"} for the posterior predictive
@@ -41,7 +44,9 @@ default, is the count the fit was made with.}
 \value{
 For \code{type = "mean"} and \code{interval = "none"}, a numeric vector of
 length \code{nrow(newdata)}; with an interval, a matrix of that many rows
-with columns \code{fit}, \code{lower} and \code{upper}. For the other types, a matrix
+with columns \code{fit}, \code{lower} and \code{upper}. For \code{type = "probs"}, a
+matrix of one row per row of \code{newdata} and one column per category,
+named by the levels of the response. For the other types, a matrix
 of one row per kept draw and one column per row of \code{newdata}.
 }
 \description{

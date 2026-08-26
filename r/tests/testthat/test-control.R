@@ -2,9 +2,7 @@ test_that("the default control is the published configuration", {
   control <- thiessen_control()
 
   expect_s3_class(control, "thiessen_control")
-  expect_s3_class(control$outcome, "thiessen_gaussian")
-  expect_identical(control$outcome$nu, 6)
-  expect_identical(control$outcome$q, 0.85)
+  expect_null(control$outcome)
   expect_s3_class(control$mean_params, "term_params")
   expect_null(control$mean_params$tessellations)
   expect_identical(control$mean_params$k, 3)
@@ -161,7 +159,10 @@ test_that("printing a control reports each group", {
   expect_output(print(thiessen_control(tessellations = 50)),
                 "tessellations = 50")
   expect_output(print(thiessen_control()), "none \\(constant spread\\)")
-  expect_output(print(thiessen_control()), "gaussian_outcome\\(")
+  expect_output(print(thiessen_control()), "from the response")
+  expect_output(
+    print(thiessen_control(outcome = gaussian_outcome())), "gaussian_outcome\\("
+  )
 })
 
 test_that("a control object is required", {

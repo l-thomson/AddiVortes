@@ -120,9 +120,11 @@ tobit_outcome <- function(lower = NULL, upper = NULL, nu = 6, q = 0.85) {
 #' ln T = f(x) + e with e ~ N(0, sigma^2), the log time of a censored row
 #' drawn from its truncated conditional before each sweep.
 #'
-#' The times and the event indicator are data, not parameters. The fit
-#' entry points of this package take a plain response, so a fit under
-#' this family is rejected until one taking a censored time is added.
+#' The times and the event indicator are data, not parameters: the
+#' response is a [survival::Surv()] of type `"right"`, which selects this
+#' family by itself. [predict()] and the fitted values are f(x) on the
+#' log-time scale, the `abart` convention, and [log_lik()] is the
+#' censored likelihood of a `Surv` response.
 #'
 #' @inheritSection experimental_outcomes Experimental
 #' @inheritParams experimental_outcomes
@@ -156,9 +158,12 @@ aft_outcome <- function(nu = 6, q = 0.85) {
 #' censoring is taken as independent of the response, so the bounds enter
 #' the likelihood only through the interval probability.
 #'
-#' The bounds are data, not parameters. The fit entry points of this
-#' package take a plain response, so a fit under this family is rejected
-#' until one taking a pair of bounds is added.
+#' The bounds are data, not parameters: the response is a
+#' [survival::Surv()] of type `"interval2"`, `Surv(lower, upper, type =
+#' "interval2")`, in which an `NA` bound is one-sided censoring and an
+#' equal pair an exact value; it selects this family by itself.
+#' [predict()] and the fitted values are the uncensored f(x), and
+#' [log_lik()] is the interval likelihood of a `Surv` response.
 #'
 #' @inheritSection experimental_outcomes Experimental
 #' @inheritParams experimental_outcomes
@@ -186,15 +191,19 @@ interval_censored_outcome <- function(nu = 6, q = 0.85) {
 #' `r lifecycle::badge("experimental")`
 #'
 #' The ordered probit model of Albert and Chib (1993),
-#' P(y <= k | x) = Phi(gamma_(k+1) - c - f(x)), for a response holding
-#' integer codes 0 to K - 1. The latent variance is fixed at 1 and the
-#' first cutpoint at 0 for identification, and the interior cutpoints are
-#' drawn on the log-gap scale of Albert and Chib (2001). At K = 2 the
-#' model is [probit_outcome()].
+#' P(y <= k | x) = Phi(gamma_(k+1) - c - f(x)), for an ordered factor
+#' response (the `MASS::polr` convention), its levels the categories 0 to
+#' K - 1 in order. The latent variance is fixed at 1 and the first
+#' cutpoint at 0 for identification, and the interior cutpoints are drawn
+#' on the log-gap scale of Albert and Chib (2001). At K = 2 the model is
+#' [probit_outcome()]. [predict()] is the expected category on the code
+#' scale, and `predict(type = "probs")` the category probabilities with
+#' the levels as column names.
 #'
 #' @inheritSection experimental_outcomes Experimental
-#' @param categories Number of ordered categories K, at least 2. Default
-#'   2.
+#' @param categories Number of ordered categories K, at least 2. `NULL`,
+#'   the default, is the number of levels of the response; a count that
+#'   differs from it is an error.
 #' @param offset The offset c. `NULL`, the default, resolves at fit to
 #'   Phi^-1 of the share of rows above the first category.
 #' @param cutpoint_sd Standard deviation of the N(0, cutpoint_sd^2) prior
@@ -211,9 +220,10 @@ interval_censored_outcome <- function(nu = 6, q = 0.85) {
 #' @examplesIf core_experimental()
 #' ordinal_outcome(categories = 4)
 #' @export
-ordinal_outcome <- function(categories = 2, offset = NULL, cutpoint_sd = 1) {
+ordinal_outcome <- function(categories = NULL, offset = NULL,
+                            cutpoint_sd = 1) {
   lifecycle::signal_stage("experimental", "ordinal_outcome()")
-  check_whole_number(categories, min = 2)
+  check_whole_number(categories, min = 2, allow_null = TRUE)
   check_number(offset, allow_null = TRUE)
   check_number(cutpoint_sd)
   new_outcome(
@@ -311,13 +321,13 @@ new_outcome <- function(kind, fields) {
   )
 }
 
-#' The configuration's `outcome` group of a family object
+#' The core's tagged form of a family or a component option
 #'
-#' @param outcome An object of class `"thiessen_outcome"`.
-#' @return A one-entry named list, the core's tagged form.
+#' @param x An object carrying its variant name as the `kind` attribute.
+#' @return A one-entry named list.
 #' @noRd
-outcome_group <- function(outcome) {
-  stats::setNames(list(compact(unclass(outcome))), attr(outcome, "kind"))
+tagged_group <- function(x) {
+  stats::setNames(list(compact(unclass(x))), attr(x, "kind"))
 }
 
 #' @export

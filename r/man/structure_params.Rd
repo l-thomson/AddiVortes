@@ -4,12 +4,16 @@
 \alias{structure_params}
 \title{The covariate-inclusion prior of the ensembles}
 \usage{
-structure_params(omega = NULL)
+structure_params(omega = NULL, inclusion = NULL)
 }
 \arguments{
 \item{omega}{Dimension-count prior parameter omega; omega / p is the
 prior probability of including a covariate. \code{NULL}, the default,
 resolves to min(3, p) at fit. Must satisfy 0 < omega <= p.}
+
+\item{inclusion}{The prior weight of each covariate: \code{"uniform"}, the
+published prior, \code{\link[=weighted_inclusion]{weighted_inclusion()}} or \code{\link[=dart_inclusion]{dart_inclusion()}}.
+\code{NULL}, the default, is \code{"uniform"}.}
 }
 \value{
 An object of class \code{"structure_params"}.
@@ -21,5 +25,5 @@ The covariate-inclusion prior of the ensembles
 structure_params(omega = 2)
 }
 \seealso{
-\code{\link[=term_params]{term_params()}}
+\code{\link[=term_params]{term_params()}}, \code{\link[=weighted_inclusion]{weighted_inclusion()}}, \code{\link[=dart_inclusion]{dart_inclusion()}}
 }

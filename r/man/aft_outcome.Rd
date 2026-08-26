@@ -26,9 +26,11 @@ right-censored time to event, the model of the BART package's \code{abart}:
 ln T = f(x) + e with e ~ N(0, sigma^2), the log time of a censored row
 drawn from its truncated conditional before each sweep.
 
-The times and the event indicator are data, not parameters. The fit
-entry points of this package take a plain response, so a fit under
-this family is rejected until one taking a censored time is added.
+The times and the event indicator are data, not parameters: the
+response is a \code{\link[survival:Surv]{survival::Surv()}} of type \code{"right"}, which selects this
+family by itself. \code{\link[=predict]{predict()}} and the fitted values are f(x) on the
+log-time scale, the \code{abart} convention, and \code{\link[=log_lik]{log_lik()}} is the
+censored likelihood of a \code{Surv} response.
 }
 \section{Experimental}{
 
