@@ -24,9 +24,10 @@ def _size(name: str, default: int) -> int:
     """
     return int(os.environ.get(f"COMPARATOR_{name}", default))
 
+
 #: The methods, in the order the tables list them. `thiessen` is this
-#: library through its Python package; `addivortes` is CRAN AddiVortes at
-#: the version the lockfile pins; `dbarts` and `bart` are the two BART
+#: library through its Python package; `addivortes` is upstream AddiVortes
+#: from GitHub at the commit the lockfile pins; `dbarts` and `bart` are the two BART
 #: implementations in common use; `stochtree` is the newer one;
 #: `xgboost` is the accuracy baseline and has no posterior, so it carries
 #: fit metrics alone.
@@ -62,6 +63,22 @@ CHAINS = _size("CHAINS", 4)
 #: literature both use as a default.
 ENSEMBLE = _size("ENSEMBLE", 200)
 
+#: Threads per cell. One on the main and scaling grids, where the tables
+#: compare work per core; `run.py` sets it per cell on the cores grid.
+#: Every adapter passes it to its method explicitly, never through
+#: `OMP_NUM_THREADS` alone, because not every method reads that.
+THREADS = _size("THREADS", 1)
+
+#: The grid a cell is on, set by `run.py`; `thiessen_py` fits the chains
+#: as one pooled fit on the cores grid at every core count, so the
+#: scaling there reads along one code path.
+GRID = os.environ.get("COMPARATOR_GRID", "main")
+
+#: The core counts of the cores grid: one is the grid's own baseline at
+#: the headline sizes, and four is the chain count, beyond which no
+#: method here has anything to run in parallel.
+CORES = (1, 2, 4)
+
 #: Held-out rows, as a share of the dataset.
 HOLDOUT = 0.25
 
@@ -87,7 +104,12 @@ SCALING_METHODS = ("thiessen", "addivortes", "dbarts", "bart", "stochtree")
 
 @dataclass(frozen=True)
 class Cell:
-    """One comparison cell. `m` of zero means the default ensemble size."""
+    """One comparison cell.
+
+    `m` of zero means the default ensemble size; `cores` is the thread
+    count the method runs its chains on, one everywhere but the cores
+    grid.
+    """
 
     method: str
     dataset: str
@@ -95,15 +117,18 @@ class Cell:
     p: int
     seed: int
     m: int = 0
+    cores: int = 1
 
     @property
     def id(self) -> str:
         suffix = f"-m{self.m}" if self.m else ""
+        if self.cores != 1:
+            suffix += f"-c{self.cores}"
         return f"{self.method}-{self.dataset}-n{self.n}-p{self.p}{suffix}-s{self.seed}"
 
     @property
     def data_id(self) -> str:
-        """The cell's data, which every method at this cell shares."""
+        """The cell's data, which every method and core count share."""
         return f"{self.dataset}-n{self.n}-p{self.p}-s{self.seed}"
 
     @property
@@ -135,4 +160,21 @@ def scaling_grid(methods: tuple[str, ...] = SCALING_METHODS) -> list[Cell]:
         for n, p, m in sorted(points):
             for seed in SEEDS:
                 cells.append(Cell(method, "friedman", n, p, seed, m))
+    return cells
+
+
+def cores_grid(methods: tuple[str, ...] = SCALING_METHODS) -> list[Cell]:
+    """Every cell of the cores grid: the main sizes at each core count.
+
+    Wall-clock with the chains on `cores` threads, beside the one-core
+    table and never joined to it. XGBoost is an accuracy baseline with no
+    chains to spread, so it is not on this grid.
+    """
+    cells = []
+    for method in methods:
+        for process in PROCESSES:
+            for n, p in SIZES:
+                for cores in CORES:
+                    for seed in SEEDS:
+                        cells.append(Cell(method, process, n, p, seed, cores=cores))
     return cells

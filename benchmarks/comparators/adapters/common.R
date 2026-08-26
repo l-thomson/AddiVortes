@@ -26,7 +26,7 @@ accuracy <- function(f, sigma, y, seed) {
   peak <- apply(log_density, 2, max)
   lpd <- mean(peak + log(colMeans(exp(sweep(log_density, 2, peak)))))
 
-  state <- .Random.seed
+  state <- get0(".Random.seed", envir = globalenv(), inherits = FALSE)
   on.exit({
     if (!is.null(state)) .Random.seed <<- state
   })

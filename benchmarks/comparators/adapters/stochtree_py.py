@@ -14,7 +14,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from adapters.common import accuracy, read_csv, write_draws, write_meta  # noqa: E402
-from cells import BURN_IN, CHAINS, DECLARED_ROWS, DRAWS, ENSEMBLE  # noqa: E402
+from cells import BURN_IN, CHAINS, DECLARED_ROWS, DRAWS, ENSEMBLE, THREADS  # noqa: E402
 
 
 def main() -> None:
@@ -41,7 +41,9 @@ def main() -> None:
             num_burnin=BURN_IN,
             num_mcmc=DRAWS,
             mean_forest_params={"num_trees": ENSEMBLE},
-            general_params={"random_seed": seed + chain},
+            # stochtree's thread count is its own parameter, one by
+            # default since 0.4.4, so the cores grid sets it here.
+            general_params={"random_seed": seed + chain, "num_threads": THREADS},
         )
         fit_seconds += time.perf_counter() - started
         started = time.perf_counter()
@@ -67,6 +69,7 @@ def main() -> None:
             "draws": DRAWS,
             "burn_in": BURN_IN,
             "ensemble": ENSEMBLE,
+            "threads": THREADS,
             "fit_seconds": fit_seconds,
             # stochtree does not report the two phases apart either, so
             # the split is apportioned by sweep count, as in `r_methods.R`.
