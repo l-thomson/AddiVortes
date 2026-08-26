@@ -19,6 +19,10 @@ construction, so a response outside the training range is legitimate. The
 sampler owns its RNG, seeded at construction with the chain-0 seed of
 `fit`, so driving the configured schedule by hand reproduces `fit` bit for
 bit; the loop cannot rewire tessellation membership or cell internals.
+The constructor and `set_response` take the response shapes `Model.fit`
+takes, so a structured survival array drives the AFT family and a
+two-column array of bounds the interval-censored family, in an extension
+built with the core's `experimental` feature.
 
 ## A fit as its own loop
 

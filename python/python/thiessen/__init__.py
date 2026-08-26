@@ -4,12 +4,14 @@ An implementation of Stone and Gosling (2025), *Journal of Computational and
 Graphical Statistics* 34(3), 859-871: Bayesian regression on a sum of
 Voronoi tessellations, with the Gaussian, probit and heteroscedastic models.
 
-The outcome model is a family object from `gaussian` or `probit`; the two
-ensembles are `TermParams` groups. The names are those of the stored
-configuration and of the R package. The further families of
-`thiessen.families` are experimental and need an extension built with the
-core's ``experimental`` feature; a configuration naming one otherwise
-raises `RequiresFeatureError`.
+The outcome model is a family object from `gaussian` or `probit`, or the
+one the response selects; the two ensembles are `TermParams` groups. The
+names are those of the stored configuration and of the R package. The
+further families of `thiessen.families` and the component options
+`soft_membership`, `weighted_inclusion`, `dart_inclusion` and
+``CellParams(basis='linear')`` are experimental and need an extension
+built with the core's ``experimental`` feature; a configuration naming
+one otherwise raises `RequiresFeatureError`.
 
 The reproducibility contract, the input-data contract and the testing
 strategy are those of the core crate: the same seed, package version and
@@ -32,10 +34,19 @@ from .families import (
     tobit,
 )
 from .model import FittedModel, Model
-from .params import GeometryParams, StructureParams, TermParams
+from .params import (
+    CellParams,
+    GeometryParams,
+    StructureParams,
+    TermParams,
+    dart_inclusion,
+    soft_membership,
+    weighted_inclusion,
+)
 
 __all__ = [
     "CORE_VERSION",
+    "CellParams",
     "FittedModel",
     "GeometryParams",
     "Model",
@@ -45,13 +56,16 @@ __all__ = [
     "ThiessenError",
     "__version__",
     "aft",
+    "dart_inclusion",
     "gaussian",
     "interval_censored",
     "laplace",
     "ordinal",
     "probit",
+    "soft_membership",
     "student_t",
     "tobit",
+    "weighted_inclusion",
 ]
 
 try:
