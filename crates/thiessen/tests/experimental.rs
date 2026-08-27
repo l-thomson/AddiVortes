@@ -1,17 +1,17 @@
 //! A build without the `experimental` feature carries a gated value
 //! through the deserialiser, which states the shape, and reports it from
 //! `Config::validate`, which states the policy, as `RequiresFeature`
-//! naming the value and the feature. The published default of every
-//! gated field is accepted: refusing it would refuse a user the default.
+//! naming the value and the feature.
 //!
-//! `gated_surface.rs` runs the same configurations under the feature.
+//! `gated_surface.rs` runs the same configurations under the feature and
+//! `published_defaults.rs` the published default of every gated field.
 
 #![cfg(not(feature = "experimental"))]
 
 mod common;
 
-use common::{GATED_CONFIGS, PUBLISHED_DEFAULTS};
-use thiessen::{Config, Error};
+use common::GATED_CONFIGS;
+use thiessen::{Config, Error, Fitted};
 
 #[test]
 fn every_gated_item_names_itself_and_the_feature() {
@@ -25,19 +25,6 @@ fn every_gated_item_names_itself_and_the_feature() {
             }
             other => panic!("{json} should need the feature, got {other:?}"),
         }
-    }
-}
-
-#[test]
-fn the_published_defaults_are_accepted_and_stay_out_of_the_form() {
-    for (json, field) in PUBLISHED_DEFAULTS {
-        let config: Config = serde_json::from_str(json)
-            .unwrap_or_else(|error| panic!("{json} should deserialise: {error}"));
-        config
-            .validate()
-            .unwrap_or_else(|error| panic!("{json} should validate: {error}"));
-        let back = serde_json::to_string(&config).unwrap();
-        assert!(!back.contains(field), "{back}");
     }
 }
 
@@ -67,11 +54,31 @@ fn an_unknown_field_is_still_a_deserialisation_error() {
     assert!(err.to_string().contains("bandwidth"), "{err}");
 }
 
+/// `Fitted::load` reports a saved fit's gated configuration as the typed
+/// error, where the `Deserialize` impl has only the format's text; a
+/// bandwidth kept without the membership that draws one is a broken
+/// payload in every build.
 #[test]
-fn a_saved_bandwidth_names_the_feature() {
-    let json = r#"{"centres":[0.1],"dims":[0],"mus":[1.0],"tau":0.2}"#;
-    let err = serde_json::from_str::<thiessen::Tessellation>(json).unwrap_err();
+fn a_saved_fit_naming_a_gated_item_names_the_feature() {
+    let (config, x, y) = common::fixture();
+    let config = config.with_burn_in(2).with_draws(2);
+    let fitted = thiessen::fit(&config, &x, &y, common::SEED).unwrap();
+    let mut saved = serde_json::to_value(&fitted).unwrap();
+    saved["config"]["mean_params"]["geometry"]["membership"] = serde_json::json!({"soft": {}});
+    assert!(matches!(
+        Fitted::load(&saved),
+        Err(Error::RequiresFeature { ref item, .. }) if item.contains("soft")
+    ));
+    let text = serde_json::to_string(&saved).unwrap();
+    let err = serde_json::from_str::<Fitted>(&text).unwrap_err();
     assert!(err.to_string().contains("experimental"), "{err}");
+
+    saved["config"]["mean_params"]["geometry"] = serde_json::json!({});
+    saved["posterior"]["tessellations"][0][0]["tau"] = serde_json::json!(0.2);
+    assert!(matches!(
+        Fitted::load(&saved),
+        Err(Error::InvalidSavedModel { ref reason }) if reason.contains("soft membership")
+    ));
 }
 
 /// The entry points of the gated models exist in every build and report
@@ -97,6 +104,24 @@ fn every_gated_entry_point_names_the_outcome_and_the_feature() {
     );
     gated(
         thiessen::fit_interval_censored(&config, &x, &ones, &ones, common::SEED).map(drop),
+        "interval_censored",
+    );
+    gated(
+        thiessen::fit_aft_chains_with_threads(&config, &x, &ones, &events, common::SEED, 1, 1)
+            .map(drop),
+        "aft",
+    );
+    gated(
+        thiessen::fit_interval_censored_chains_with_threads(
+            &config,
+            &x,
+            &ones,
+            &ones,
+            common::SEED,
+            1,
+            1,
+        )
+        .map(drop),
         "interval_censored",
     );
     gated(

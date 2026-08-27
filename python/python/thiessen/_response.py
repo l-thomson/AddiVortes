@@ -233,7 +233,7 @@ def _as_response(y: Any) -> Response:
 
 def _family_name(outcome: Outcome) -> str:
     """Return the stored name of `outcome`'s family."""
-    return next(iter(outcome._core()))
+    return outcome._tag
 
 
 def _model_family(model: str) -> str:
@@ -320,9 +320,7 @@ def _resolve_outcome(outcome: Outcome | None, response: Response) -> Outcome:
         return outcome
     count = len(response.categories)
     if outcome.categories is None:
-        return Ordinal(
-            categories=count, offset=outcome.offset, cutpoint_sd=outcome.cutpoint_sd
-        )
+        return type(outcome)(**{**outcome.get_params(deep=False), "categories": count})
     if outcome.categories != count:
         raise ValueError(
             f"outcome names {outcome.categories} categories but the response "

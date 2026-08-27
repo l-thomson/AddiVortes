@@ -13,7 +13,7 @@ test_that("the response selects the family where the control names none", {
   expect_null(small_control()$outcome)
   expect_identical(attr(gaussian$control$outcome, "kind"), "gaussian")
   expect_identical(attr(probit$control$outcome, "kind"), "probit")
-  expect_identical(probit$response_levels, levels(labels))
+  expect_identical(probit$response$levels, levels(labels))
 })
 
 test_that("a named family that disagrees with the response is an error", {

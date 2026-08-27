@@ -145,6 +145,12 @@ impl Gated {
             feature: "experimental",
         }
     }
+
+    /// The arm of a match on a gated value past [`Config::validate`],
+    /// which rejects it.
+    pub(crate) fn unreachable(self) -> ! {
+        unreachable!("{} is rejected by Config::validate", self.0)
+    }
 }
 
 impl Default for Outcome {
@@ -255,12 +261,8 @@ impl Outcome {
         match self {
             Outcome::Gaussian(_) => Sigma2Mode::Sampled,
             Outcome::Probit(_) => Sigma2Mode::Fixed(1.0),
-            // `Config::validate` rejects a gated outcome before any of
-            // the tables below it is read, so this arm and its
-            // counterparts are never taken; each answers as the Gaussian
-            // model does rather than panicking.
             #[cfg(not(feature = "experimental"))]
-            Outcome::Gated(_) => Sigma2Mode::Sampled,
+            Outcome::Gated(gated) => gated.unreachable(),
             #[cfg(feature = "experimental")]
             Outcome::Tobit(_) => Sigma2Mode::Sampled,
             #[cfg(feature = "experimental")]
@@ -282,7 +284,7 @@ impl Outcome {
             Outcome::Gaussian(_) => RequiredData::Continuous,
             Outcome::Probit(_) => RequiredData::Binary,
             #[cfg(not(feature = "experimental"))]
-            Outcome::Gated(_) => RequiredData::Continuous,
+            Outcome::Gated(gated) => gated.unreachable(),
             #[cfg(feature = "experimental")]
             Outcome::Tobit(_) => RequiredData::Continuous,
             #[cfg(feature = "experimental")]
@@ -1194,15 +1196,20 @@ impl Config {
 
     /// The fitted model's name: the outcome's, or "heteroscedastic" for
     /// the Gaussian outcome with a variance ensemble attached (the paper
-    /// names of the shipped models). A gated outcome keeps its own name
-    /// whether or not a variance ensemble is attached.
+    /// names of the shipped models). An experimental outcome keeps its
+    /// own name whether or not a variance ensemble is attached.
+    ///
+    /// # Panics
+    ///
+    /// On an outcome this build gates, which [`validate`](Self::validate)
+    /// reports first.
     pub fn model_name(&self) -> &'static str {
         match (&self.outcome, self.variance_tessellations()) {
             (Outcome::Probit(_), _) => "probit",
             (Outcome::Gaussian(_), 0) => "gaussian",
             (Outcome::Gaussian(_), _) => "heteroscedastic",
             #[cfg(not(feature = "experimental"))]
-            (Outcome::Gated(_), _) => "gaussian",
+            (Outcome::Gated(gated), _) => gated.unreachable(),
             #[cfg(feature = "experimental")]
             (Outcome::Tobit(_), _) => "tobit",
             #[cfg(feature = "experimental")]
@@ -1256,10 +1263,7 @@ impl Config {
         match &self.outcome {
             Outcome::Gaussian(params) => (params.nu, params.q),
             #[cfg(not(feature = "experimental"))]
-            Outcome::Gated(_) => {
-                let defaults = GaussianParams::default();
-                (defaults.nu, defaults.q)
-            }
+            Outcome::Gated(gated) => gated.unreachable(),
             #[cfg(feature = "experimental")]
             Outcome::Tobit(params) => (params.nu, params.q),
             #[cfg(feature = "experimental")]
@@ -1454,9 +1458,8 @@ impl Config {
                     }
                 }
             }
-            // Reported at the top of this function.
             #[cfg(not(feature = "experimental"))]
-            Outcome::Gated(_) => {}
+            Outcome::Gated(gated) => gated.unreachable(),
             #[cfg(feature = "experimental")]
             Outcome::Ordinal(params) => {
                 if params.categories < 2 {

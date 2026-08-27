@@ -10,6 +10,19 @@ says "Sampled values changed" with the reason.
 
 ### Added
 
+- `Fitted::load`: a saved model read through any serde deserialiser with
+  every error typed, `RequiresFeature` for a configuration the build
+  gates among them, where the `Deserialize` impl reports each through
+  the format's error as text. Loading also checks that the DART
+  inclusion-weight draws are present exactly under `Inclusion::Dart`,
+  one per covariate, and a soft-membership bandwidth exactly under
+  `Membership::Soft`. `Tessellation::bandwidth` is present in every
+  build, `None` without the feature.
+- (experimental) `fit_aft_chains_with_threads` and
+  `fit_interval_censored_chains_with_threads`: the censored models as
+  `fit_chains_with_threads` fits the plain ones, through the one chain
+  schedule; `fit_aft` and `fit_interval_censored` are their one-chain
+  form.
 - `fit_chains_with_threads` and `Sampler::advance_all`: the chains of a
   fit spread over at most `n_threads` scoped threads, each chain on one
   thread with its own generator, so the draws are those of the chains

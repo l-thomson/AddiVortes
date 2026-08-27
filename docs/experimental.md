@@ -21,9 +21,11 @@ pip install ./python --config-settings build-args="--features experimental"
 A binding reports its own setting, `core_experimental()` in R and
 `thiessen._native.EXPERIMENTAL` in Python. A configuration or a saved fit
 naming a gated item in a build without the feature is rejected by
-`Config::validate` with `Error::RequiresFeature`, which reaches R as the
-condition class `thiessen_requires_feature` and Python as
-`RequiresFeatureError`. The outcome families have a constructor in both
+`Config::validate` with `Error::RequiresFeature`, a saved fit through
+`Fitted::load`, which keeps the error's type where the `Deserialize` impl
+has only the format's text; it reaches R as the condition class
+`thiessen_requires_feature` and Python as `RequiresFeatureError`. The
+outcome families have a constructor in both
 bindings whatever the build carries, so a script naming one is portable,
 and the core's entry points for the gated models (`fit_aft`,
 `Sampler::aft`, `Fitted::predict_category_probabilities` and their

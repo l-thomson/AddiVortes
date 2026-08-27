@@ -28,9 +28,8 @@ interval-censored family.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
 
-from ._params import Outcome, _dense
+from ._params import Outcome
 
 __all__ = [
     "Aft",
@@ -65,15 +64,11 @@ class Gaussian(Outcome):
         sigma^2 prior calibration quantile q, Pr(sigma < sigma_hat) = q.
     """
 
+    _tag = "gaussian"
+
     def __init__(self, nu: float = 6.0, q: float = 0.85) -> None:
         self.nu = nu
         self.q = q
-
-    def _display_name(self) -> str:
-        return "gaussian"
-
-    def _core(self) -> dict[str, Any]:
-        return {"gaussian": _dense({"nu": self.nu, "q": self.q})}
 
 
 class Probit(Outcome):
@@ -86,14 +81,10 @@ class Probit(Outcome):
         Phi^-1(ybar) at fit, the BART ``binaryOffset`` default.
     """
 
+    _tag = "probit"
+
     def __init__(self, offset: float | None = None) -> None:
         self.offset = offset
-
-    def _display_name(self) -> str:
-        return "probit"
-
-    def _core(self) -> dict[str, Any]:
-        return {"probit": _dense({"offset": self.offset})}
 
 
 class Tobit(Outcome):
@@ -111,6 +102,8 @@ class Tobit(Outcome):
         sigma^2 prior calibration quantile q.
     """
 
+    _tag = "tobit"
+
     def __init__(
         self,
         lower: float | None = None,
@@ -122,21 +115,6 @@ class Tobit(Outcome):
         self.upper = upper
         self.nu = nu
         self.q = q
-
-    def _display_name(self) -> str:
-        return "tobit"
-
-    def _core(self) -> dict[str, Any]:
-        return {
-            "tobit": _dense(
-                {
-                    "lower": self.lower,
-                    "upper": self.upper,
-                    "nu": self.nu,
-                    "q": self.q,
-                }
-            )
-        }
 
 
 class Aft(Outcome):
@@ -150,15 +128,11 @@ class Aft(Outcome):
         sigma^2 prior calibration quantile q.
     """
 
+    _tag = "aft"
+
     def __init__(self, nu: float = 6.0, q: float = 0.85) -> None:
         self.nu = nu
         self.q = q
-
-    def _display_name(self) -> str:
-        return "aft"
-
-    def _core(self) -> dict[str, Any]:
-        return {"aft": _dense({"nu": self.nu, "q": self.q})}
 
 
 class IntervalCensored(Outcome):
@@ -174,15 +148,11 @@ class IntervalCensored(Outcome):
         sigma^2 prior calibration quantile q.
     """
 
+    _tag = "interval_censored"
+
     def __init__(self, nu: float = 6.0, q: float = 0.85) -> None:
         self.nu = nu
         self.q = q
-
-    def _display_name(self) -> str:
-        return "interval_censored"
-
-    def _core(self) -> dict[str, Any]:
-        return {"interval_censored": _dense({"nu": self.nu, "q": self.q})}
 
 
 class Ordinal(Outcome):
@@ -202,6 +172,8 @@ class Ordinal(Outcome):
         cutpoints.
     """
 
+    _tag = "ordinal"
+
     def __init__(
         self,
         categories: int | None = None,
@@ -211,20 +183,6 @@ class Ordinal(Outcome):
         self.categories = categories
         self.offset = offset
         self.cutpoint_sd = cutpoint_sd
-
-    def _display_name(self) -> str:
-        return "ordinal"
-
-    def _core(self) -> dict[str, Any]:
-        return {
-            "ordinal": _dense(
-                {
-                    "categories": self.categories,
-                    "offset": self.offset,
-                    "cutpoint_sd": self.cutpoint_sd,
-                }
-            )
-        }
 
 
 class StudentT(Outcome):
@@ -241,6 +199,8 @@ class StudentT(Outcome):
         sigma^2 prior calibration quantile q.
     """
 
+    _tag = "student_t"
+
     def __init__(
         self,
         df: float | Sequence[float] = 4.0,
@@ -250,12 +210,6 @@ class StudentT(Outcome):
         self.df = df
         self.nu = nu
         self.q = q
-
-    def _display_name(self) -> str:
-        return "student_t"
-
-    def _core(self) -> dict[str, Any]:
-        return {"student_t": _dense({"df": self.df, "nu": self.nu, "q": self.q})}
 
 
 class Laplace(Outcome):
@@ -269,15 +223,11 @@ class Laplace(Outcome):
         sigma^2 prior calibration quantile q.
     """
 
+    _tag = "laplace"
+
     def __init__(self, nu: float = 6.0, q: float = 0.85) -> None:
         self.nu = nu
         self.q = q
-
-    def _display_name(self) -> str:
-        return "laplace"
-
-    def _core(self) -> dict[str, Any]:
-        return {"laplace": _dense({"nu": self.nu, "q": self.q})}
 
 
 def gaussian(nu: float = 6.0, q: float = 0.85) -> Gaussian:

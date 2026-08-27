@@ -64,11 +64,7 @@ test_that("every core option is reachable from the surface", {
 })
 
 test_that("every outcome family option is a constructor argument", {
-  catalogue <- jsonlite::fromJSON(
-    core_outcome_defaults(),
-    simplifyVector = FALSE
-  )
-  for (family in catalogue) {
+  for (family in core_catalogue()) {
     kind <- names(family)[[1L]]
     constructor <- get(
       paste0(kind, "_outcome"),

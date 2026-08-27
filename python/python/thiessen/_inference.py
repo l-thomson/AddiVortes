@@ -102,7 +102,11 @@ def _to_inference_data(
     -------
     xarray.DataTree
         The `posterior`, `posterior_predictive`, `log_likelihood` and
-        `observed_data` groups.
+        `observed_data` groups. The replicate and the log-likelihood take
+        the name of the observed variable they pair with, ``time`` under
+        the AFT family and ``y`` otherwise; an interval-censored
+        observation is a pair of bounds, so its replicate has no partner
+        and keeps ``y``.
 
     Raises
     ------
@@ -150,13 +154,17 @@ def _to_inference_data(
         if draws.size:
             posterior[name] = by_chain(draws)
 
+    observed = _observed(response)
+    replicate = "time" if "time" in observed else "y"
     groups = {
         "posterior": posterior,
-        "posterior_predictive": {"y": by_chain(_replicates(fitted, design, seed))},
-        "log_likelihood": {
-            "y": by_chain(np.asarray(_log_likelihood(fitted, design, response)))
+        "posterior_predictive": {
+            replicate: by_chain(_replicates(fitted, design, seed))
         },
-        "observed_data": _observed(response),
+        "log_likelihood": {
+            replicate: by_chain(np.asarray(_log_likelihood(fitted, design, response)))
+        },
+        "observed_data": observed,
     }
 
     return az.from_dict(

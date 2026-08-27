@@ -78,10 +78,11 @@ strict = true
 module = "thiessen._native"
 ignore_missing_imports = true
 
-# Neither scikit-learn nor arviz ships py.typed. pytest-benchmark is a
-# benchmark-only dependency and is absent from the lint environment.
+# Neither scikit-learn nor arviz ships py.typed, and pandas keeps its stubs
+# in a separate package. pytest-benchmark is a benchmark-only dependency and
+# is absent from the lint environment.
 [[tool.mypy.overrides]]
-module = ["arviz.*", "pytest_benchmark.*", "sklearn.*"]
+module = ["arviz.*", "pandas.*", "pytest_benchmark.*", "sklearn.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

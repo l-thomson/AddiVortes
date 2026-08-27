@@ -19,10 +19,17 @@ rstantools::predictive_interval
 
 #' Draw from the posterior predictive distribution
 #'
-#' One replicate per kept draw: the mean function of that draw plus a
-#' residual under the model, Bernoulli labels under the probit model. The
-#' residuals are drawn from R's stream, so [set.seed()] governs them; they
-#' are not part of the chain the core draws.
+#' One replicate per kept draw from the fitted family's observation model:
+#' the mean function of that draw plus a Gaussian residual at the scale of
+#' that draw under the Gaussian and heteroscedastic models; Bernoulli labels
+#' under the probit model; category codes, 0 to K - 1, from the latent value
+#' against the cutpoints of that draw under the ordinal model; a time, the
+#' exponential of the log-time draw, under the AFT model; the value clipped
+#' to the censoring limits under the tobit model; the working value under
+#' the interval-censored model; and a Student-t or Laplace error at the
+#' drawn scale under those models. The residuals are drawn from R's stream,
+#' so [set.seed()] governs them; they are not part of the chain the core
+#' draws.
 #'
 #' @param object An object of class `"thiessen"`.
 #' @param newdata New covariates, as [predict.thiessen()] takes them.
@@ -45,15 +52,122 @@ rstantools::predictive_interval
 #' @exportS3Method rstantools::posterior_predict
 posterior_predict.thiessen <- function(object, newdata = NULL, ...) {
   design <- predict_design(object, newdata)
-  state <- fit_state(object)
+  replicate_draws(object$control$outcome, fit_state(object), design)
+}
+
+#' Replicates of the response under a family's observation model
+#'
+#' @param outcome The fit's outcome family, an object of class
+#'   `"thiessen_outcome"`.
+#' @param state An external pointer to the fitted state.
+#' @param design The numeric design.
+#' @return A double matrix, one row per kept draw and one column per row of
+#'   `design`.
+#' @noRd
+replicate_draws <- function(outcome, state, design) {
+  UseMethod("replicate_draws")
+}
+
+#' @export
+replicate_draws.default <- function(outcome, state, design) {
+  thiessen_abort(sprintf(
+    "`posterior_predict()` is not defined under the %s model.",
+    attr(outcome, "kind")
+  ))
+}
+
+#' @export
+replicate_draws.thiessen_gaussian <- function(outcome, state, design) {
   draws <- core_call(core_predict_draws(state, design, "draws"))
-  if (object$model == "probit") {
-    labels <- stats::rbinom(length(draws), 1L, pmin(pmax(draws, 0), 1))
-    return(matrix(as.double(labels), nrow = nrow(draws)))
+  draws + noise_at(state, design, draws)
+}
+
+#' @export
+replicate_draws.thiessen_probit <- function(outcome, state, design) {
+  draws <- core_call(core_predict_draws(state, design, "draws"))
+  labels <- stats::rbinom(length(draws), 1L, pmin(pmax(draws, 0), 1))
+  matrix(as.double(labels), nrow = nrow(draws))
+}
+
+#' @export
+replicate_draws.thiessen_ordinal <- function(outcome, state, design) {
+  latent <- core_call(core_predict_draws(state, design, "latent"))
+  z <- latent + matrix(stats::rnorm(length(latent)), nrow = nrow(latent))
+  # The first cutpoint is fixed at zero; a category is the count of
+  # cutpoints below the latent value.
+  cutpoints <- cbind(0, core_call(core_posterior_draws(state))$cutpoint)
+  codes <- matrix(0, nrow(z), ncol(z))
+  for (k in seq_len(ncol(cutpoints))) {
+    codes <- codes + (z > cutpoints[, k])
   }
-  variance <- core_call(core_predict_draws(state, design, "variance"))
-  noise <- stats::rnorm(length(draws), 0, sqrt(as.vector(variance)))
-  draws + matrix(noise, nrow = nrow(draws))
+  codes
+}
+
+#' @export
+replicate_draws.thiessen_aft <- function(outcome, state, design) {
+  latent <- core_call(core_predict_draws(state, design, "latent"))
+  exp(latent + noise_at(state, design, latent))
+}
+
+#' @export
+replicate_draws.thiessen_tobit <- function(outcome, state, design) {
+  latent <- core_call(core_predict_draws(state, design, "latent"))
+  values <- latent + noise_at(state, design, latent)
+  lower <- if (is.null(outcome$lower)) -Inf else outcome$lower
+  upper <- if (is.null(outcome$upper)) Inf else outcome$upper
+  pmin(pmax(values, lower), upper)
+}
+
+#' @export
+replicate_draws.thiessen_interval_censored <- function(outcome, state,
+                                                       design) {
+  latent <- core_call(core_predict_draws(state, design, "latent"))
+  latent + noise_at(state, design, latent)
+}
+
+#' @export
+replicate_draws.thiessen_student_t <- function(outcome, state, design) {
+  latent <- core_call(core_predict_draws(state, design, "latent"))
+  df <- core_call(core_posterior_draws(state))$df
+  if (length(df) == 0L) {
+    df <- outcome$df
+  }
+  latent + scale_at(state, design) * matrix(
+    stats::rt(length(latent), df = df), nrow = nrow(latent)
+  )
+}
+
+#' @export
+replicate_draws.thiessen_laplace <- function(outcome, state, design) {
+  latent <- core_call(core_predict_draws(state, design, "latent"))
+  # Laplace(0, 1) by inversion of the distribution function.
+  u <- stats::runif(length(latent)) - 0.5
+  errors <- -sign(u) * log1p(-2 * abs(u))
+  latent + scale_at(state, design) * matrix(errors, nrow = nrow(latent))
+}
+
+#' The residual scale of y given f at each row, per draw
+#'
+#' @param state An external pointer to the fitted state.
+#' @param design The numeric design.
+#' @return A double matrix, one row per kept draw.
+#' @noRd
+scale_at <- function(state, design) {
+  sqrt(core_call(core_predict_draws(state, design, "variance")))
+}
+
+#' Gaussian residuals at the residual scale, shaped as `draws`
+#'
+#' @param state An external pointer to the fitted state.
+#' @param design The numeric design.
+#' @param draws A double matrix, one row per kept draw.
+#' @return A double matrix of the shape of `draws`.
+#' @noRd
+noise_at <- function(state, design, draws) {
+  scale <- scale_at(state, design)
+  matrix(
+    stats::rnorm(length(draws), 0, as.vector(scale)), nrow = nrow(draws)
+  )
 }
 
 #' Draw from the posterior distribution of the expected response

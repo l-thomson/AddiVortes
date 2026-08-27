@@ -94,9 +94,10 @@ thiessen_control <- function(outcome = NULL,
     general_params <- thiessen::general_params()
   }
   if (!is.null(outcome) && !inherits(outcome, "thiessen_outcome")) {
-    thiessen_abort(
-      "`outcome` must come from `gaussian_outcome()` or `probit_outcome()`."
-    )
+    thiessen_abort(paste0(
+      "`outcome` must come from an outcome constructor such as ",
+      "`gaussian_outcome()`."
+    ))
   }
   check_group(mean_params, "mean_params", "term_params")
   check_group(variance_params, "variance_params", "term_params",

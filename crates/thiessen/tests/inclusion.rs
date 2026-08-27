@@ -7,7 +7,7 @@
 mod common;
 
 use common::{fixture, SEED};
-use thiessen::{fit, Config, Inclusion};
+use thiessen::{fit, Config, Error, Fitted, Inclusion};
 
 fn weighted(weights: Vec<f64>) -> Inclusion {
     Inclusion::Weighted { weights }
@@ -250,4 +250,36 @@ fn the_dart_state_survives_a_round_trip_and_a_payload_without_it() {
     assert!(!json.contains("concentration"), "{json}");
     let back: thiessen::Fitted = serde_json::from_str(&json).unwrap();
     assert_eq!(back.predict(&x).unwrap(), uniform.predict(&x).unwrap());
+}
+
+/// The DART draws are present exactly under the DART prior, one weight
+/// per covariate.
+#[test]
+fn loading_checks_the_dart_draws_against_the_prior() {
+    let (config, x, y) = fixture();
+    let fitted = fit(&config.clone().with_inclusion(dart()), &x, &y, SEED).unwrap();
+    let invalid = |saved: &serde_json::Value| {
+        matches!(Fitted::load(saved), Err(Error::InvalidSavedModel { .. }))
+    };
+
+    let mut stripped = serde_json::to_value(&fitted).unwrap();
+    let posterior = stripped["posterior"].as_object_mut().unwrap();
+    let weights = posterior.remove("inclusion_weights").unwrap();
+    let concentration = posterior.remove("concentration").unwrap();
+    assert!(invalid(&stripped));
+
+    let uniform = fit(&config, &x, &y, SEED).unwrap();
+    let mut stale = serde_json::to_value(&uniform).unwrap();
+    stale["posterior"]["inclusion_weights"] = weights;
+    stale["posterior"]["concentration"] = concentration;
+    assert!(invalid(&stale));
+
+    let mut wide = serde_json::to_value(&fitted).unwrap();
+    for draw in wide["posterior"]["inclusion_weights"]
+        .as_array_mut()
+        .unwrap()
+    {
+        draw.as_array_mut().unwrap().push(serde_json::json!(0.0));
+    }
+    assert!(invalid(&wide));
 }

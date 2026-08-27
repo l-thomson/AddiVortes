@@ -260,12 +260,7 @@ new_fit <- function(design, response, control, seed, chains, threads, call,
       call = call_env
     )
   }
-  if (!inherits(control, "thiessen_control")) {
-    thiessen_abort(
-      "`control` must come from `thiessen_control()`.",
-      call = call_env
-    )
-  }
+  check_group(control, "control", "thiessen_control", call = call_env)
   control <- resolve_outcome(control, response, call = call_env)
   chains <- resolve_chains(chains, call = call_env)
   threads <- resolve_threads(threads, call = call_env)
@@ -400,7 +395,6 @@ assemble_fit <- function(fit, design, response, seed, call, threads = 1L,
       n_features = ncol(design),
       blueprint = blueprint,
       response = response,
-      response_levels = response$levels,
       x = design,
       y = y,
       fitted.values = fit$fitted_values,

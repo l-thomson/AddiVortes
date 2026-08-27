@@ -16,8 +16,20 @@ from thiessen import Model, RequiresFeatureError, TermParams, ThiessenError, _na
 from thiessen import families as families_module
 from thiessen.estimators import AddiVortesClassifier
 from thiessen.families import Probit
+from thiessen.params import _TAGGED_ENTRIES
 
 from .conftest import SMALL
+
+#: The metric variants of `crates/thiessen/src/geometry.rs` with no
+#: required field. A unit variant is stored as a bare string and a struct
+#: variant as a map, which the surface tags for the caller.
+METRICS_WITHOUT_REQUIRED_FIELDS = {
+    "euclidean": "unit",
+    "categorical": "unit",
+    "mahalanobis": "unit",
+    "manhattan": "struct",
+    "cosine": "struct",
+}
 
 
 def core_families() -> set[str]:
@@ -130,6 +142,29 @@ def test_a_saved_model_naming_an_unknown_family_fails_to_load(gaussian_fixture):
 
     with pytest.raises(ThiessenError):
         _native.fitted_from_json(json.dumps(payload))
+
+
+def metric_config(entry) -> str:
+    return json.dumps({"mean_params": {"geometry": {"metric": [entry]}}})
+
+
+def test_the_tagged_entries_are_the_struct_variants_without_required_fields():
+    structs = {
+        name
+        for name, form in METRICS_WITHOUT_REQUIRED_FIELDS.items()
+        if form == "struct"
+    }
+    assert set(_TAGGED_ENTRIES) == structs
+    for name, form in METRICS_WITHOUT_REQUIRED_FIELDS.items():
+        stored = name if form == "unit" else {name: {}}
+        other = {name: {}} if form == "unit" else name
+        try:
+            _native.validate_config(metric_config(stored))
+        except RequiresFeatureError:
+            assert not _native.EXPERIMENTAL
+        with pytest.raises(ThiessenError) as refused:
+            _native.validate_config(metric_config(other))
+        assert not isinstance(refused.value, RequiresFeatureError)
 
 
 def test_the_classifier_is_always_probit():

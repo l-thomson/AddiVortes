@@ -157,9 +157,8 @@ structure_params <- function(omega = NULL, inclusion = NULL) {
 #' cell_params(basis = "constant")
 #' @export
 cell_params <- function(basis = NULL) {
-  if (!is.null(basis) && !identical(basis, "constant") &&
-        !identical(basis, "linear")) {
-    thiessen_abort("`basis` must be \"constant\" or \"linear\".")
+  if (!is.null(basis)) {
+    basis <- resignal(rlang::arg_match0(basis, c("constant", "linear")))
   }
   structure(list(basis = basis), class = "cell_params")
 }

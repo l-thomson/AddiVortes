@@ -13,14 +13,6 @@ catalogue_rows <- function() {
   }
   gower <- list(gower = list(kind = "numeric"))
   geometry <- function(...) term_params(geometry = geometry_params(...))
-  ordered <- factor(
-    c("lo", "mid", "hi")[(seq_len(n) %% 3) + 1],
-    levels = c("lo", "mid", "hi"), ordered = TRUE
-  )
-  times <- exp(y)
-  events <- rep(c(TRUE, TRUE, FALSE), length.out = n)
-  lower <- ifelse(seq_len(n) %% 7 == 0, NA, y - 0.1)
-  upper <- ifelse(seq_len(n) %% 6 == 0, NA, y + 0.1)
   floor <- unname(quantile(y, 0.2))
   list(
     minkowski = list(
@@ -117,15 +109,15 @@ catalogue_rows <- function() {
     ),
     aft = list(
       control = function() small_control(),
-      y = survival::Surv(times, events)
+      y = right_censored_fixture(y)
     ),
     interval_censored = list(
       control = function() small_control(),
-      y = survival::Surv(lower, upper, type = "interval2")
+      y = interval_fixture(y)
     ),
     ordinal = list(
       control = function() small_control(),
-      y = ordered
+      y = ordered_fixture(n)
     ),
     student_t = list(
       control = function() {
@@ -174,9 +166,7 @@ test_that("a Surv response of type right reaches the AFT family", {
   skip_if_not(core_experimental())
   skip_if_not_installed("survival")
   fixture <- small_fixture()
-  y <- survival::Surv(
-    exp(fixture$y), rep(c(1, 0), length.out = nrow(fixture$x))
-  )
+  y <- right_censored_fixture(fixture$y)
 
   fit <- thiessen(fixture$x, y, small_control(), seed = 1, chains = 1)
 
@@ -210,10 +200,7 @@ test_that("an interval2 Surv reaches the interval-censored family", {
   skip_if_not(core_experimental())
   skip_if_not_installed("survival")
   fixture <- small_fixture()
-  n <- nrow(fixture$x)
-  lower <- ifelse(seq_len(n) %% 7 == 0, NA, fixture$y - 0.1)
-  upper <- ifelse(seq_len(n) %% 6 == 0, NA, fixture$y + 0.1)
-  y <- survival::Surv(lower, upper, type = "interval2")
+  y <- interval_fixture(fixture$y)
 
   fit <- thiessen(fixture$x, y, small_control(), seed = 1, chains = 1)
 
@@ -227,10 +214,7 @@ test_that("an ordered factor reaches the ordinal family", {
   skip_if_not(core_experimental())
   fixture <- small_fixture()
   n <- nrow(fixture$x)
-  y <- factor(
-    c("lo", "mid", "hi")[(seq_len(n) %% 3) + 1],
-    levels = c("lo", "mid", "hi"), ordered = TRUE
-  )
+  y <- ordered_fixture(n)
 
   fit <- thiessen(fixture$x, y, small_control(), seed = 1, chains = 1)
   probs <- predict(fit, type = "probs")
@@ -282,9 +266,7 @@ test_that("the sampler takes a Surv and reproduces an AFT fit bit for bit", {
   skip_if_not(core_experimental())
   skip_if_not_installed("survival")
   fixture <- core_fixture()
-  y <- survival::Surv(
-    exp(fixture$y), rep(c(1, 1, 0), length.out = nrow(fixture$x))
-  )
+  y <- right_censored_fixture(fixture$y)
 
   through_fit <- thiessen(fixture$x, y, small_control(), seed = 1, chains = 1)
   sampler <- thiessen_sampler(fixture$x, y, small_control(), seed = 1)
@@ -308,13 +290,49 @@ test_that("set_response takes the sampler's own response shape", {
   skip_if_not(core_experimental())
   skip_if_not_installed("survival")
   fixture <- small_fixture()
-  y <- survival::Surv(
-    exp(fixture$y), rep(c(1, 0), length.out = nrow(fixture$x))
-  )
+  y <- right_censored_fixture(fixture$y)
   sampler <- thiessen_sampler(fixture$x, y, small_control(), seed = 1)
 
   expect_no_error(sampler$set_response(y))
   expect_error(
     sampler$set_response(fixture$y), "aft", class = "thiessen_error"
   )
+})
+
+test_that("posterior_predict draws on each family's support", {
+  skip_if_not(core_experimental())
+  skip_if_not_installed("survival")
+  fixture <- small_fixture()
+  x <- fixture$x
+  y <- fixture$y
+  n <- nrow(x)
+  floor <- 0.2
+  ceiling <- 0.55
+  replicates <- function(response, ...) {
+    fit <- thiessen(x, response, small_control(...), seed = 1)
+    set.seed(5)
+    draws <- posterior_predict(fit)
+    expect_identical(dim(draws), c(fit$n_draws, n))
+    draws
+  }
+
+  ordinal <- replicates(ordered_fixture(n))
+  expect_true(all(ordinal %in% c(0, 1, 2)))
+  expect_gt(length(unique(as.vector(ordinal))), 1L)
+
+  expect_true(all(replicates(right_censored_fixture(y)) > 0))
+
+  tobit <- replicates(
+    pmin(pmax(y, floor), ceiling),
+    outcome = tobit_outcome(lower = floor, upper = ceiling)
+  )
+  expect_true(all(tobit >= floor & tobit <= ceiling))
+  expect_true(any(tobit == floor) || any(tobit == ceiling))
+
+  expect_true(all(is.finite(replicates(interval_fixture(y)))))
+  expect_true(all(is.finite(replicates(
+    y, outcome = student_t_outcome(df = c(3, 6, 12))
+  ))))
+  expect_true(all(is.finite(replicates(y, outcome = student_t_outcome()))))
+  expect_true(all(is.finite(replicates(y, outcome = laplace_outcome()))))
 })

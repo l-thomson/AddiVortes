@@ -111,7 +111,7 @@ test_that("a two-level factor response becomes 0 and 1", {
                   small_control(outcome = probit_outcome()),
                   seed = 1, chains = 1)
 
-  expect_identical(fit$response_levels, c("no", "yes"))
+  expect_identical(fit$response$levels, c("no", "yes"))
   expect_true(all(fitted(fit) >= 0 & fitted(fit) <= 1))
 })
 

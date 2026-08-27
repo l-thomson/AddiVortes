@@ -61,12 +61,6 @@ fn draw_matrix(draws: &[Vec<f64>]) -> RMatrix<f64> {
     RMatrix::new_matrix(draws.len(), n_cols, |row, col| draws[row][col])
 }
 
-/// An R logical vector as the core's event flags; `NA` is rejected on
-/// the R side.
-fn flags(events: &Logicals) -> Vec<bool> {
-    events.iter().map(|flag| flag.is_true()).collect()
-}
-
 /// A whole non-negative double as the core's `u64` seed.
 fn seed(seed: f64) -> Result<u64> {
     if !seed.is_finite() || seed < 0.0 || seed.fract() != 0.0 || seed > 9_007_199_254_740_992.0 {
@@ -81,6 +75,12 @@ fn seed(seed: f64) -> Result<u64> {
 #[extendr]
 fn core_experimental() -> bool {
     cfg!(feature = "experimental")
+}
+
+/// The prefix a feature error's message carries.
+#[extendr]
+fn core_requires_feature_prefix() -> &'static str {
+    REQUIRES_FEATURE
 }
 
 /// Version of the vendored core crate.
@@ -124,28 +124,12 @@ fn core_state_payload(state: ExternalPtr<FittedHandle>) -> Result<Raw> {
     Ok(Raw::from_bytes(&bytes))
 }
 
-/// The configuration of a saved fit, the rest of the payload ignored.
-#[derive(serde::Deserialize)]
-struct SavedConfig {
-    config: thiessen::Config,
-}
-
-/// The error of a payload that failed to load. Loading validates the
-/// saved configuration, and serde reports a failure as text, so the
-/// configuration is validated again here to recover its type.
-fn saved_error(payload: &[u8], error: rmp_serde::decode::Error) -> Error {
-    match rmp_serde::from_slice::<SavedConfig>(payload).map(|saved| saved.config.validate()) {
-        Ok(Err(typed)) => core_error(typed),
-        _ => Error::Other(error.to_string()),
-    }
-}
-
 /// A live fitted-model pointer from the bytes of `core_state_payload`,
 /// predicting on `threads` threads.
 #[extendr]
 fn core_state_restore(payload: &[u8], threads: i32) -> Result<ExternalPtr<FittedHandle>> {
-    let mut inner: thiessen::Fitted =
-        rmp_serde::from_slice(payload).map_err(|error| saved_error(payload, error))?;
+    let mut inner = thiessen::Fitted::load(&mut rmp_serde::Deserializer::from_read_ref(payload))
+        .map_err(core_error)?;
     inner.set_threads(threads.max(1) as usize);
     Ok(ExternalPtr::new(FittedHandle { inner }))
 }
@@ -228,11 +212,12 @@ fn core_log_lik_survival(
     state: ExternalPtr<FittedHandle>,
     x: RMatrix<f64>,
     times: &[f64],
-    events: Logicals,
+    events: Robj,
 ) -> Result<RMatrix<f64>> {
+    let events = Vec::<bool>::try_from(events)?;
     let draws = state
         .inner
-        .log_likelihood_survival(&design(&x)?, times, &flags(&events))
+        .log_likelihood_survival(&design(&x)?, times, &events)
         .map_err(core_error)?;
     Ok(draw_matrix(&draws))
 }
@@ -261,10 +246,7 @@ fn core_predict_probs(state: ExternalPtr<FittedHandle>, x: RMatrix<f64>) -> Resu
         .inner
         .predict_category_probabilities(&design(&x)?)
         .map_err(core_error)?;
-    let n_cols = rows.first().map_or(0, Vec::len);
-    Ok(RMatrix::new_matrix(rows.len(), n_cols, |row, col| {
-        rows[row][col]
-    }))
+    Ok(draw_matrix(&rows))
 }
 
 /// The posterior mean beside a central interval, `n_rows` by 3 (fit,
@@ -396,17 +378,18 @@ fn core_sampler_new_aft(
     config_json: &str,
     x: RMatrix<f64>,
     times: &[f64],
-    events: Logicals,
+    events: Robj,
     seed_value: f64,
     chain: i32,
 ) -> Result<ExternalPtr<SamplerHandle>> {
     let config = config(config_json)?;
     let data = design(&x)?;
+    let events = Vec::<bool>::try_from(events)?;
     let inner = thiessen::Sampler::aft(
         &config,
         &data,
         times,
-        &flags(&events),
+        &events,
         chain_seed(seed_value, chain)?,
     )
     .map_err(core_error)?;
@@ -504,11 +487,12 @@ fn core_sampler_set_response(sampler: ExternalPtr<SamplerHandle>, y: &[f64]) -> 
 fn core_sampler_set_aft_response(
     sampler: ExternalPtr<SamplerHandle>,
     times: &[f64],
-    events: Logicals,
+    events: Robj,
 ) -> Result<()> {
+    let events = Vec::<bool>::try_from(events)?;
     sampler
         .live_mut()?
-        .set_aft_response(times, &flags(&events))
+        .set_aft_response(times, &events)
         .map_err(core_error)
 }
 
@@ -579,6 +563,7 @@ extendr_module! {
     mod thiessen;
     fn core_version;
     fn core_experimental;
+    fn core_requires_feature_prefix;
     fn core_defaults;
     fn core_outcome_defaults;
     fn core_validate;

@@ -31,9 +31,12 @@ from thiessen import (
 )
 from thiessen.sampler import Sampler
 
-from .conftest import SMALL, _fixture
+from .conftest import SMALL, _fixture, survival
 
-pd = pytest.importorskip("pandas")
+try:
+    import pandas as pd
+except ImportError:  # pragma: no cover - depends on the install
+    pd = None
 
 experimental = pytest.mark.skipif(
     not _native.EXPERIMENTAL, reason="built without the feature"
@@ -41,11 +44,7 @@ experimental = pytest.mark.skipif(
 default_build = pytest.mark.skipif(
     _native.EXPERIMENTAL, reason="built with the feature"
 )
-
-
-def survival(events, times):
-    """A structured survival array in the scikit-survival layout."""
-    return np.array(list(zip(events, times)), dtype=[("event", bool), ("time", float)])
+needs_pandas = pytest.mark.skipif(pd is None, reason="needs pandas")
 
 
 def geometry(**kwargs):
@@ -69,10 +68,16 @@ def catalogue_rows():
     x, y = _fixture()
     n = len(y)
     index = np.arange(n)
-    ordered = pd.Categorical(
-        np.array(["lo", "mid", "hi"])[index % 3],
-        categories=["lo", "mid", "hi"],
-        ordered=True,
+    # The ordinal row is an ordered `Categorical`; without pandas it is
+    # skipped by `items`, not dropped.
+    ordered = (
+        None
+        if pd is None
+        else pd.Categorical(
+            np.array(["lo", "mid", "hi"])[index % 3],
+            categories=["lo", "mid", "hi"],
+            ordered=True,
+        )
     )
     times = np.exp(y)
     events = index % 3 != 2
@@ -125,8 +130,16 @@ def catalogue_rows():
 ROWS = catalogue_rows()
 
 
+def items():
+    """The row keys, the ordinal row marked for its pandas dependency."""
+    return [
+        pytest.param(item, marks=needs_pandas) if item == "ordinal" else item
+        for item in sorted(ROWS)
+    ]
+
+
 @experimental
-@pytest.mark.parametrize("item", sorted(ROWS))
+@pytest.mark.parametrize("item", items())
 def test_every_row_fits_predicts_and_round_trips(item, tmp_path):
     x, _ = _fixture()
     model, y = ROWS[item]
@@ -150,7 +163,7 @@ def test_every_row_fits_predicts_and_round_trips(item, tmp_path):
 
 
 @default_build
-@pytest.mark.parametrize("item", sorted(ROWS))
+@pytest.mark.parametrize("item", items())
 def test_every_row_reports_the_feature_without_it(item):
     x, _ = _fixture()
     model, y = ROWS[item]
@@ -209,6 +222,32 @@ def test_a_survival_array_reaches_the_aft_family():
     assert fitted.model == "aft"
     assert "aft" in fitted.config["outcome"]
     assert fitted.sigma().shape == (20,)
+
+
+@experimental
+def test_the_aft_replicates_pair_with_the_observed_time():
+    az = pytest.importorskip("arviz")
+    x, _ = _fixture()
+    model, y = ROWS["aft"]
+
+    data = model.fit(x, y, random_state=1).to_inference_data(x, y)
+
+    assert set(data["posterior_predictive"].dataset.data_vars) == {"time"}
+    assert set(data["log_likelihood"].dataset.data_vars) == {"time"}
+    assert {"time", "event"} <= set(data["observed_data"].dataset.data_vars)
+    az.plot_ppc_dist(data, var_names=["time"], num_samples=10, backend="none")
+
+
+@experimental
+def test_the_interval_censored_replicates_keep_the_plain_name():
+    pytest.importorskip("arviz")
+    x, _ = _fixture()
+    model, y = ROWS["interval_censored"]
+
+    data = model.fit(x, y, random_state=1).to_inference_data(x, y)
+
+    assert set(data["posterior_predictive"].dataset.data_vars) == {"y"}
+    assert set(data["observed_data"].dataset.data_vars) == {"lower", "upper"}
 
 
 @experimental
