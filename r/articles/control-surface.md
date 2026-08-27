@@ -4,9 +4,9 @@ The configuration of a fit has four parts, and
 [`thiessen_control()`](https://l-thomson.github.io/thiessen/r/reference/thiessen_control.md)
 holds one of each. Every name here is a name in the core’s stored
 configuration and in the Python package, so one description serves all
-three surfaces. The two outcome constructors are the exception: they
-carry an `_outcome` suffix in R, and the name the configuration stores
-is unchanged, so a fit saved by one surface is read by another. The full
+three surfaces. The outcome constructors are the exception: they carry
+an `_outcome` suffix in R, and the name the configuration stores is
+unchanged, so a fit saved by one surface is read by another. The full
 mapping is
 [`docs/parity.md`](https://github.com/l-thomson/thiessen/blob/dev/docs/parity.md).
 
@@ -36,10 +36,10 @@ families carry it rather than only the one that would clash. Attaching
 Gaussian family to the heteroscedastic model. `outcome` left `NULL`, the
 default, takes the family from the response at fit: a numeric vector the
 Gaussian family and a two-level factor the probit family, with the
-experimental families selected by their own response shapes
-([`docs/experimental.md`](https://github.com/l-thomson/thiessen/blob/dev/docs/experimental.md)).
-A family named here is checked against the response and a mismatch is an
-error naming both.
+experimental families selected by their own response shapes (the
+[experimental](https://l-thomson.github.io/thiessen/r/articles/experimental.md)
+page lists them). A family named here is checked against the response
+and a mismatch is an error naming both.
 
 ``` r
 
@@ -65,13 +65,14 @@ term_params(tessellations = 200, k = 3, lambda_c = 25)
 
 [`geometry_params()`](https://l-thomson.github.io/thiessen/r/reference/geometry_params.md)
 is the covariate space: the `metric` of each column and the
-centre-coordinate scale `sigma_c`. This release reaches three metrics,
-`"euclidean"`, `"categorical"` and a labelled sphere; the rest the core
-carries are experimental and are rejected here. A Euclidean column is
-min-max scaled to \[-0.5, 0.5\] over its training range inside the
-sampler, which is what makes one distance comparable across columns; a
-categorical or spherical column is not scaled, and `sigma_c` is on the
-scaled coordinate, so 1 is the full range of a Euclidean column.
+centre-coordinate scale `sigma_c`. A default build reaches three
+metrics, `"euclidean"`, `"categorical"` and a labelled sphere; the rest
+the core carries are experimental and are rejected without the opt-in
+build. A Euclidean column is min-max scaled to \[-0.5, 0.5\] over its
+training range inside the sampler, which is what makes one distance
+comparable across columns; a categorical or spherical column is not
+scaled, and `sigma_c` is on the scaled coordinate, so 1 is the full
+range of a Euclidean column.
 [`structure_params()`](https://l-thomson.github.io/thiessen/r/reference/structure_params.md)
 is the covariate-inclusion prior: `omega / p` is the prior probability
 of including a covariate, resolved to `min(3, p)` at fit when unset. The
@@ -92,7 +93,9 @@ term_params(
 [`general_params()`](https://l-thomson.github.io/thiessen/r/reference/general_params.md)
 carries the run lengths: `burn_in`, `draws`, `thinning`, and
 `prior_only`, which switches the likelihood off so the chain draws from
-the prior.
+the prior. The chains and threads of a fit are arguments of
+[`thiessen()`](https://l-thomson.github.io/thiessen/r/reference/thiessen.md)
+rather than of the schedule, since they change nothing about the model.
 
 ``` r
 
@@ -150,13 +153,7 @@ y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
 
 resolved <- thiessen(x, y, thiessen_control(
   general_params = general_params(burn_in = 1, draws = 1)
-), seed = 1)$control
-#> Warning in max(summary$rhat, na.rm = TRUE): no non-missing arguments to max;
-#> returning -Inf
-#> Warning in min(summary$ess_bulk, na.rm = TRUE): no non-missing arguments to
-#> min; returning Inf
-#> Warning in min(summary$ess_tail, na.rm = TRUE): no non-missing arguments to
-#> min; returning Inf
+), seed = 1, chains = 1)$control
 mean_params <- resolved$mean_params
 
 c(
@@ -179,3 +176,5 @@ three of the three covariates above. The one default that departs from
 the paper is `lambda_c`: Stone and Gosling (2025), s. 2.3, report 25,
 and CRAN AddiVortes takes 5 from 0.6.8 onward; this package follows the
 implementation, and `term_params(lambda_c = 25)` is the paper’s setting.
+The [priors](https://l-thomson.github.io/thiessen/r/articles/priors.md)
+page draws from the prior at three settings of each.

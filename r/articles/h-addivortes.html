@@ -31,17 +31,35 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/thiessen.html">Get started</a></li>
-<li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/h-addivortes.html">H-AddiVortes: heteroscedastic regression</a></li>
+<li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
+    <li><a class="dropdown-item" href="../articles/gaussian.html">Gaussian regression</a></li>
     <li><a class="dropdown-item" href="../articles/binary-addivortes.html">Binary AddiVortes: probit classification</a></li>
+    <li><a class="dropdown-item" href="../articles/h-addivortes.html">H-AddiVortes: heteroscedastic regression</a></li>
+    <li><a class="dropdown-item" href="../articles/model-description.html">Model description</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Using a fit</h6></li>
     <li><a class="dropdown-item" href="../articles/posterior.html">Working with the posterior</a></li>
+    <li><a class="dropdown-item" href="../articles/convergence.html">Chains, convergence and compute</a></li>
+    <li><a class="dropdown-item" href="../articles/priors.html">Priors and what they do</a></li>
+    <li><a class="dropdown-item" href="../articles/covariates.html">Covariates and the covariate space</a></li>
     <li><a class="dropdown-item" href="../articles/control-surface.html">The control surface</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Extending</h6></li>
     <li><a class="dropdown-item" href="../articles/sampler-api.html">The sampler API</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Experimental</h6></li>
+    <li><a class="dropdown-item" href="../articles/experimental.html">The experimental build and the catalogue</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Help</h6></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
+    <li><a class="dropdown-item" href="../articles/related-software.html">Related software</a></li>
   </ul>
 </li>
+<li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
@@ -71,75 +89,105 @@
 
     
     
+<div class="section level2">
+<h2 id="introduction">Introduction<a class="anchor" aria-label="anchor" href="#introduction"></a>
+</h2>
 <p>H-AddiVortes is the heteroscedastic variant of Stone and Gosling
-(2025): y = f(x) + e with e ~ N(0, s^2(x)), where the variance s^2(x) is
-a multiplicative ensemble of inverse-gamma variance tessellations, the
-structure of HBART (Pratola, Chipman, George and McCulloch, 2020). It is
-selected by attaching a variance ensemble to the Gaussian family: a
-positive tessellation count on <code>variance_params</code>. The paper’s
-count is 40.</p>
-<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+(2025): the noise variance is itself a function of x, a product of
+variance tessellations, with the structure of HBART (Pratola, Chipman,
+George and McCulloch, 2020). It is selected by attaching a variance
+ensemble to the Gaussian family, a positive tessellation count on
+<code>variance_params</code>; the paper’s count is 40. Reach for it
+where the spread of the response changes across the covariate space and
+a predictive interval of one width would be wrong somewhere.</p>
+</div>
+<div class="section level2">
+<h2 id="likelihood">Likelihood<a class="anchor" aria-label="anchor" href="#likelihood"></a>
+</h2>
+<pre><code>y_i = f(x_i) + s(x_i) e_i,   e_i ~ N(0, 1)
+s^2(x) = prod_{j=1}^{m'} v(x; T'_j, V_j)</code></pre>
+<p>with f the sum of m mean tessellations and s^2 the product of m’
+variance tessellations, v(x; T’, V) the value of the cell of T’ that x
+falls in. One sweep updates the variance ensemble given the residuals y
+- f, then the mean ensemble with per-observation precision 1 /
+s^2(x_i).</p>
+</div>
+<div class="section level2">
+<h2 id="priors">Priors<a class="anchor" aria-label="anchor" href="#priors"></a>
+</h2>
+<ul>
+<li>Mean cells as in the Gaussian model, mu ~ N(0, sigma_mu^2) with
+sigma_mu = 0.5 / (k sqrt(m)).</li>
+<li>Each variance cell v ~ inverse gamma(nu’ / 2, nu’ lambda’ / 2), with
+nu’ and lambda’ set from <code>gaussian_outcome(nu, q)</code> so that
+the prior mean of s^2(x) equals the prior mean of the Gaussian model’s
+sigma^2 whatever m’ is (HBART s. 3.2). This needs nu &gt; 2.</li>
+<li>Both ensembles share the cell-count, covariate-inclusion and centre
+priors: <code>geometry</code> and <code>structure</code> set on
+<code>mean_params</code> apply to <code>variance_params</code> too.</li>
+</ul>
+</div>
+<div class="section level2">
+<h2 id="posterior">Posterior<a class="anchor" aria-label="anchor" href="#posterior"></a>
+</h2>
+<p><code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> gives the posterior mean of f(x) and
+<code>interval = "prediction"</code> an interval whose width follows
+s(x); <code>type = "variance"</code> gives s^2(x) per draw, the square
+of HBART’s <code>sdraws</code>. <code><a href="https://rdrr.io/r/stats/sigma.html" class="external-link">sigma()</a></code> is not defined,
+since there is no single residual scale, and the family must be
+Gaussian: the probit family fixes its latent scale at 1, so it takes no
+variance ensemble.</p>
+</div>
+<div class="section level2">
+<h2 id="example">Example<a class="anchor" aria-label="anchor" href="#example"></a>
+</h2>
+<p>The mean is linear in the first covariate and the noise scale grows
+with it, from 0.05 to 0.35.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://l-thomson.github.io/thiessen/r/">thiessen</a></span><span class="op">)</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ggplot2.tidyverse.org" class="external-link">ggplot2</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
 <span><span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">300</span></span>
-<span><span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co"># The noise scale grows with the first covariate.</span></span>
-<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="va">x</span><span class="op">[</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span>, sd <span class="op">=</span> <span class="fl">0.05</span> <span class="op">+</span> <span class="fl">0.3</span> <span class="op">*</span> <span class="va">x</span><span class="op">[</span>, <span class="fl">1</span><span class="op">]</span><span class="op">)</span></span>
+<span><span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span>a <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span>, b <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">scale</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="fl">0.05</span> <span class="op">+</span> <span class="fl">0.3</span> <span class="op">*</span> <span class="va">x</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span></span>
+<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="va">x</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span>, sd <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/scale.html" class="external-link">scale</a></span><span class="op">(</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">control</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen_control.html">thiessen_control</a></span><span class="op">(</span></span>
-<span>  mean_params <span class="op">=</span> <span class="fu"><a href="../reference/term_params.html">term_params</a></span><span class="op">(</span>tessellations <span class="op">=</span> <span class="fl">25</span><span class="op">)</span>,</span>
-<span>  variance_params <span class="op">=</span> <span class="fu"><a href="../reference/term_params.html">term_params</a></span><span class="op">(</span>tessellations <span class="op">=</span> <span class="fl">10</span><span class="op">)</span>,</span>
-<span>  general_params <span class="op">=</span> <span class="fu"><a href="../reference/general_params.html">general_params</a></span><span class="op">(</span>burn_in <span class="op">=</span> <span class="fl">100</span>, draws <span class="op">=</span> <span class="fl">200</span><span class="op">)</span></span>
+<span>  mean_params <span class="op">=</span> <span class="fu"><a href="../reference/term_params.html">term_params</a></span><span class="op">(</span>tessellations <span class="op">=</span> <span class="fl">200</span><span class="op">)</span>,</span>
+<span>  variance_params <span class="op">=</span> <span class="fu"><a href="../reference/term_params.html">term_params</a></span><span class="op">(</span>tessellations <span class="op">=</span> <span class="fl">40</span><span class="op">)</span>,</span>
+<span>  general_params <span class="op">=</span> <span class="fu"><a href="../reference/general_params.html">general_params</a></span><span class="op">(</span>draws <span class="op">=</span> <span class="fl">2000</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">y</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Warning in thiessen(x, y, control, seed = 1): The chains may not have</span></span>
-<span><span class="co">#&gt; converged: largest R-hat 1.202 (threshold 1.01), smallest effective sample size</span></span>
-<span><span class="co">#&gt; 15 (threshold 400). Run more draws or more chains.</span></span>
 <span><span class="va">fit</span></span>
 <span><span class="co">#&gt; AddiVortes fit</span></span>
 <span><span class="co">#&gt; Call: thiessen(x = x, y = y, control = control, seed = 1)</span></span>
 <span><span class="co">#&gt; heteroscedastic model, 300 observations, 2 covariates</span></span>
-<span><span class="co">#&gt; 25 tessellations, 800 draws kept after 100 burn-in, thinning 1</span></span>
-<span><span class="co">#&gt; In-sample RMSE 0.2027, seed 1</span></span>
-<span><span class="co">#&gt; 4 chains, largest R-hat 1.202, smallest effective sample size 15</span></span>
-<span><span class="co">#&gt; Warning: The chains may not have converged: largest R-hat 1.202 (threshold 1.01), smallest effective sample size 15 (threshold 400). Run more draws or more chains.</span></span></code></pre></div>
-<p><code>predict(type = "variance")</code> returns s^2(x) per draw; its
-posterior mean recovers the rising noise scale:</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">variance</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">x</span>, type <span class="op">=</span> <span class="st">"variance"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">order</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/order.html" class="external-link">order</a></span><span class="op">(</span><span class="va">x</span><span class="op">[</span>, <span class="fl">1</span><span class="op">]</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
-<span>  low_x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">variance</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">order</span>, <span class="fl">50</span><span class="op">)</span><span class="op">]</span><span class="op">)</span>,</span>
-<span>  high_x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">variance</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">tail</a></span><span class="op">(</span><span class="va">order</span>, <span class="fl">50</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span><span class="co">#&gt;       low_x      high_x </span></span>
-<span><span class="co">#&gt; 0.009572963 0.093159358</span></span></code></pre></div>
-<p>Predictive intervals widen where the variance is high, which is the
-point of the model:</p>
+<span><span class="co">#&gt; 200 tessellations, 8000 draws kept after 200 burn-in, thinning 1</span></span>
+<span><span class="co">#&gt; In-sample RMSE 0.1992, seed 1</span></span>
+<span><span class="co">#&gt; 4 chains, largest R-hat 1.003, smallest effective sample size 2341</span></span></code></pre></div>
+<p>The posterior mean of s(x) along <code>a</code>, with <code>b</code>
+fixed, against the scale the data were made with:</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">grid</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span>a <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span>, length.out <span class="op">=</span> <span class="fl">100</span><span class="op">)</span>, b <span class="op">=</span> <span class="fl">0.5</span><span class="op">)</span></span>
+<span><span class="va">estimate</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">grid</span>, type <span class="op">=</span> <span class="st">"variance"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>a <span class="op">=</span> <span class="va">grid</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span>, <span class="va">estimate</span>, truth <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/scale.html" class="external-link">scale</a></span><span class="op">(</span><span class="va">grid</span><span class="op">)</span><span class="op">)</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span><span class="va">a</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
+<span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_line</a></span><span class="op">(</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">estimate</span><span class="op">)</span>, colour <span class="op">=</span> <span class="st">"steelblue"</span><span class="op">)</span> <span class="op">+</span></span>
+<span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_line</a></span><span class="op">(</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">truth</span><span class="op">)</span>, linetype <span class="op">=</span> <span class="st">"dashed"</span><span class="op">)</span> <span class="op">+</span></span>
+<span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/labs.html" class="external-link">labs</a></span><span class="op">(</span>y <span class="op">=</span> <span class="st">"s(x), posterior mean"</span><span class="op">)</span></span></code></pre></div>
+<p><img src="h-addivortes_files/figure-html/figure-1.png" class="r-plt" alt="" width="100%"></p>
+<p>Predictive intervals widen where the variance is high, which is the
+point of the model. The mean width of the 90 per cent interval over the
+fifty rows with the smallest <code>a</code> and the fifty with the
+largest:</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">interval</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">x</span>, interval <span class="op">=</span> <span class="st">"prediction"</span>, level <span class="op">=</span> <span class="fl">0.9</span><span class="op">)</span></span>
 <span><span class="va">width</span> <span class="op">&lt;-</span> <span class="va">interval</span><span class="op">[</span>, <span class="st">"upper"</span><span class="op">]</span> <span class="op">-</span> <span class="va">interval</span><span class="op">[</span>, <span class="st">"lower"</span><span class="op">]</span></span>
-<span><span class="va">widths</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
-<span>  low_x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">width</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">order</span>, <span class="fl">50</span><span class="op">)</span><span class="op">]</span><span class="op">)</span>,</span>
-<span>  high_x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">width</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">tail</a></span><span class="op">(</span><span class="va">order</span>, <span class="fl">50</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span><span class="co"># The claim above, asserted rather than read: a wrong number fails the build.</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html" class="external-link">stopifnot</a></span><span class="op">(</span><span class="va">widths</span><span class="op">[[</span><span class="st">"high_x"</span><span class="op">]</span><span class="op">]</span> <span class="op">&gt;</span> <span class="va">widths</span><span class="op">[[</span><span class="st">"low_x"</span><span class="op">]</span><span class="op">]</span><span class="op">)</span></span>
-<span><span class="va">widths</span></span>
-<span><span class="co">#&gt;     low_x    high_x </span></span>
-<span><span class="co">#&gt; 0.3571411 1.0476867</span></span></code></pre></div>
-<div class="section level2">
-<h2 id="what-is-shared-and-what-is-separate">What is shared and what is separate<a class="anchor" aria-label="anchor" href="#what-is-shared-and-what-is-separate"></a>
-</h2>
-<p>The two ensembles declare one covariate space: <code>geometry</code>
-and <code>structure</code> set on <code>mean_params</code> apply to
-<code>variance_params</code> as well. The variance ensemble needs a
-sampled sigma^2 to carry, so it requires the Gaussian family with nu
-&gt; 2, and it is not available under the probit family, whose latent
-scale is fixed at 1 for identification. <code><a href="https://rdrr.io/r/stats/sigma.html" class="external-link">sigma()</a></code> is empty
-under this model; the spread is
-<code>predict(type = "variance")</code>.</p>
+<span><span class="va">order</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/order.html" class="external-link">order</a></span><span class="op">(</span><span class="va">x</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>low_a <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">width</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">order</span>, <span class="fl">50</span><span class="op">)</span><span class="op">]</span><span class="op">)</span>, high_a <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">width</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">tail</a></span><span class="op">(</span><span class="va">order</span>, <span class="fl">50</span><span class="op">)</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;     low_a    high_a </span></span>
+<span><span class="co">#&gt; 0.3695135 1.0312248</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
@@ -147,10 +195,10 @@ under this model; the spread is
 <p>Pratola, M. T., Chipman, H. A., George, E. I. and McCulloch, R. E.
 (2020). Heteroscedastic BART via multiplicative regression trees.
 <em>Journal of Computational and Graphical Statistics</em> 29(2),
-405-417.</p>
+405-417. <a href="doi:10.1080/10618600.2019.1677243" class="uri">doi:10.1080/10618600.2019.1677243</a></p>
 <p>Stone, A. and Gosling, J. P. (2025). AddiVortes: (Bayesian) additive
 Voronoi tessellations. <em>Journal of Computational and Graphical
-Statistics</em> 34(3), 859-871.</p>
+Statistics</em> 34(3), 859-871. <a href="doi:10.1080/10618600.2024.2414104" class="uri">doi:10.1080/10618600.2024.2414104</a></p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

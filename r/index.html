@@ -33,17 +33,35 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="articles/thiessen.html">Get started</a></li>
-<li class="nav-item"><a class="nav-link" href="reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="articles/h-addivortes.html">H-AddiVortes: heteroscedastic regression</a></li>
+<li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
+    <li><a class="dropdown-item" href="articles/gaussian.html">Gaussian regression</a></li>
     <li><a class="dropdown-item" href="articles/binary-addivortes.html">Binary AddiVortes: probit classification</a></li>
+    <li><a class="dropdown-item" href="articles/h-addivortes.html">H-AddiVortes: heteroscedastic regression</a></li>
+    <li><a class="dropdown-item" href="articles/model-description.html">Model description</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Using a fit</h6></li>
     <li><a class="dropdown-item" href="articles/posterior.html">Working with the posterior</a></li>
+    <li><a class="dropdown-item" href="articles/convergence.html">Chains, convergence and compute</a></li>
+    <li><a class="dropdown-item" href="articles/priors.html">Priors and what they do</a></li>
+    <li><a class="dropdown-item" href="articles/covariates.html">Covariates and the covariate space</a></li>
     <li><a class="dropdown-item" href="articles/control-surface.html">The control surface</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Extending</h6></li>
     <li><a class="dropdown-item" href="articles/sampler-api.html">The sampler API</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Experimental</h6></li>
+    <li><a class="dropdown-item" href="articles/experimental.html">The experimental build and the catalogue</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Help</h6></li>
+    <li><a class="dropdown-item" href="articles/troubleshooting.html">Troubleshooting</a></li>
+    <li><a class="dropdown-item" href="articles/related-software.html">Related software</a></li>
   </ul>
 </li>
+<li class="nav-item"><a class="nav-link" href="reference/index.html">Reference</a></li>
 <li class="nav-item"><a class="nav-link" href="news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
@@ -61,7 +79,7 @@
   <main id="main" class="col-md-9"><div class="section level1">
 <div class="page-header"><h1 id="thiessen">thiessen<a class="anchor" aria-label="anchor" href="#thiessen"></a>
 </h1></div>
-<p>Bayesian regression on a sum of Voronoi tessellations (AddiVortes; Stone and Gosling, 2025, <a href="doi:10.1080/10618600.2024.2414104" class="uri">doi:10.1080/10618600.2024.2414104</a>), a variant of BART (Chipman, George and McCulloch, 2010) in which a cell is a region of the covariate space rather than a box. The package provides the Gaussian model of the paper together with its published variants, Binary AddiVortes (probit classification) and H-AddiVortes (heteroscedastic variance).</p>
+<p>Bayesian regression on a sum of Voronoi tessellations (AddiVortes; Stone and Gosling, 2025, <a href="doi:10.1080/10618600.2024.2414104" class="uri">doi:10.1080/10618600.2024.2414104</a>), a variant of BART (Chipman, George and McCulloch, 2010) in which a cell is a region of the covariate space rather than a box. The package provides the Gaussian model of the paper together with its published variants, Binary AddiVortes (probit classification) and H-AddiVortes (heteroscedastic variance), with a formula interface, four-chain convergence diagnostics, and methods for the posterior, rstantools, loo, bayesplot and tidybayes generics.</p>
 <p>The sampler is the <code>thiessen</code> Rust crate, built from sources vendored in the package. The method and all credit for it belong to its authors; this package is an independent implementation, and its test suite compares posterior summaries against the authors’ R package, <a href="https://github.com/johnpaulgosling/AddiVortes" class="external-link">AddiVortes</a>.</p>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
@@ -75,7 +93,7 @@
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"remotes"</span><span class="op">)</span></span>
 <span><span class="fu">remotes</span><span class="fu">::</span><span class="fu">install_github</span><span class="op">(</span><span class="st">"l-thomson/thiessen"</span>, subdir <span class="op">=</span> <span class="st">"r"</span><span class="op">)</span></span></code></pre></div>
-<p>The articles are on the website named below, so the install leaves them out. <code>build_vignettes = TRUE</code> installs them locally instead, and needs <code>knitr</code> and <code>rmarkdown</code> present to build them.</p>
+<p>The vignettes are on the website named below, so the install leaves them out. <code>build_vignettes = TRUE</code> installs them locally instead, and needs <code>knitr</code> and <code>rmarkdown</code> present to build them.</p>
 </div>
 <div class="section level2">
 <h2 id="example">Example<a class="anchor" aria-label="anchor" href="#example"></a>
@@ -85,8 +103,8 @@
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
 <span><span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">200</span></span>
-<span><span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fl">2</span> <span class="op">*</span> <span class="op">(</span><span class="va">x</span><span class="op">[</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">-</span> <span class="fl">0.5</span><span class="op">)</span><span class="op">^</span><span class="fl">2</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span><span class="op">[</span>, <span class="fl">2</span><span class="op">]</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span>, sd <span class="op">=</span> <span class="fl">0.1</span><span class="op">)</span></span>
+<span><span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span>a <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span>, b <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fl">2</span> <span class="op">*</span> <span class="op">(</span><span class="va">x</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span> <span class="op">-</span> <span class="fl">0.5</span><span class="op">)</span><span class="op">^</span><span class="fl">2</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span><span class="op">[</span>, <span class="st">"b"</span><span class="op">]</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span>, sd <span class="op">=</span> <span class="fl">0.1</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">y</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
 <span><span class="va">fit</span></span>
@@ -96,71 +114,41 @@
 <span><span class="co">#&gt; 200 tessellations, 4000 draws kept after 200 burn-in, thinning 1</span></span>
 <span><span class="co">#&gt; In-sample RMSE 0.07966, seed 1</span></span>
 <span><span class="co">#&gt; 4 chains, largest R-hat 1.008, smallest effective sample size 899</span></span></code></pre></div>
+<p>The last line is the convergence check over the four chains a fit runs by default. <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> gives the posterior mean and, with <code>interval =</code>, a credible interval for the mean function or a predictive interval for a new observation:</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">x</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 0.2161658 0.1520645 0.3659401 0.4203385 0.2189898 0.6780119</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/sigma.html" class="external-link">sigma</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 0.09372794</span></span></code></pre></div>
-<p><code>plot(fit)</code> traces the per-draw sampler diagnostics, one panel each. It is a convergence check rather than a display of the fit; for the fit itself pass <code>posterior::as_draws_df(fit)</code> to bayesplot.</p>
+<code class="sourceCode R"><span><span class="va">grid</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span>a <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span>, length.out <span class="op">=</span> <span class="fl">100</span><span class="op">)</span>, b <span class="op">=</span> <span class="fl">0.5</span><span class="op">)</span></span>
+<span><span class="va">band</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">grid</span>, interval <span class="op">=</span> <span class="st">"credible"</span>, level <span class="op">=</span> <span class="fl">0.9</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">grid</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span>, <span class="va">band</span><span class="op">[</span>, <span class="st">"fit"</span><span class="op">]</span>, type <span class="op">=</span> <span class="st">"l"</span>, col <span class="op">=</span> <span class="st">"steelblue"</span>,</span>
+<span>     ylim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="va">band</span><span class="op">)</span>, xlab <span class="op">=</span> <span class="st">"a"</span>, ylab <span class="op">=</span> <span class="st">"f(a, b = 0.5)"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/polygon.html" class="external-link">polygon</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">grid</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span>, <span class="fu"><a href="https://rdrr.io/r/base/rev.html" class="external-link">rev</a></span><span class="op">(</span><span class="va">grid</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span><span class="op">)</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">band</span><span class="op">[</span>, <span class="st">"lower"</span><span class="op">]</span>, <span class="fu"><a href="https://rdrr.io/r/base/rev.html" class="external-link">rev</a></span><span class="op">(</span><span class="va">band</span><span class="op">[</span>, <span class="st">"upper"</span><span class="op">]</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>        col <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/grDevices/adjustcolor.html" class="external-link">adjustcolor</a></span><span class="op">(</span><span class="st">"steelblue"</span>, <span class="fl">0.3</span><span class="op">)</span>, border <span class="op">=</span> <span class="cn">NA</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/lines.html" class="external-link">lines</a></span><span class="op">(</span><span class="va">grid</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span>, <span class="fl">2</span> <span class="op">*</span> <span class="op">(</span><span class="va">grid</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span> <span class="op">-</span> <span class="fl">0.5</span><span class="op">)</span><span class="op">^</span><span class="fl">2</span> <span class="op">+</span> <span class="fl">0.25</span>, lty <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span></code></pre></div>
+<p><img src="reference/figures/README-figure-1.png" alt="" width="100%"></p>
+<p>The dashed line is the truth. <code><a href="https://rdrr.io/r/stats/sigma.html" class="external-link">sigma()</a></code>, <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code>, <code><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot()</a></code>, <code><a href="https://mc-stan.org/posterior/reference/draws_df.html" class="external-link">posterior::as_draws_df()</a></code> and <code>loo::loo(log_lik(fit))</code> all take the fit.</p>
 </div>
 <div class="section level2">
 <h2 id="documentation">Documentation<a class="anchor" aria-label="anchor" href="#documentation"></a>
 </h2>
+<p>The <a href="https://l-thomson.github.io/thiessen/r/">package website</a> renders every page below with its output, beside the reference pages.</p>
 <ul>
-<li>
-<code><a href="articles/thiessen.html">vignette("thiessen")</a></code>, getting started: a fit, its methods, the convergence diagnostics and what to do when they warn.</li>
-<li>
-<code><a href="articles/binary-addivortes.html">vignette("binary-addivortes")</a></code>, probit classification.</li>
-<li>
-<code><a href="articles/h-addivortes.html">vignette("h-addivortes")</a></code>, the heteroscedastic model, where the spread varies with x.</li>
-<li>
-<code><a href="articles/posterior.html">vignette("posterior")</a></code>, the draws themselves: posterior, loo, bayesplot and tidybayes.</li>
-<li>
-<code><a href="articles/control-surface.html">vignette("control-surface")</a></code>, every configuration group and the defaults the core resolves.</li>
-<li>
-<code><a href="articles/sampler-api.html">vignette("sampler-api")</a></code>, driving the Gibbs loop from R to build a model the package does not ship.</li>
+<li>Get started: <code><a href="articles/thiessen.html">vignette("thiessen")</a></code>, one data set end to end.</li>
+<li>Models: <code><a href="articles/gaussian.html">vignette("gaussian")</a></code>, <code><a href="articles/binary-addivortes.html">vignette("binary-addivortes")</a></code> and <code><a href="articles/h-addivortes.html">vignette("h-addivortes")</a></code>, one page per published model on one template, with <code><a href="articles/model-description.html">vignette("model-description")</a></code> holding the notation and the symbol-to-argument table.</li>
+<li>Using a fit: <code><a href="articles/posterior.html">vignette("posterior")</a></code> for the draws through posterior, bayesplot, loo and tidybayes; <code><a href="articles/convergence.html">vignette("convergence")</a></code> for the chains, R-hat, effective sample size and compute; <code><a href="articles/priors.html">vignette("priors")</a></code> for what each prior does; <code><a href="articles/covariates.html">vignette("covariates")</a></code> for factors, scaling and the covariate space; <code><a href="articles/control-surface.html">vignette("control-surface")</a></code> for every configuration group.</li>
+<li>Building your own model: <code><a href="articles/sampler-api.html">vignette("sampler-api")</a></code>, the Gibbs loop driven from R, so an outcome family the package does not ship is built without Rust.</li>
+<li>Experimental: the opt-in build, its catalogue, and one case study per experimental item, on the website only.</li>
+<li>Help: <code><a href="articles/troubleshooting.html">vignette("troubleshooting")</a></code> and <code><a href="articles/related-software.html">vignette("related-software")</a></code>.</li>
 </ul>
-<p>The same articles are rendered with their output, and the reference pages beside them, on the <a href="https://l-thomson.github.io/thiessen/r/">package website</a>.</p>
-<p>Read them in that order: getting started, then the article for the model in hand, then the control surface as a reference, and the sampler API only when extending the method. <a href="https://github.com/l-thomson/thiessen/blob/dev/docs/models.md" class="external-link"><code>docs/models.md</code></a> gives the correspondence between this package’s parameters, the paper’s, and those of CRAN AddiVortes and the BART family.</p>
-</div>
-<div class="section level2">
-<h2 id="working-with-a-fit">Working with a fit<a class="anchor" aria-label="anchor" href="#working-with-a-fit"></a>
-</h2>
-<p>A formula interface takes data frames, with factor covariates encoded as <code>model.matrix</code> encodes them, and the default four <code>chains</code> carry R-hat and effective sample size diagnostics.</p>
-<p><code><a href="https://mc-stan.org/posterior/reference/draws_df.html" class="external-link">posterior::as_draws_df()</a></code>, <code>summarise_draws()</code>, <code><a href="https://mc-stan.org/rstantools/reference/posterior_predict.html" class="external-link">posterior_predict()</a></code>, <code><a href="https://mc-stan.org/rstantools/reference/posterior_epred.html" class="external-link">posterior_epred()</a></code>, <code><a href="https://mc-stan.org/rstantools/reference/log_lik.html" class="external-link">log_lik()</a></code> and <code><a href="https://mc-stan.org/rstantools/reference/predictive_interval.html" class="external-link">predictive_interval()</a></code> work on a fit, so <code><a href="https://mc-stan.org/loo/reference/loo.html" class="external-link">loo::loo()</a></code>, bayesplot and tidybayes take one without adaptation. <code><a href="articles/posterior.html">vignette("posterior")</a></code> runs each of them.</p>
-<p><code><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS()</a></code> writes a fit and a later session reads it and predicts the same values; the sampler state travels in the object.</p>
-<p>Progress over the whole fit is signalled with progressr, so nothing is printed until a session chooses a handler:</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">progressr</span><span class="fu">::</span><span class="fu"><a href="https://progressr.futureverse.org/reference/handlers.html" class="external-link">handlers</a></span><span class="op">(</span>global <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="fu">progressr</span><span class="fu">::</span><span class="fu"><a href="https://progressr.futureverse.org/reference/handlers.html" class="external-link">handlers</a></span><span class="op">(</span><span class="st">"txtprogressbar"</span><span class="op">)</span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">y</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></code></pre></div>
-<p>The sweeps, pooling the draws and the convergence summary each report, so the bar stands until the fit is complete. Reporting does not change the draws.</p>
-</div>
-<div class="section level2">
-<h2 id="covariate-scaling">Covariate scaling<a class="anchor" aria-label="anchor" href="#covariate-scaling"></a>
-</h2>
-<p>Pass raw data. Inside the sampler a Euclidean column is min-max scaled to [-0.5, 0.5] over its training range, which is what makes one distance comparable across columns; a categorical column and a spherical one are not scaled. The centre-proposal scale <code>sigma_c</code> lives on that internal scale, so <code>sigma_c = 1</code> is the full training range of a Euclidean column.</p>
-</div>
-<div class="section level2">
-<h2 id="runtime">Runtime<a class="anchor" aria-label="anchor" href="#runtime"></a>
-</h2>
-<p>Cost is linear in the sweeps and close to linear in the rows and in the tessellation count. The default schedule is 1200 sweeps, 200 of burn-in and 1000 draws, and a default fit runs four chains of it on <code>getOption("mc.cores", 1L)</code> threads, so a session that sets nothing pays four chains on one core. As one calibration point, 600 sweeps of n = 1000 and p = 3 with 100 tessellations take about 7 seconds on one core of a 2025 laptop. <code>options(mc.cores = 4)</code> runs the chains on four cores for the same draws; the fit then takes less than half the one-thread time (about 45 per cent at n = 200 on four cores of a 2025 laptop), so it costs under two chains rather than four.</p>
-<p>A default fit is short for the diagnostics it carries: on Friedman #1 with n = 200 and p = 10 the smallest effective sample size over the monitored points is about 100 (threshold 400) and the largest R-hat about 1.05 (threshold 1.01), so the fit warns. More draws per chain, <code>general_params(draws = )</code>, is the answer; <code>thinning</code> is not.</p>
-</div>
-<div class="section level2">
-<h2 id="priors">Priors<a class="anchor" aria-label="anchor" href="#priors"></a>
-</h2>
-<p>The priors are those of Stone and Gosling (2025) and are set through <code><a href="reference/thiessen_control.html">thiessen_control()</a></code>. The outcome family carries the prior on the noise: <code>gaussian_outcome(nu, q)</code> scales the inverse chi-squared prior on sigma^2 so that a proportion <code>q</code> of its mass lies below the sample variance of the response. The mean ensemble’s priors sit in <code><a href="reference/term_params.html">term_params()</a></code>: <code>k</code> fixes the spread of the cell-value prior, <code>lambda_c</code> is the Poisson rate of the cell-count prior, and the nested <code><a href="reference/geometry_params.html">geometry_params()</a></code> and <code><a href="reference/structure_params.html">structure_params()</a></code> hold the centre-proposal scale <code>sigma_c</code> and the covariate-inclusion weight <code>omega</code>. Setting <code>prior_only = TRUE</code> in <code><a href="reference/general_params.html">general_params()</a></code> draws from the prior alone. <code><a href="articles/control-surface.html">vignette("control-surface")</a></code> walks the whole surface.</p>
 </div>
 <div class="section level2">
 <h2 id="scope">Scope<a class="anchor" aria-label="anchor" href="#scope"></a>
 </h2>
-<p>This release carries the Gaussian, probit and heteroscedastic models. The core crate also holds tobit, accelerated-failure-time, interval-censored and ordinal outcome models behind its <code>experimental</code> Cargo feature, which this package enables in no build: <code>tobit()</code> is not a function here, and <code><a href="reference/thiessen_control.html">thiessen_control()</a></code> accepts the Gaussian and probit families only. <code><a href="reference/core_version.html">core_version()</a></code> and <code><a href="reference/core_experimental.html">core_experimental()</a></code> report the core version and the feature setting of the build in use, and a bug report should carry both. Each of the four graduates on its own once calibrated, with no build flag to turn on, under the policy in <a href="https://github.com/l-thomson/thiessen/blob/dev/docs/experimental.md" class="external-link"><code>docs/experimental.md</code></a>. Until then any of them can be built in R against the sampler.</p>
+<p>The published surface is the Gaussian, probit and heteroscedastic models. The core crate also carries further outcome families (tobit, accelerated failure time, interval-censored, ordinal, Student-t, Laplace) and component options behind its <code>experimental</code> Cargo feature, which a released build does not enable. Their constructors exist in every build, so a script naming one is portable, and a build that accepts them is installed from source with <code>THIESSEN_EXPERIMENTAL=1</code> in the environment; <code><a href="reference/core_experimental.html">core_experimental()</a></code> reports the setting of the build in use. Each item graduates on its own once calibrated and derived, under the policy in <a href="https://github.com/l-thomson/thiessen/blob/dev/docs/experimental.md" class="external-link"><code>docs/experimental.md</code></a>.</p>
 </div>
 <div class="section level2">
-<h2 id="building-a-model-the-package-does-not-ship">Building a model the package does not ship<a class="anchor" aria-label="anchor" href="#building-a-model-the-package-does-not-ship"></a>
+<h2 id="where-to-ask">Where to ask<a class="anchor" aria-label="anchor" href="#where-to-ask"></a>
 </h2>
-<p>A new outcome family, a censoring scheme or an imputation scheme is written in R against the sampler, with no Rust and no recompilation. <code><a href="reference/thiessen_sampler.html">thiessen_sampler()</a></code> hands over the Gibbs loop one sweep at a time and allows the response to be rewritten between sweeps, which is what a latent-Gaussian augmentation needs. <code><a href="articles/sampler-api.html">vignette("sampler-api")</a></code> reimplements the probit family in fifteen lines of R and checks it against the built-in one.</p>
+<p>Bug reports and questions go to the <a href="https://github.com/l-thomson/thiessen/issues" class="external-link">issue tracker</a>. A bug report should carry <code><a href="reference/core_version.html">core_version()</a></code>, <code><a href="reference/core_experimental.html">core_experimental()</a></code>, <code><a href="https://rdrr.io/r/utils/sessionInfo.html" class="external-link">sessionInfo()</a></code> and the call that failed, with the seed.</p>
 </div>
 <div class="section level2">
 <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>

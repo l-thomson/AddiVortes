@@ -31,17 +31,35 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="active nav-item"><a class="nav-link" href="../articles/thiessen.html">Get started</a></li>
-<li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/h-addivortes.html">H-AddiVortes: heteroscedastic regression</a></li>
+<li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
+    <li><a class="dropdown-item" href="../articles/gaussian.html">Gaussian regression</a></li>
     <li><a class="dropdown-item" href="../articles/binary-addivortes.html">Binary AddiVortes: probit classification</a></li>
+    <li><a class="dropdown-item" href="../articles/h-addivortes.html">H-AddiVortes: heteroscedastic regression</a></li>
+    <li><a class="dropdown-item" href="../articles/model-description.html">Model description</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Using a fit</h6></li>
     <li><a class="dropdown-item" href="../articles/posterior.html">Working with the posterior</a></li>
+    <li><a class="dropdown-item" href="../articles/convergence.html">Chains, convergence and compute</a></li>
+    <li><a class="dropdown-item" href="../articles/priors.html">Priors and what they do</a></li>
+    <li><a class="dropdown-item" href="../articles/covariates.html">Covariates and the covariate space</a></li>
     <li><a class="dropdown-item" href="../articles/control-surface.html">The control surface</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Extending</h6></li>
     <li><a class="dropdown-item" href="../articles/sampler-api.html">The sampler API</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Experimental</h6></li>
+    <li><a class="dropdown-item" href="../articles/experimental.html">The experimental build and the catalogue</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Help</h6></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
+    <li><a class="dropdown-item" href="../articles/related-software.html">Related software</a></li>
   </ul>
 </li>
+<li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
@@ -72,22 +90,28 @@
     
     
 <p>AddiVortes is Bayesian regression on a sum of Voronoi tessellations
-(Stone and Gosling, 2025, <em>Journal of Computational and Graphical
-Statistics</em> 34(3), 859-871). It stands to BART as a tessellation
-stands to a tree: a cell is a region of the covariate space rather than
-a box, so a boundary oblique to the axes costs one cell rather than many
-splits. This vignette fits the Gaussian model with the defaults; the
-other published variants have their own vignettes, by their paper
-names.</p>
+(Stone and Gosling, 2025). It stands to BART (Chipman, George and
+McCulloch, 2010) as a tessellation stands to a tree: a cell is a region
+of the covariate space rather than a box, so a boundary oblique to the
+axes costs one cell rather than many splits. The priors, the Gibbs
+sampler and the posterior summaries are those of BART, so a reader who
+has fitted BART, dbarts or bartMachine will recognise every
+argument.</p>
+<p>This page fits one data set end to end with the defaults: the fit,
+its predictions and intervals, the convergence diagnostics, and saving
+the result. It assumes you are comfortable with regression and have met
+MCMC; the two papers above are the only background it draws on.</p>
 <div class="section level2">
 <h2 id="a-first-fit">A first fit<a class="anchor" aria-label="anchor" href="#a-first-fit"></a>
 </h2>
 <p><code><a href="../reference/thiessen.html">thiessen()</a></code> takes a formula and a data frame, a data
-frame and a response, or a numeric matrix and a response. The sweep
-schedule here is short so the vignette builds quickly; the defaults are
-200 burn-in sweeps and 1000 kept draws.</p>
+frame and a response, or a numeric matrix and a response. The data below
+have two numeric covariates and a factor, and a response that is smooth
+in <code>a</code>, linear in <code>b</code>, shifted for one level of
+<code>g</code>, with noise of standard deviation 0.1.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://l-thomson.github.io/thiessen/r/">thiessen</a></span><span class="op">)</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ggplot2.tidyverse.org" class="external-link">ggplot2</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
 <span><span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">200</span></span>
@@ -99,83 +123,121 @@ schedule here is short so the vignette builds quickly; the defaults are
 <span><span class="va">d</span><span class="op">$</span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fl">3</span> <span class="op">*</span> <span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">a</span> <span class="op">-</span> <span class="fl">0.4</span><span class="op">)</span><span class="op">^</span><span class="fl">2</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">d</span><span class="op">$</span><span class="va">b</span> <span class="op">+</span> <span class="fl">0.3</span> <span class="op">*</span> <span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">g</span> <span class="op">==</span> <span class="st">"high"</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span>, sd <span class="op">=</span> <span class="fl">0.1</span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">control</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen_control.html">thiessen_control</a></span><span class="op">(</span></span>
-<span>  tessellations <span class="op">=</span> <span class="fl">25</span>,</span>
-<span>  general_params <span class="op">=</span> <span class="fu"><a href="../reference/general_params.html">general_params</a></span><span class="op">(</span>burn_in <span class="op">=</span> <span class="fl">100</span>, draws <span class="op">=</span> <span class="fl">200</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">.</span>, <span class="va">d</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Warning in thiessen(y ~ ., d, control, seed = 1): The chains may not have</span></span>
-<span><span class="co">#&gt; converged: largest R-hat 1.457 (threshold 1.01), smallest effective sample size</span></span>
-<span><span class="co">#&gt; 8 (threshold 400). Run more draws or more chains.</span></span>
+<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">.</span>, <span class="va">d</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
 <span><span class="va">fit</span></span>
 <span><span class="co">#&gt; AddiVortes fit</span></span>
-<span><span class="co">#&gt; Call: thiessen(formula = y ~ ., data = d, control = control, seed = 1)</span></span>
+<span><span class="co">#&gt; Call: thiessen(formula = y ~ ., data = d, seed = 1)</span></span>
 <span><span class="co">#&gt; gaussian model, 200 observations, 4 covariates</span></span>
-<span><span class="co">#&gt; 25 tessellations, 800 draws kept after 100 burn-in, thinning 1</span></span>
-<span><span class="co">#&gt; In-sample RMSE 0.07421, seed 1</span></span>
-<span><span class="co">#&gt; 4 chains, largest R-hat 1.457, smallest effective sample size 8</span></span>
-<span><span class="co">#&gt; Warning: The chains may not have converged: largest R-hat 1.457 (threshold 1.01), smallest effective sample size 8 (threshold 400). Run more draws or more chains.</span></span></code></pre></div>
+<span><span class="co">#&gt; 200 tessellations, 4000 draws kept after 200 burn-in, thinning 1</span></span>
+<span><span class="co">#&gt; In-sample RMSE 0.06568, seed 1</span></span>
+<span><span class="co">#&gt; 4 chains, largest R-hat 1.009, smallest effective sample size 618</span></span></code></pre></div>
+<p>The defaults are the published configuration: 200 tessellations, 200
+burn-in sweeps and 1000 kept draws, run as four chains whose draws are
+pooled. The last line of the print is the convergence check over the
+four chains, R-hat and the smallest effective sample size; the <a href="convergence.html">chains and convergence</a> page says what it
+monitors and what to do when it warns.</p>
 <p>A factor covariate becomes d - 1 treatment-contrast indicators, the
-first level as reference, as <code>model.matrix</code> encodes one.
-<code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> returns the posterior mean and matches new data
-by column name and type:</p>
+first level as reference, as <code><a href="https://rdrr.io/r/stats/model.matrix.html" class="external-link">model.matrix()</a></code> encodes one;
+the <a href="covariates.html">covariates</a> page covers the encoding
+and the alternatives.</p>
+</div>
+<div class="section level2">
+<h2 id="predictions-and-intervals">Predictions and intervals<a class="anchor" aria-label="anchor" href="#predictions-and-intervals"></a>
+</h2>
+<p><code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> returns the posterior mean of the response and
+matches new data by column name and type.
+<code>interval = "credible"</code> adds the interval of the mean
+function; <code>interval = "prediction"</code> covers a new observation,
+so it is wider by the noise.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">d</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 0.2487482 0.1422802 0.6507389 0.8504028 0.4615400 0.9697501</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">d</span>, interval <span class="op">=</span> <span class="st">"credible"</span>, level <span class="op">=</span> <span class="fl">0.9</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt;            fit      lower     upper</span></span>
-<span><span class="co">#&gt; [1,] 0.2487482 0.16645838 0.3262066</span></span>
-<span><span class="co">#&gt; [2,] 0.1422802 0.06682134 0.2203331</span></span>
-<span><span class="co">#&gt; [3,] 0.6507389 0.55390796 0.7514768</span></span>
-<span><span class="co">#&gt; [4,] 0.8504028 0.75976749 0.9483209</span></span>
-<span><span class="co">#&gt; [5,] 0.4615400 0.37225783 0.5424575</span></span>
-<span><span class="co">#&gt; [6,] 0.9697501 0.88757243 1.0543148</span></span></code></pre></div>
-<p><code>predict(interval = "prediction")</code> covers a new
-observation rather than the mean, and <code>type = "draws"</code>
-returns the per-draw values.</p>
-<p><code><a href="https://rdrr.io/r/stats/fitted.values.html" class="external-link">fitted()</a></code>, <code><a href="https://rdrr.io/r/stats/residuals.html" class="external-link">residuals()</a></code>,
-<code><a href="https://rdrr.io/r/stats/sigma.html" class="external-link">sigma()</a></code>, <code><a href="https://rdrr.io/r/stats/nobs.html" class="external-link">nobs()</a></code>, <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code>,
-<code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> and <code><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot()</a></code> behave as they do on any
-model object, and <code>update(fit, seed = 2)</code> refits with that
-one argument replaced.</p>
+<code class="sourceCode R"><span><span class="va">new</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>a <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.2</span>, <span class="fl">0.8</span><span class="op">)</span>, b <span class="op">=</span> <span class="fl">0.5</span>, g <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="st">"low"</span>, <span class="fu"><a href="https://rdrr.io/r/base/levels.html" class="external-link">levels</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">g</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">new</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 0.3437324 0.6641378</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">new</span>, interval <span class="op">=</span> <span class="st">"credible"</span>, level <span class="op">=</span> <span class="fl">0.9</span><span class="op">)</span></span>
+<span><span class="co">#&gt;            fit     lower     upper</span></span>
+<span><span class="co">#&gt; [1,] 0.3437324 0.2253157 0.4600493</span></span>
+<span><span class="co">#&gt; [2,] 0.6641378 0.5421018 0.7852601</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">new</span>, interval <span class="op">=</span> <span class="st">"prediction"</span>, level <span class="op">=</span> <span class="fl">0.9</span><span class="op">)</span></span>
+<span><span class="co">#&gt;            fit     lower     upper</span></span>
+<span><span class="co">#&gt; [1,] 0.3437324 0.1536057 0.5338050</span></span>
+<span><span class="co">#&gt; [2,] 0.6641378 0.4705782 0.8587153</span></span></code></pre></div>
+<p>The figure follows the fit along <code>a</code> with <code>b</code>
+and <code>g</code> held fixed, the 90 per cent credible band around it
+and the noise-free truth dashed.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">grid</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>  a <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span>, length.out <span class="op">=</span> <span class="fl">100</span><span class="op">)</span>, b <span class="op">=</span> <span class="fl">0.5</span>,</span>
+<span>  g <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="st">"low"</span>, <span class="fu"><a href="https://rdrr.io/r/base/levels.html" class="external-link">levels</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">g</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span><span class="va">band</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">grid</span>, interval <span class="op">=</span> <span class="st">"credible"</span>, level <span class="op">=</span> <span class="fl">0.9</span><span class="op">)</span></span>
+<span><span class="va">grid</span><span class="op">$</span><span class="va">truth</span> <span class="op">&lt;-</span> <span class="fl">3</span> <span class="op">*</span> <span class="op">(</span><span class="va">grid</span><span class="op">$</span><span class="va">a</span> <span class="op">-</span> <span class="fl">0.4</span><span class="op">)</span><span class="op">^</span><span class="fl">2</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">grid</span><span class="op">$</span><span class="va">b</span></span>
+<span></span>
+<span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="va">grid</span>, <span class="va">band</span><span class="op">)</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span><span class="va">a</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
+<span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_ribbon.html" class="external-link">geom_ribbon</a></span><span class="op">(</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>ymin <span class="op">=</span> <span class="va">lower</span>, ymax <span class="op">=</span> <span class="va">upper</span><span class="op">)</span>, fill <span class="op">=</span> <span class="st">"steelblue"</span>,</span>
+<span>              alpha <span class="op">=</span> <span class="fl">0.3</span><span class="op">)</span> <span class="op">+</span></span>
+<span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_line</a></span><span class="op">(</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">fit</span><span class="op">)</span>, colour <span class="op">=</span> <span class="st">"steelblue"</span><span class="op">)</span> <span class="op">+</span></span>
+<span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_line</a></span><span class="op">(</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">truth</span><span class="op">)</span>, linetype <span class="op">=</span> <span class="st">"dashed"</span><span class="op">)</span> <span class="op">+</span></span>
+<span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/labs.html" class="external-link">labs</a></span><span class="op">(</span>y <span class="op">=</span> <span class="st">"f(a, b = 0.5, g = low)"</span><span class="op">)</span></span></code></pre></div>
+<p><img src="thiessen_files/figure-html/transect-1.png" class="r-plt" alt="" width="100%"></p>
+<p><code>predict(type = "draws")</code> returns the per-draw values, one
+row per kept draw, for any summary the two intervals do not give.</p>
+</div>
+<div class="section level2">
+<h2 id="the-usual-methods">The usual methods<a class="anchor" aria-label="anchor" href="#the-usual-methods"></a>
+</h2>
+<p><code><a href="https://rdrr.io/r/stats/fitted.values.html" class="external-link">fitted()</a></code>, <code><a href="https://rdrr.io/r/stats/residuals.html" class="external-link">residuals()</a></code>,
+<code><a href="https://rdrr.io/r/stats/sigma.html" class="external-link">sigma()</a></code>, <code><a href="https://rdrr.io/r/stats/nobs.html" class="external-link">nobs()</a></code>, <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> and
+<code><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot()</a></code> behave as they do on any model object, and
+<code>update(fit, seed = 2)</code> refits with that one argument
+replaced.</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>nobs <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/nobs.html" class="external-link">nobs</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span>, sigma <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/sigma.html" class="external-link">sigma</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span>,</span>
 <span>  rmse <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/residuals.html" class="external-link">residuals</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;         nobs        sigma         rmse </span></span>
-<span><span class="co">#&gt; 200.00000000   0.09917727   0.07421256</span></span></code></pre></div>
+<span><span class="co">#&gt; 200.00000000   0.09101508   0.06568429</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co">#&gt; AddiVortes fit</span></span>
+<span><span class="co">#&gt; Call: thiessen(formula = y ~ ., data = d, seed = 1)</span></span>
+<span><span class="co">#&gt; gaussian model, 200 observations, 4 covariates</span></span>
+<span><span class="co">#&gt; 200 tessellations, 4000 draws kept after 200 burn-in, thinning 1</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Residuals:</span></span>
+<span><span class="co">#&gt;        2.5%         25%         50%         75%       97.5% </span></span>
+<span><span class="co">#&gt; -0.12568090 -0.04316460  0.00488110  0.04043969  0.12285359 </span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; sigma:</span></span>
+<span><span class="co">#&gt;       2.5%        25%        50%        75%      97.5% </span></span>
+<span><span class="co">#&gt; 0.07845003 0.08621635 0.09081057 0.09541242 0.10474962 </span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; In-sample RMSE 0.06568</span></span>
+<span><span class="co">#&gt; 4 chains, largest R-hat 1.009, smallest effective sample size 618</span></span></code></pre></div>
+<p><code><a href="https://rdrr.io/r/stats/sigma.html" class="external-link">sigma()</a></code> is the posterior mean of the residual standard
+deviation, to be read against the 0.1 the data were made with.
+<code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> repeats the convergence line and adds the
+quantiles of the residuals and of the posterior draws of sigma.</p>
+<p><code><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot()</a></code> traces the per-draw sampler diagnostics, one
+panel per quantity and one line per chain: the residual scale, the mean
+cells per tessellation and the mean active covariates per tessellation.
+It is a convergence check rather than a display of the fit.</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></code></pre></div>
+<p><img src="thiessen_files/figure-html/trace-1.png" class="r-plt" alt="" width="100%"></p>
 </div>
 <div class="section level2">
-<h2 id="covariate-scaling">Covariate scaling<a class="anchor" aria-label="anchor" href="#covariate-scaling"></a>
+<h2 id="which-covariates-the-ensemble-uses">Which covariates the ensemble uses<a class="anchor" aria-label="anchor" href="#which-covariates-the-ensemble-uses"></a>
 </h2>
-<p>Pass raw data. Inside the sampler a Euclidean column is min-max
-scaled to [-0.5, 0.5] over its training range, which is what makes one
-distance comparable across columns of different units; a categorical
-column and a spherical one are not scaled. The centre-proposal scale
-<code>sigma_c</code> is on that internal scale, so
-<code>sigma_c = 1</code> is the full training range of a Euclidean
-column. Nothing else about a fit depends on the units the covariates
-arrive in.</p>
-</div>
-<div class="section level2">
-<h2 id="the-configuration">The configuration<a class="anchor" aria-label="anchor" href="#the-configuration"></a>
-</h2>
-<p>The configuration has four parts, named as the core stores them: an
-outcome family from <code><a href="../reference/gaussian_outcome.html">gaussian_outcome()</a></code> or
-<code><a href="../reference/probit_outcome.html">probit_outcome()</a></code>, one <code><a href="../reference/term_params.html">term_params()</a></code> group per
-ensemble, and the sweep schedule from <code><a href="../reference/general_params.html">general_params()</a></code>.
-<code>thiessen_control(tessellations = )</code> is the one shortcut,
-setting the mean ensemble’s size. The control-surface vignette walks
-through every group.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/thiessen_control.html">thiessen_control</a></span><span class="op">(</span></span>
-<span>  outcome <span class="op">=</span> <span class="fu"><a href="../reference/gaussian_outcome.html">gaussian_outcome</a></span><span class="op">(</span>nu <span class="op">=</span> <span class="fl">6</span>, q <span class="op">=</span> <span class="fl">0.85</span><span class="op">)</span>,</span>
-<span>  mean_params <span class="op">=</span> <span class="fu"><a href="../reference/term_params.html">term_params</a></span><span class="op">(</span>tessellations <span class="op">=</span> <span class="fl">200</span>, k <span class="op">=</span> <span class="fl">3</span>, lambda_c <span class="op">=</span> <span class="fl">5</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span><span class="co">#&gt; &lt;thiessen_control&gt;</span></span>
-<span><span class="co">#&gt;   outcome         gaussian_outcome(nu = 6, q = 0.85)</span></span>
-<span><span class="co">#&gt;   mean_params     term_params(tessellations = 200, k = 3, lambda_c = 5)</span></span>
-<span><span class="co">#&gt;   variance_params none (constant spread)</span></span>
-<span><span class="co">#&gt;   general_params  general_params(burn_in = 200, draws = 1000, thinning = 1, prior_only = FALSE)</span></span></code></pre></div>
+<p><code><a href="../reference/variable_inclusion.html">variable_inclusion()</a></code> reports the share of the ensemble’s
+active dimensions falling on each covariate.</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/variable_inclusion.html">variable_inclusion</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co">#&gt;         a         b      glow      gmid </span></span>
+<span><span class="co">#&gt; 0.2639085 0.2519900 0.2429079 0.2411935</span></span></code></pre></div>
+<p>Read that as where the ensemble spent its dimensions, not as variable
+selection: at the default <code>omega</code> of <code>min(3, p)</code>
+every dimension is always active when p is 3 or fewer, so the
+proportions are then uniform by construction. Here p is 4 after the
+factor encoding, and the informative covariates separate from the rest
+only weakly.</p>
 </div>
 <div class="section level2">
 <h2 id="reproducibility">Reproducibility<a class="anchor" aria-label="anchor" href="#reproducibility"></a>
@@ -184,11 +246,8 @@ through every group.</p>
 R’s stream, so <code><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed()</a></code> governs; a whole number
 reproduces the same draws for a given package version and platform. The
 resolved seed is on the fit.</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">again</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">.</span>, <span class="va">d</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Warning in thiessen(y ~ ., d, control, seed = 1): The chains may not have</span></span>
-<span><span class="co">#&gt; converged: largest R-hat 1.457 (threshold 1.01), smallest effective sample size</span></span>
-<span><span class="co">#&gt; 8 (threshold 400). Run more draws or more chains.</span></span>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">again</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">.</span>, <span class="va">d</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">d</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">again</span>, <span class="va">d</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 </div>
@@ -198,134 +257,61 @@ resolved seed is on the fit.</p>
 <p>A fit is a plain R object holding the sampler state, so
 <code><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS()</a></code> writes one and a later session reads it and
 predicts the same values without a refit.</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">path</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".rds"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">path</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="va">path</span><span class="op">)</span>, <span class="va">d</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">d</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="diagnostics">Diagnostics<a class="anchor" aria-label="anchor" href="#diagnostics"></a>
-</h2>
-<p>The established generics are available:
-<code><a href="https://mc-stan.org/posterior/reference/draws_df.html" class="external-link">posterior::as_draws_df()</a></code>, <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code>, and the
-rstantools generics <code><a href="https://mc-stan.org/rstantools/reference/posterior_predict.html" class="external-link">posterior_predict()</a></code>,
-<code><a href="https://mc-stan.org/rstantools/reference/posterior_epred.html" class="external-link">posterior_epred()</a></code>, <code><a href="https://mc-stan.org/rstantools/reference/log_lik.html" class="external-link">log_lik()</a></code> and
-<code><a href="https://mc-stan.org/rstantools/reference/predictive_interval.html" class="external-link">predictive_interval()</a></code>. The default four <code>chains</code>
-carry rank-normalised split R-hat and effective sample sizes, and a fit
-warns where they cross the usual thresholds, as every fit in this
-article does at its short schedule. The chains run on
-<code>getOption("mc.cores", 1L)</code> threads, so
-<code>options(mc.cores = 4)</code> runs them on four cores for the same
-draws.</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="co">#&gt; AddiVortes fit</span></span>
-<span><span class="co">#&gt; Call: thiessen(formula = y ~ ., data = d, control = control, seed = 1)</span></span>
-<span><span class="co">#&gt; gaussian model, 200 observations, 4 covariates</span></span>
-<span><span class="co">#&gt; 25 tessellations, 800 draws kept after 100 burn-in, thinning 1</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Residuals:</span></span>
-<span><span class="co">#&gt;         2.5%          25%          50%          75%        97.5% </span></span>
-<span><span class="co">#&gt; -0.158475949 -0.048499558  0.001712749  0.045790803  0.131873618 </span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; sigma:</span></span>
-<span><span class="co">#&gt;       2.5%        25%        50%        75%      97.5% </span></span>
-<span><span class="co">#&gt; 0.08810571 0.09460426 0.09903118 0.10307944 0.11194470 </span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; In-sample RMSE 0.07421</span></span>
-<span><span class="co">#&gt; 4 chains, largest R-hat 1.457, smallest effective sample size 8</span></span>
-<span><span class="co">#&gt; Warning: The chains may not have converged: largest R-hat 1.457 (threshold 1.01), smallest effective sample size 8 (threshold 400). Run more draws or more chains.</span></span></code></pre></div>
-<p><code><a href="../reference/variable_inclusion.html">variable_inclusion()</a></code> reports the share of the ensemble’s
-active dimensions falling on each covariate.</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/variable_inclusion.html">variable_inclusion</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="co">#&gt;         a         b      glow      gmid </span></span>
-<span><span class="co">#&gt; 0.2896471 0.2531981 0.2334469 0.2237079</span></span></code></pre></div>
-<p>Read that as where the ensemble spent its dimensions, not as variable
-selection. At the default <code>omega</code> of <code>min(3, p)</code>
-every dimension is always active when p is 3 or fewer, so the
-proportions are then uniform by construction; p is 4 here after the
-factor encoding, and the informative covariates separate from the rest
-only weakly.</p>
-<p><code><a href="../reference/thiessen_diagnostics.html">thiessen_diagnostics()</a></code> returns the per-draw quantities
-as a data frame, for <code><a href="https://mc-stan.org/bayesplot/reference/MCMC-traces.html" class="external-link">bayesplot::mcmc_trace()</a></code> or a plot of
-your own. It is not for printing: a bare <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> dumps
-every draw.</p>
-</div>
-<div class="section level2">
 <h2 id="progress">Progress<a class="anchor" aria-label="anchor" href="#progress"></a>
 </h2>
-<p>Progress over the whole fit is signalled with progressr, and nothing
-is printed by default: the package raises the conditions and the session
-decides whether and how to report them. Choose a handler once and it
-applies to every fit afterwards.</p>
+<p>Nothing is printed while a fit runs. Progress is signalled with
+progressr, so the session chooses whether and how to report it; choose a
+handler once and it applies to every fit afterwards.</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">progressr</span><span class="fu">::</span><span class="fu"><a href="https://progressr.futureverse.org/reference/handlers.html" class="external-link">handlers</a></span><span class="op">(</span>global <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span><span class="fu">progressr</span><span class="fu">::</span><span class="fu"><a href="https://progressr.futureverse.org/reference/handlers.html" class="external-link">handlers</a></span><span class="op">(</span><span class="st">"txtprogressbar"</span><span class="op">)</span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">.</span>, <span class="va">d</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></code></pre></div>
-<p><code><a href="https://progressr.futureverse.org/reference/with_progress.html" class="external-link">progressr::with_progress()</a></code> scopes a handler to one
-expression instead. The chunks here are not evaluated because progressr
-renders nothing into a static document.</p>
-<p>The schedule raises one progression per sweep, to a maximum of a
-hundred over the sweeps of every chain, then pooling the draws and the
-convergence summary. Both run after the last sweep, and pooling predicts
-at every training row for every kept draw, so on a long schedule over
-many rows it costs about twice what the sweeps cost. It therefore
-carries their weight in the bar rather than a step of it: the bar is
-around a third of the way along when the sweeps end, and it stands until
-the fit is complete. Pooling is one call into the core, so the bar rests
-there rather than advancing through it. Each phase names itself in a
-sticky message, which a terminal handler pushes above the bar rather
-than overwriting, so the phase that is running is named whatever handler
-is set. Reporting does not change the draws.</p>
+<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">.</span>, <span class="va">d</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></code></pre></div>
+<p>The chunk is not evaluated because progressr renders nothing into a
+static document. Reporting does not change the draws.</p>
 </div>
 <div class="section level2">
-<h2 id="troubleshooting">Troubleshooting<a class="anchor" aria-label="anchor" href="#troubleshooting"></a>
+<h2 id="where-next">Where next<a class="anchor" aria-label="anchor" href="#where-next"></a>
 </h2>
-<div class="section level3">
-<h3 id="the-fit-prints-nothing-while-it-runs">The fit prints nothing while it runs<a class="anchor" aria-label="anchor" href="#the-fit-prints-nothing-while-it-runs"></a>
-</h3>
-<p>That is the default, not a hang. See Progress above.</p>
+<ul>
+<li>
+<a href="gaussian.html">Gaussian regression</a>, <a href="binary-addivortes.html">Binary AddiVortes</a> and <a href="h-addivortes.html">H-AddiVortes</a>: one page per published model,
+with the likelihood, the priors and a worked example against a known
+truth. <a href="model-description.html">Model description</a> holds the
+notation and the symbol-to-argument table.</li>
+<li>
+<a href="posterior.html">Working with the posterior</a>: the draws
+through posterior, bayesplot, loo and tidybayes.</li>
+<li>
+<a href="convergence.html">Chains, convergence and compute</a>: what
+the four chains monitor, when the fit warns, and what a fit costs.</li>
+<li>
+<a href="control-surface.html">The control surface</a>: every
+configuration group and the defaults the core resolves.</li>
+<li>
+<a href="sampler-api.html">The sampler API</a>: the Gibbs loop
+driven from R, so a model the package does not ship is built without
+Rust.</li>
+<li>
+<a href="troubleshooting.html">Troubleshooting</a>: symptom, then
+remedy.</li>
+</ul>
 </div>
-<div class="section level3">
-<h3 id="r-hat-or-an-effective-sample-size-warns">R-hat or an effective sample size warns<a class="anchor" aria-label="anchor" href="#r-hat-or-an-effective-sample-size-warns"></a>
-</h3>
-<p><code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> reports both. More draws per chain,
-<code>general_params(draws = )</code>, is the first answer, then more
-chains; <code>thinning</code> reduces the stored draws without adding
-information, so it is not the remedy for a low effective sample size.
-The default schedule is itself short for the thresholds: on Friedman #1
-with n = 200 and p = 10 a default fit reaches a smallest effective
-sample size of about 100 against the threshold of 400 and a largest
-R-hat of about 1.05 against 1.01, so it warns. The warning fires on any
-short schedule, this article’s included, and carries the condition class
-<code>thiessen_warning</code>, so it can be silenced by class rather
-than by message:</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">withCallingHandlers</a></span><span class="op">(</span></span>
-<span>  <span class="va">quiet</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">.</span>, <span class="va">d</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>,</span>
-<span>  thiessen_warning <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">condition</span><span class="op">)</span> <span class="op">{</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">invokeRestart</a></span><span class="op">(</span><span class="st">"muffleWarning"</span><span class="op">)</span></span>
-<span>  <span class="op">}</span></span>
-<span><span class="op">)</span></span>
-<span><span class="va">quiet</span><span class="op">$</span><span class="va">n_chains</span></span>
-<span><span class="co">#&gt; [1] 4</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="a-saved-fit-will-not-load">A saved fit will not load<a class="anchor" aria-label="anchor" href="#a-saved-fit-will-not-load"></a>
-</h3>
-<p>A fit written by a build carrying the core’s experimental feature and
-read by a build without it errors with the class
-<code>thiessen_error</code>, naming the feature.
-<code><a href="../reference/core_version.html">core_version()</a></code> and <code><a href="../reference/core_experimental.html">core_experimental()</a></code> report
-the core version and the feature setting of the build in use; a bug
-report should carry both.</p>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>core <span class="op">=</span> <span class="fu"><a href="../reference/core_version.html">core_version</a></span><span class="op">(</span><span class="op">)</span>, experimental <span class="op">=</span> <span class="fu"><a href="../reference/core_experimental.html">core_experimental</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt;         core experimental </span></span>
-<span><span class="co">#&gt;      "0.3.0"      "FALSE"</span></span></code></pre></div>
-</div>
+<div class="section level2">
+<h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
+</h2>
+<p>Chipman, H. A., George, E. I. and McCulloch, R. E. (2010). BART:
+Bayesian additive regression trees. <em>The Annals of Applied
+Statistics</em> 4(1), 266-298. <a href="doi:10.1214/09-AOAS285" class="uri">doi:10.1214/09-AOAS285</a></p>
+<p>Stone, A. and Gosling, J. P. (2025). AddiVortes: (Bayesian) additive
+Voronoi tessellations. <em>Journal of Computational and Graphical
+Statistics</em> 34(3), 859-871. <a href="doi:10.1080/10618600.2024.2414104" class="uri">doi:10.1080/10618600.2024.2414104</a></p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

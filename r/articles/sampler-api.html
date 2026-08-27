@@ -31,17 +31,35 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/thiessen.html">Get started</a></li>
-<li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/h-addivortes.html">H-AddiVortes: heteroscedastic regression</a></li>
+<li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
+    <li><a class="dropdown-item" href="../articles/gaussian.html">Gaussian regression</a></li>
     <li><a class="dropdown-item" href="../articles/binary-addivortes.html">Binary AddiVortes: probit classification</a></li>
+    <li><a class="dropdown-item" href="../articles/h-addivortes.html">H-AddiVortes: heteroscedastic regression</a></li>
+    <li><a class="dropdown-item" href="../articles/model-description.html">Model description</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Using a fit</h6></li>
     <li><a class="dropdown-item" href="../articles/posterior.html">Working with the posterior</a></li>
+    <li><a class="dropdown-item" href="../articles/convergence.html">Chains, convergence and compute</a></li>
+    <li><a class="dropdown-item" href="../articles/priors.html">Priors and what they do</a></li>
+    <li><a class="dropdown-item" href="../articles/covariates.html">Covariates and the covariate space</a></li>
     <li><a class="dropdown-item" href="../articles/control-surface.html">The control surface</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Extending</h6></li>
     <li><a class="dropdown-item" href="../articles/sampler-api.html">The sampler API</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Experimental</h6></li>
+    <li><a class="dropdown-item" href="../articles/experimental.html">The experimental build and the catalogue</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Help</h6></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
+    <li><a class="dropdown-item" href="../articles/related-software.html">Related software</a></li>
   </ul>
 </li>
+<li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
@@ -76,7 +94,9 @@ package does not ship is written in R against
 <code><a href="../reference/thiessen_sampler.html">thiessen_sampler()</a></code>, with no Rust and no recompilation. It
 hands over the Gibbs loop one sweep at a time and allows the response to
 be rewritten between sweeps, which is what a latent-Gaussian data
-augmentation needs.</p>
+augmentation needs. This page drives a fit by hand, builds a
+censored-response model in a dozen lines, and reimplements the probit
+family to show that the loop reaches a shipped model.</p>
 <p>The seven verbs are stable. The experimental badge on the object
 covers additions to it and changes to what a verb returns beyond its
 documented contract.</p>
@@ -108,7 +128,7 @@ under another name. Four of the five are outcome families the core
 carries behind its experimental feature, so this loop is the answer when
 a release does not expose the family you need.</p>
 <p>Not reachable: an augmentation needing per-observation weights, so
-logistic through Polya-Gamma, robust-t as a scale mixture, and negative
+logistic through Polya-Gamma, a Student-t scale mixture, and negative
 binomial, because <code>$noise_variances()</code> reads the noise and
 nothing sets it. Nor the geometry, tessellation membership, cell
 internals, the covariate-inclusion prior or the proposals.</p>
@@ -120,11 +140,12 @@ in <code>$finish()</code>’s draws. Keep and diagnose those yourself.</p>
 </h2>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://l-thomson.github.io/thiessen/r/">thiessen</a></span><span class="op">)</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ggplot2.tidyverse.org" class="external-link">ggplot2</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
 <span><span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">120</span></span>
-<span><span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="va">x</span><span class="op">[</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span>, sd <span class="op">=</span> <span class="fl">0.1</span><span class="op">)</span></span>
+<span><span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span>a <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span>, b <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="va">x</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span>, sd <span class="op">=</span> <span class="fl">0.1</span><span class="op">)</span></span>
 <span><span class="va">control</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen_control.html">thiessen_control</a></span><span class="op">(</span></span>
 <span>  tessellations <span class="op">=</span> <span class="fl">10</span>,</span>
 <span>  general_params <span class="op">=</span> <span class="fu"><a href="../reference/general_params.html">general_params</a></span><span class="op">(</span>burn_in <span class="op">=</span> <span class="fl">50</span>, draws <span class="op">=</span> <span class="fl">100</span><span class="op">)</span></span>
@@ -149,10 +170,12 @@ in <code>$finish()</code>’s draws. Keep and diagnose those yourself.</p>
 each sweep: read the current mean function and noise level, redraw the
 censored values above the limit, and hand the response back. The redraw
 below inverts the conditional tail probability, so it is a draw from the
-truncated normal.</p>
+truncated normal. This is the type-I tobit model of Tobin (1958) with
+the augmentation of Chib (1992), in the loop rather than as a
+family.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
-<span><span class="va">latent</span> <span class="op">&lt;-</span> <span class="va">x</span><span class="op">[</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span>, sd <span class="op">=</span> <span class="fl">0.1</span><span class="op">)</span></span>
+<span><span class="va">latent</span> <span class="op">&lt;-</span> <span class="va">x</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span>, sd <span class="op">=</span> <span class="fl">0.1</span><span class="op">)</span></span>
 <span><span class="va">limit</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/quantile.html" class="external-link">quantile</a></span><span class="op">(</span><span class="va">latent</span>, <span class="fl">0.8</span><span class="op">)</span></span>
 <span><span class="va">censored</span> <span class="op">&lt;-</span> <span class="va">latent</span> <span class="op">&gt;</span> <span class="va">limit</span></span>
 <span><span class="va">y_observed</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">pmin</a></span><span class="op">(</span><span class="va">latent</span>, <span class="va">limit</span><span class="op">)</span></span>
@@ -176,34 +199,40 @@ truncated normal.</p>
 <span><span class="va">fit_censored</span> <span class="op">&lt;-</span> <span class="va">sampler</span><span class="op">$</span><span class="fu">finish</span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="va">fit_censored</span><span class="op">$</span><span class="va">n_draws</span></span>
 <span><span class="co">#&gt; [1] 100</span></span></code></pre></div>
-<p>The censored fit recovers more of the upper tail than a fit to the
-clamped response:</p>
+<p>The censored fit recovers the upper tail that a fit to the clamped
+response flattens at the limit:</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">clamped</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">y_observed</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Warning in thiessen(x, y_observed, control, seed = 1): The chains may not have</span></span>
-<span><span class="co">#&gt; converged: largest R-hat 2.074 (threshold 1.01), smallest effective sample size</span></span>
-<span><span class="co">#&gt; 6 (threshold 400). Run more draws or more chains.</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
-<span>  censored <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit_censored</span>, <span class="va">x</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  clamped <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">clamped</span>, <span class="va">x</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  limit <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">limit</span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="va">clamped</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">y_observed</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span>, chains <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">grid</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span>a <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span>, length.out <span class="op">=</span> <span class="fl">100</span><span class="op">)</span>, b <span class="op">=</span> <span class="fl">0.5</span><span class="op">)</span></span>
+<span><span class="va">curves</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>a <span class="op">=</span> <span class="va">grid</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span>, f <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit_censored</span>, <span class="va">grid</span><span class="op">)</span>,</span>
+<span>             fit <span class="op">=</span> <span class="st">"censoring imputed"</span><span class="op">)</span>,</span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>a <span class="op">=</span> <span class="va">grid</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span>, f <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">clamped</span>, <span class="va">grid</span><span class="op">)</span>,</span>
+<span>             fit <span class="op">=</span> <span class="st">"clamped response"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt;  censored   clamped     limit </span></span>
-<span><span class="co">#&gt; 0.8767076 0.7964520 0.8068637</span></span></code></pre></div>
+<span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">curves</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span><span class="va">a</span>, <span class="va">f</span>, colour <span class="op">=</span> <span class="va">fit</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
+<span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_point.html" class="external-link">geom_point</a></span><span class="op">(</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span><span class="va">a</span>, <span class="va">y_observed</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>a <span class="op">=</span> <span class="va">x</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span>, <span class="va">y_observed</span><span class="op">)</span>,</span>
+<span>             inherit.aes <span class="op">=</span> <span class="cn">FALSE</span>, alpha <span class="op">=</span> <span class="fl">0.3</span><span class="op">)</span> <span class="op">+</span></span>
+<span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_path.html" class="external-link">geom_line</a></span><span class="op">(</span><span class="op">)</span> <span class="op">+</span></span>
+<span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_abline.html" class="external-link">geom_abline</a></span><span class="op">(</span>linetype <span class="op">=</span> <span class="st">"dashed"</span><span class="op">)</span> <span class="op">+</span></span>
+<span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_abline.html" class="external-link">geom_hline</a></span><span class="op">(</span>yintercept <span class="op">=</span> <span class="va">limit</span>, linetype <span class="op">=</span> <span class="st">"dotted"</span><span class="op">)</span> <span class="op">+</span></span>
+<span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/labs.html" class="external-link">labs</a></span><span class="op">(</span>y <span class="op">=</span> <span class="st">"f(a, b = 0.5)"</span>, colour <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span></code></pre></div>
+<p><img src="sampler-api_files/figure-html/unnamed-chunk-4-1.png" class="r-plt" alt="" width="100%"></p>
+<p>The dashed line is the truth, the dotted one the censoring limit.</p>
 </div>
 <div class="section level2">
 <h2 id="prototyping-an-outcome-model">Prototyping an outcome model<a class="anchor" aria-label="anchor" href="#prototyping-an-outcome-model"></a>
 </h2>
-<p>This is the proof of the claim at the top of the article: fifteen
-lines of R reimplement a shipped outcome family and agree with it. An
-outcome model with a latent Gaussian representation can be prototyped in
-the loop before it earns a family: impute the latent from its
-conditional given the observed outcome, hand it back, sweep. The probit
-model is the worked case, its latent drawn from the normal truncated to
-the side its label demands (Albert and Chib 1993).</p>
+<p>This is the proof of the claim at the top of the page: fifteen lines
+of R reimplement a shipped outcome family and agree with it. An outcome
+model with a latent Gaussian representation can be prototyped in the
+loop before it earns a family: impute the latent from its conditional
+given the observed outcome, hand it back, sweep. The probit model is the
+worked case, its latent drawn from the normal truncated to the side its
+label demands (Albert and Chib 1993).</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
-<span><span class="va">labels</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="va">x</span><span class="op">[</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span>, sd <span class="op">=</span> <span class="fl">0.3</span><span class="op">)</span> <span class="op">&gt;</span> <span class="fl">0.5</span><span class="op">)</span></span>
+<span><span class="va">labels</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="va">x</span><span class="op">[</span>, <span class="st">"a"</span><span class="op">]</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span>, sd <span class="op">=</span> <span class="fl">0.3</span><span class="op">)</span> <span class="op">&gt;</span> <span class="fl">0.5</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">z</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="va">labels</span> <span class="op">==</span> <span class="fl">1</span>, <span class="fl">0.5</span>, <span class="op">-</span><span class="fl">0.5</span><span class="op">)</span></span>
 <span><span class="va">sampler</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen_sampler.html">thiessen_sampler</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">z</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
@@ -227,13 +256,9 @@ the side its label demands (Albert and Chib 1993).</p>
 <span>  outcome <span class="op">=</span> <span class="fu"><a href="../reference/probit_outcome.html">probit_outcome</a></span><span class="op">(</span><span class="op">)</span>,</span>
 <span>  tessellations <span class="op">=</span> <span class="fl">10</span>,</span>
 <span>  general_params <span class="op">=</span> <span class="fu"><a href="../reference/general_params.html">general_params</a></span><span class="op">(</span>burn_in <span class="op">=</span> <span class="fl">50</span>, draws <span class="op">=</span> <span class="fl">100</span><span class="op">)</span></span>
-<span><span class="op">)</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Warning in thiessen(x, labels, thiessen_control(outcome = probit_outcome(), :</span></span>
-<span><span class="co">#&gt; The chains may not have converged: largest R-hat 1.172 (threshold 1.01),</span></span>
-<span><span class="co">#&gt; smallest effective sample size 17 (threshold 400). Run more draws or more</span></span>
-<span><span class="co">#&gt; chains.</span></span>
+<span><span class="op">)</span>, seed <span class="op">=</span> <span class="fl">1</span>, chains <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="op">(</span><span class="va">latent_mean</span> <span class="op">&gt;</span> <span class="fl">0</span><span class="op">)</span> <span class="op">==</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">family</span>, <span class="va">x</span><span class="op">)</span> <span class="op">&gt;</span> <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 0.9916667</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] 0.9833333</span></span></code></pre></div>
 <p>The prototype and the family are the same model up to one difference:
 the family fixes the latent variance at 1 for identification, while the
 prototype keeps sampling sigma^2. Differences of that kind are what
@@ -253,6 +278,17 @@ tessellations, the cell values and sigma^2;
 the current state at the training rows; <code>$finish()</code> returns
 the fit <code><a href="../reference/thiessen.html">thiessen()</a></code> returns and consumes the sampler. Every
 later call on a finished sampler errors.</p>
+</div>
+<div class="section level2">
+<h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
+</h2>
+<p>Albert, J. H. and Chib, S. (1993). Bayesian analysis of binary and
+polychotomous response data. <em>Journal of the American Statistical
+Association</em> 88(422), 669-679. <a href="doi:10.1080/01621459.1993.10476321" class="uri">doi:10.1080/01621459.1993.10476321</a></p>
+<p>Chib, S. (1992). Bayes inference in the Tobit censored regression
+model. <em>Journal of Econometrics</em> 51(1-2), 79-99. <a href="doi:10.1016/0304-4076(92)90030-U" class="uri">doi:10.1016/0304-4076(92)90030-U</a></p>
+<p>Tobin, J. (1958). Estimation of relationships for limited dependent
+variables. <em>Econometrica</em> 26(1), 24-36. <a href="doi:10.2307/1907382" class="uri">doi:10.2307/1907382</a></p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

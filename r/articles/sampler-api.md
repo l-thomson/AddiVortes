@@ -5,7 +5,10 @@ package does not ship is written in R against
 [`thiessen_sampler()`](https://l-thomson.github.io/thiessen/r/reference/thiessen_sampler.md),
 with no Rust and no recompilation. It hands over the Gibbs loop one
 sweep at a time and allows the response to be rewritten between sweeps,
-which is what a latent-Gaussian data augmentation needs.
+which is what a latent-Gaussian data augmentation needs. This page
+drives a fit by hand, builds a censored-response model in a dozen lines,
+and reimplements the probit family to show that the loop reaches a
+shipped model.
 
 The seven verbs are stable. The experimental badge on the object covers
 additions to it and changes to what a verb returns beyond its documented
@@ -41,7 +44,7 @@ carries behind its experimental feature, so this loop is the answer when
 a release does not expose the family you need.
 
 Not reachable: an augmentation needing per-observation weights, so
-logistic through Polya-Gamma, robust-t as a scale mixture, and negative
+logistic through Polya-Gamma, a Student-t scale mixture, and negative
 binomial, because `$noise_variances()` reads the noise and nothing sets
 it. Nor the geometry, tessellation membership, cell internals, the
 covariate-inclusion prior or the proposals.
@@ -54,11 +57,12 @@ Parameters sampled in your own loop, cutpoints for instance, are not in
 ``` r
 
 library(thiessen)
+library(ggplot2)
 
 set.seed(1)
 n <- 120
-x <- cbind(runif(n), runif(n))
-y <- x[, 1] + rnorm(n, sd = 0.1)
+x <- cbind(a = runif(n), b = runif(n))
+y <- x[, "a"] + rnorm(n, sd = 0.1)
 control <- thiessen_control(
   tessellations = 10,
   general_params = general_params(burn_in = 50, draws = 100)
@@ -83,12 +87,13 @@ A right-censored response can be redrawn from its conditional before
 each sweep: read the current mean function and noise level, redraw the
 censored values above the limit, and hand the response back. The redraw
 below inverts the conditional tail probability, so it is a draw from the
-truncated normal.
+truncated normal. This is the type-I tobit model of Tobin (1958) with
+the augmentation of Chib (1992), in the loop rather than as a family.
 
 ``` r
 
 set.seed(1)
-latent <- x[, 1] + rnorm(n, sd = 0.1)
+latent <- x[, "a"] + rnorm(n, sd = 0.1)
 limit <- quantile(latent, 0.8)
 censored <- latent > limit
 y_observed <- pmin(latent, limit)
@@ -114,28 +119,36 @@ fit_censored$n_draws
 #> [1] 100
 ```
 
-The censored fit recovers more of the upper tail than a fit to the
-clamped response:
+The censored fit recovers the upper tail that a fit to the clamped
+response flattens at the limit:
 
 ``` r
 
-clamped <- thiessen(x, y_observed, control, seed = 1)
-#> Warning in thiessen(x, y_observed, control, seed = 1): The chains may not have
-#> converged: largest R-hat 2.074 (threshold 1.01), smallest effective sample size
-#> 6 (threshold 400). Run more draws or more chains.
-c(
-  censored = max(predict(fit_censored, x)),
-  clamped = max(predict(clamped, x)),
-  limit = unname(limit)
+clamped <- thiessen(x, y_observed, control, seed = 1, chains = 1)
+grid <- cbind(a = seq(0, 1, length.out = 100), b = 0.5)
+curves <- rbind(
+  data.frame(a = grid[, "a"], f = predict(fit_censored, grid),
+             fit = "censoring imputed"),
+  data.frame(a = grid[, "a"], f = predict(clamped, grid),
+             fit = "clamped response")
 )
-#>  censored   clamped     limit 
-#> 0.8767076 0.7964520 0.8068637
+ggplot(curves, aes(a, f, colour = fit)) +
+  geom_point(aes(a, y_observed), data.frame(a = x[, "a"], y_observed),
+             inherit.aes = FALSE, alpha = 0.3) +
+  geom_line() +
+  geom_abline(linetype = "dashed") +
+  geom_hline(yintercept = limit, linetype = "dotted") +
+  labs(y = "f(a, b = 0.5)", colour = NULL)
 ```
+
+![](sampler-api_files/figure-html/unnamed-chunk-4-1.png)
+
+The dashed line is the truth, the dotted one the censoring limit.
 
 ## Prototyping an outcome model
 
-This is the proof of the claim at the top of the article: fifteen lines
-of R reimplement a shipped outcome family and agree with it. An outcome
+This is the proof of the claim at the top of the page: fifteen lines of
+R reimplement a shipped outcome family and agree with it. An outcome
 model with a latent Gaussian representation can be prototyped in the
 loop before it earns a family: impute the latent from its conditional
 given the observed outcome, hand it back, sweep. The probit model is the
@@ -145,7 +158,7 @@ label demands (Albert and Chib 1993).
 ``` r
 
 set.seed(1)
-labels <- as.numeric(x[, 1] + rnorm(n, sd = 0.3) > 0.5)
+labels <- as.numeric(x[, "a"] + rnorm(n, sd = 0.3) > 0.5)
 
 z <- ifelse(labels == 1, 0.5, -0.5)
 sampler <- thiessen_sampler(x, z, control, seed = 1)
@@ -169,13 +182,9 @@ family <- thiessen(x, labels, thiessen_control(
   outcome = probit_outcome(),
   tessellations = 10,
   general_params = general_params(burn_in = 50, draws = 100)
-), seed = 1)
-#> Warning in thiessen(x, labels, thiessen_control(outcome = probit_outcome(), :
-#> The chains may not have converged: largest R-hat 1.172 (threshold 1.01),
-#> smallest effective sample size 17 (threshold 400). Run more draws or more
-#> chains.
+), seed = 1, chains = 1)
 mean((latent_mean > 0) == (predict(family, x) > 0.5))
-#> [1] 0.9916667
+#> [1] 0.9833333
 ```
 
 The prototype and the family are the same model up to one difference:
@@ -195,3 +204,16 @@ the training rows; `$finish()` returns the fit
 [`thiessen()`](https://l-thomson.github.io/thiessen/r/reference/thiessen.md)
 returns and consumes the sampler. Every later call on a finished sampler
 errors.
+
+## References
+
+Albert, J. H. and Chib, S. (1993). Bayesian analysis of binary and
+polychotomous response data. *Journal of the American Statistical
+Association* 88(422), 669-679. <doi:10.1080/01621459.1993.10476321>
+
+Chib, S. (1992). Bayes inference in the Tobit censored regression model.
+*Journal of Econometrics* 51(1-2), 79-99.
+<doi:10.1016/0304-4076(92)90030-U>
+
+Tobin, J. (1958). Estimation of relationships for limited dependent
+variables. *Econometrica* 26(1), 24-36. <doi:10.2307/1907382>

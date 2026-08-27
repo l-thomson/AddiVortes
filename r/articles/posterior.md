@@ -1,12 +1,12 @@
 # Working with the posterior
 
-Every package this article uses sits in `Suggests`, so each chunk is
-skipped where one of posterior, loo, bayesplot or tidybayes is absent. A
-rendering with no output below is that, not a failure.
-
 A fit carries its draws, so the established Bayesian tooling takes one
-without adaptation. Nothing here is a method of this package beyond the
-generics it registers.
+without adaptation: posterior for the draws and their summaries,
+bayesplot for the figures, loo for cross-validation and tidybayes for
+tidy data frames of draws. Nothing on this page is a method of this
+package beyond the generics it registers. Every package used here sits
+in `Suggests`, so each chunk is skipped where one is absent; a rendering
+with no output below is that, not a failure.
 
 ``` r
 
@@ -21,25 +21,15 @@ library(posterior)
 #> The following objects are masked from 'package:base':
 #> 
 #>     %in%, match
+library(ggplot2)
 
 set.seed(1)
-n <- 120
-x <- cbind(runif(n), runif(n))
-y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2] + rnorm(n, sd = 0.1)
-control <- thiessen_control(
-  tessellations = 20,
-  general_params = general_params(burn_in = 100, draws = 200)
-)
+n <- 150
+x <- cbind(a = runif(n), b = runif(n))
+y <- 2 * (x[, "a"] - 0.5)^2 + 0.5 * x[, "b"] + rnorm(n, sd = 0.1)
 
-fit <- thiessen(x, y, control, chains = 2, seed = 1)
-#> Warning in thiessen(x, y, control, chains = 2, seed = 1): The chains may not
-#> have converged: largest R-hat 1.318 (threshold 1.01), smallest effective sample
-#> size 5 (threshold 400). Run more draws or more chains.
+fit <- thiessen(x, y, seed = 1)
 ```
-
-The short schedule here never meets the convergence thresholds, so the
-fit warns. That is the warning working, not a problem with the code
-below.
 
 ## The draws
 
@@ -53,14 +43,15 @@ return the draws in posterior’s own formats, chains kept separate.
 draws <- as_draws_df(fit)
 c(draws = ndraws(draws), chains = nchains(draws))
 #>  draws chains 
-#>    400      2
+#>   4000      4
 dim(as_draws_array(fit))
-#> [1] 200   2 123
+#> [1] 1000    4  153
 ```
 
 The variables are the mean function at each training row, `mu[i]`, the
-noise scale `sigma`, and two structural counts: `cell_count`, the cells
-across the ensemble, and `dimension_count`, the covariates in use.
+noise scale `sigma`, and two structural counts: `cell_count`, the mean
+cells per tessellation, and `dimension_count`, the mean covariates in
+use per tessellation.
 
 ``` r
 
@@ -77,8 +68,8 @@ summarise_draws(subset_draws(draws, variable = c("sigma", "cell_count")))
 #> # A tibble: 2 × 10
 #>   variable     mean median      sd     mad     q5   q95  rhat ess_bulk ess_tail
 #>   <chr>       <dbl>  <dbl>   <dbl>   <dbl>  <dbl> <dbl> <dbl>    <dbl>    <dbl>
-#> 1 sigma      0.0976 0.0968 0.00863 0.00915 0.0850 0.112  1.08    23.5      45.4
-#> 2 cell_count 3.32   3.25   0.350   0.297   2.85   4      1.63     3.41     22.1
+#> 1 sigma      0.0972 0.0967 0.00722 0.00692 0.0861 0.110  1.00    1220.    2728.
+#> 2 cell_count 3.25   3.25   0.0815  0.0815  3.12   3.39   1.05     121.     255.
 ```
 
 ## Three predictive quantities
@@ -99,23 +90,24 @@ The three are distinct and easy to confuse.
 ``` r
 
 dim(posterior_epred(fit, x))
-#> [1] 400 120
+#> [1] 4000  150
 dim(posterior_predict(fit, x))
-#> [1] 400 120
+#> [1] 4000  150
 head(predictive_interval(fit, newdata = x, prob = 0.9), 3)
-#>             5%       95%
-#> [1,] 0.3546766 0.7293318
-#> [2,] 0.1186428 0.4806989
-#> [3,] 0.1004832 0.4639015
+#>               5%       95%
+#> [1,]  0.26266010 0.6271404
+#> [2,]  0.14217255 0.4991563
+#> [3,] -0.04175049 0.3137877
 ```
 
 [`predict()`](https://rdrr.io/r/stats/predict.html) reaches the same
 quantities through one argument, and `predict(type = "draws")` is
 [`posterior_epred()`](https://mc-stan.org/rstantools/reference/posterior_epred.html).
 
-## Trace plots
+## bayesplot
 
-bayesplot takes the draws object as it stands.
+bayesplot takes the draws object as it stands. Trace plots of the scalar
+variables, one line per chain:
 
 ``` r
 
@@ -124,10 +116,21 @@ bayesplot::mcmc_trace(as_draws_array(fit), pars = c("sigma", "cell_count"))
 
 ![](posterior_files/figure-html/trace-1.png)
 
-[`thiessen_diagnostics()`](https://l-thomson.github.io/thiessen/r/reference/thiessen_diagnostics.md)
-returns the same content as a per-draw data frame for a plot of your
-own. It is not for printing: a bare
-[`print()`](https://rdrr.io/r/base/print.html) dumps every draw.
+A posterior predictive check compares the observed response with
+replicates from
+[`posterior_predict()`](https://mc-stan.org/rstantools/reference/posterior_predict.html):
+the density of `y` over the densities of fifty replicate data sets.
+
+``` r
+
+replicates <- posterior_predict(fit)
+bayesplot::ppc_dens_overlay(y, replicates[1:50, ])
+```
+
+![](posterior_files/figure-html/ppc-1.png)
+
+`mcmc_areas()`, `mcmc_dens()` and `mcmc_intervals()` take the same draws
+object for distributional displays.
 
 ## Cross-validation with loo
 
@@ -139,53 +142,80 @@ what [`loo::loo()`](https://mc-stan.org/loo/reference/loo.html) expects.
 
 log_likelihood <- log_lik(fit)
 dim(log_likelihood)
-#> [1] 400 120
+#> [1] 4000  150
 
 estimate <- loo::loo(log_likelihood)
 #> Warning: Some Pareto k diagnostic values are too high. See help('pareto-k-diagnostic') for details.
 estimate$estimates
 #>            Estimate        SE
-#> elpd_loo   92.25679  6.964020
-#> p_loo      29.66265  3.260829
-#> looic    -184.51359 13.928040
+#> elpd_loo  114.93747  8.799926
+#> p_loo      38.12786  3.939812
+#> looic    -229.87493 17.599852
 ```
 
 Read the Pareto k diagnostic before the estimate. The importance
-sampling behind PSIS-LOO fails for an observation whose k exceeds 0.7,
-and a short schedule on a small data set produces several:
+sampling behind PSIS-LOO fails for an observation whose k exceeds 0.7:
 
 ``` r
 
 k <- estimate$diagnostics$pareto_k
 c(observations = length(k), unreliable = sum(k > 0.7))
 #> observations   unreliable 
-#>          120            6
+#>          150            4
 ```
 
 Where that count is more than a handful, the estimate is not trustworthy
-and the answer is more draws, not a different estimator.
+and the answer is more draws, not a different estimator. Two fits are
+compared with
+[`loo::loo_compare()`](https://mc-stan.org/loo/reference/loo_compare.html)
+on their loo objects.
 
 ## tidybayes
 
 `tidy_draws()` works on the fit directly, and `spread_draws()` on the
-frame it returns.
+frame it returns, so the draws of `mu[i]` for chosen rows come out as a
+long data frame ready for ggplot2.
 
 ``` r
 
 tidy <- tidybayes::tidy_draws(fit)
 dim(tidy)
-#> [1] 400 126
+#> [1] 4000  156
 
-head(tidybayes::spread_draws(tidy, sigma), 3)
-#> # A tibble: 3 × 4
-#>   .chain .iteration .draw  sigma
-#>    <int>      <int> <int>  <dbl>
-#> 1      1          1     1 0.0974
-#> 2      1          2     2 0.109 
-#> 3      1          3     3 0.105
+rows <- order(x[, "a"])[seq(1, n, length.out = 8)]
+mu <- tidybayes::spread_draws(tidy, mu[i])
+mu <- mu[mu$i %in% rows, ]
+head(mu, 3)
+#> # A tibble: 3 × 5
+#> # Groups:   i [1]
+#>       i    mu .chain .iteration .draw
+#>   <int> <dbl>  <int>      <int> <int>
+#> 1    34 0.379      1          1     1
+#> 2    34 0.336      1          2     2
+#> 3    34 0.321      1          3     3
 ```
 
+The posterior of the mean function at those rows, as point and interval
+summaries, against the noise-free truth:
+
+``` r
+
+mu$a <- x[mu$i, "a"]
+truth <- data.frame(a = x[rows, "a"],
+                    f = 2 * (x[rows, "a"] - 0.5)^2 + 0.5 * x[rows, "b"])
+ggplot(mu, aes(x = a, y = mu)) +
+  tidybayes::stat_pointinterval(colour = "steelblue") +
+  geom_point(aes(y = f), data = truth, shape = 4, size = 3) +
+  labs(y = "mu[i]")
+```
+
+![](posterior_files/figure-html/pointinterval-1.png)
+
 ## References
+
+Gabry, J., Simpson, D., Vehtari, A., Betancourt, M. and Gelman, A.
+(2019). Visualization in Bayesian workflow. *Journal of the Royal
+Statistical Society Series A* 182(2), 389-402. <doi:10.1111/rssa.12378>
 
 Vehtari, A., Gelman, A. and Gabry, J. (2017). Practical Bayesian model
 evaluation using leave-one-out cross-validation and WAIC. *Statistics

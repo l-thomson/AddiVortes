@@ -31,17 +31,35 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/thiessen.html">Get started</a></li>
-<li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/h-addivortes.html">H-AddiVortes: heteroscedastic regression</a></li>
+<li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
+    <li><a class="dropdown-item" href="../articles/gaussian.html">Gaussian regression</a></li>
     <li><a class="dropdown-item" href="../articles/binary-addivortes.html">Binary AddiVortes: probit classification</a></li>
+    <li><a class="dropdown-item" href="../articles/h-addivortes.html">H-AddiVortes: heteroscedastic regression</a></li>
+    <li><a class="dropdown-item" href="../articles/model-description.html">Model description</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Using a fit</h6></li>
     <li><a class="dropdown-item" href="../articles/posterior.html">Working with the posterior</a></li>
+    <li><a class="dropdown-item" href="../articles/convergence.html">Chains, convergence and compute</a></li>
+    <li><a class="dropdown-item" href="../articles/priors.html">Priors and what they do</a></li>
+    <li><a class="dropdown-item" href="../articles/covariates.html">Covariates and the covariate space</a></li>
     <li><a class="dropdown-item" href="../articles/control-surface.html">The control surface</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Extending</h6></li>
     <li><a class="dropdown-item" href="../articles/sampler-api.html">The sampler API</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Experimental</h6></li>
+    <li><a class="dropdown-item" href="../articles/experimental.html">The experimental build and the catalogue</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Help</h6></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
+    <li><a class="dropdown-item" href="../articles/related-software.html">Related software</a></li>
   </ul>
 </li>
+<li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
@@ -74,9 +92,9 @@
 <p>The configuration of a fit has four parts, and
 <code><a href="../reference/thiessen_control.html">thiessen_control()</a></code> holds one of each. Every name here is a
 name in the core’s stored configuration and in the Python package, so
-one description serves all three surfaces. The two outcome constructors
-are the exception: they carry an <code>_outcome</code> suffix in R, and
-the name the configuration stores is unchanged, so a fit saved by one
+one description serves all three surfaces. The outcome constructors are
+the exception: they carry an <code>_outcome</code> suffix in R, and the
+name the configuration stores is unchanged, so a fit saved by one
 surface is read by another. The full mapping is <a href="https://github.com/l-thomson/thiessen/blob/dev/docs/parity.md" class="external-link"><code>docs/parity.md</code></a>.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://l-thomson.github.io/thiessen/r/">thiessen</a></span><span class="op">)</span></span>
@@ -102,9 +120,9 @@ the Gaussian family to the heteroscedastic model. <code>outcome</code>
 left <code>NULL</code>, the default, takes the family from the response
 at fit: a numeric vector the Gaussian family and a two-level factor the
 probit family, with the experimental families selected by their own
-response shapes (<a href="https://github.com/l-thomson/thiessen/blob/dev/docs/experimental.md" class="external-link"><code>docs/experimental.md</code></a>).
-A family named here is checked against the response and a mismatch is an
-error naming both.</p>
+response shapes (the <a href="experimental.html">experimental</a> page
+lists them). A family named here is checked against the response and a
+mismatch is an error naming both.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/gaussian_outcome.html">gaussian_outcome</a></span><span class="op">(</span>nu <span class="op">=</span> <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="co">#&gt; gaussian_outcome(nu = 3, q = 0.85)</span></span>
@@ -124,15 +142,15 @@ rate <code>lambda_c</code>, and two nested groups.</p>
 <span><span class="co">#&gt; term_params(tessellations = 200, k = 3, lambda_c = 25)</span></span></code></pre></div>
 <p><code><a href="../reference/geometry_params.html">geometry_params()</a></code> is the covariate space: the
 <code>metric</code> of each column and the centre-coordinate scale
-<code>sigma_c</code>. This release reaches three metrics,
+<code>sigma_c</code>. A default build reaches three metrics,
 <code>"euclidean"</code>, <code>"categorical"</code> and a labelled
 sphere; the rest the core carries are experimental and are rejected
-here. A Euclidean column is min-max scaled to [-0.5, 0.5] over its
-training range inside the sampler, which is what makes one distance
-comparable across columns; a categorical or spherical column is not
-scaled, and <code>sigma_c</code> is on the scaled coordinate, so 1 is
-the full range of a Euclidean column. <code><a href="../reference/structure_params.html">structure_params()</a></code> is
-the covariate-inclusion prior: <code>omega / p</code> is the prior
+without the opt-in build. A Euclidean column is min-max scaled to [-0.5,
+0.5] over its training range inside the sampler, which is what makes one
+distance comparable across columns; a categorical or spherical column is
+not scaled, and <code>sigma_c</code> is on the scaled coordinate, so 1
+is the full range of a Euclidean column. <code><a href="../reference/structure_params.html">structure_params()</a></code>
+is the covariate-inclusion prior: <code>omega / p</code> is the prior
 probability of including a covariate, resolved to <code>min(3, p)</code>
 at fit when unset. The two ensembles share one covariate space: set
 these on <code>mean_params</code> and they apply to
@@ -150,7 +168,9 @@ these on <code>mean_params</code> and they apply to
 <p><code><a href="../reference/general_params.html">general_params()</a></code> carries the run lengths:
 <code>burn_in</code>, <code>draws</code>, <code>thinning</code>, and
 <code>prior_only</code>, which switches the likelihood off so the chain
-draws from the prior.</p>
+draws from the prior. The chains and threads of a fit are arguments of
+<code><a href="../reference/thiessen.html">thiessen()</a></code> rather than of the schedule, since they change
+nothing about the model.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/general_params.html">general_params</a></span><span class="op">(</span>burn_in <span class="op">=</span> <span class="fl">500</span>, draws <span class="op">=</span> <span class="fl">2000</span>, thinning <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
 <span><span class="co">#&gt; general_params(burn_in = 500, draws = 2000, thinning = 2, prior_only = FALSE)</span></span></code></pre></div>
@@ -198,13 +218,7 @@ here.</p>
 <span></span>
 <span><span class="va">resolved</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">y</span>, <span class="fu"><a href="../reference/thiessen_control.html">thiessen_control</a></span><span class="op">(</span></span>
 <span>  general_params <span class="op">=</span> <span class="fu"><a href="../reference/general_params.html">general_params</a></span><span class="op">(</span>burn_in <span class="op">=</span> <span class="fl">1</span>, draws <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="op">)</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span><span class="op">$</span><span class="va">control</span></span>
-<span><span class="co">#&gt; Warning in max(summary$rhat, na.rm = TRUE): no non-missing arguments to max;</span></span>
-<span><span class="co">#&gt; returning -Inf</span></span>
-<span><span class="co">#&gt; Warning in min(summary$ess_bulk, na.rm = TRUE): no non-missing arguments to</span></span>
-<span><span class="co">#&gt; min; returning Inf</span></span>
-<span><span class="co">#&gt; Warning in min(summary$ess_tail, na.rm = TRUE): no non-missing arguments to</span></span>
-<span><span class="co">#&gt; min; returning Inf</span></span>
+<span><span class="op">)</span>, seed <span class="op">=</span> <span class="fl">1</span>, chains <span class="op">=</span> <span class="fl">1</span><span class="op">)</span><span class="op">$</span><span class="va">control</span></span>
 <span><span class="va">mean_params</span> <span class="op">&lt;-</span> <span class="va">resolved</span><span class="op">$</span><span class="va">mean_params</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
@@ -225,7 +239,8 @@ here.</p>
 default that departs from the paper is <code>lambda_c</code>: Stone and
 Gosling (2025), s. 2.3, report 25, and CRAN AddiVortes takes 5 from
 0.6.8 onward; this package follows the implementation, and
-<code>term_params(lambda_c = 25)</code> is the paper’s setting.</p>
+<code>term_params(lambda_c = 25)</code> is the paper’s setting. The <a href="priors.html">priors</a> page draws from the prior at three
+settings of each.</p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>
