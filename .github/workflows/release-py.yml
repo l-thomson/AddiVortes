@@ -165,8 +165,10 @@ jobs:
           assert model.fit(x, y, random_state=1, n_chains=1).n_draws == 30
           "
 
-  alls-green:
-    name: alls-green
+  # Not `alls-green`: branch protection matches that context by name, and
+  # a second job reporting it would satisfy the requirement on its own.
+  release-py-green:
+    name: release-py-green
     if: always()
     needs: [wheels, smoke, sdist, sdist-install]
     runs-on: ubuntu-latest
