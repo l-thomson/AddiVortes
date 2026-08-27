@@ -151,6 +151,12 @@ y <- 2 * (x[, 1] - 0.5)^2 + 0.5 * x[, 2]
 resolved <- thiessen(x, y, thiessen_control(
   general_params = general_params(burn_in = 1, draws = 1)
 ), seed = 1)$control
+#> Warning in max(summary$rhat, na.rm = TRUE): no non-missing arguments to max;
+#> returning -Inf
+#> Warning in min(summary$ess_bulk, na.rm = TRUE): no non-missing arguments to
+#> min; returning Inf
+#> Warning in min(summary$ess_tail, na.rm = TRUE): no non-missing arguments to
+#> min; returning Inf
 mean_params <- resolved$mean_params
 
 c(

@@ -104,28 +104,32 @@ schedule here is short so the vignette builds quickly; the defaults are
 <span>  general_params <span class="op">=</span> <span class="fu"><a href="../reference/general_params.html">general_params</a></span><span class="op">(</span>burn_in <span class="op">=</span> <span class="fl">100</span>, draws <span class="op">=</span> <span class="fl">200</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">.</span>, <span class="va">d</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Warning in thiessen(y ~ ., d, control, seed = 1): The chains may not have</span></span>
+<span><span class="co">#&gt; converged: largest R-hat 1.457 (threshold 1.01), smallest effective sample size</span></span>
+<span><span class="co">#&gt; 8 (threshold 400). Run more draws or more chains.</span></span>
 <span><span class="va">fit</span></span>
 <span><span class="co">#&gt; AddiVortes fit</span></span>
 <span><span class="co">#&gt; Call: thiessen(formula = y ~ ., data = d, control = control, seed = 1)</span></span>
 <span><span class="co">#&gt; gaussian model, 200 observations, 4 covariates</span></span>
-<span><span class="co">#&gt; 25 tessellations, 200 draws kept after 100 burn-in, thinning 1</span></span>
-<span><span class="co">#&gt; In-sample RMSE 0.0794, seed 1</span></span>
-<span><span class="co">#&gt; 1 chain; R-hat and effective sample sizes need two or more chains</span></span></code></pre></div>
+<span><span class="co">#&gt; 25 tessellations, 800 draws kept after 100 burn-in, thinning 1</span></span>
+<span><span class="co">#&gt; In-sample RMSE 0.07421, seed 1</span></span>
+<span><span class="co">#&gt; 4 chains, largest R-hat 1.457, smallest effective sample size 8</span></span>
+<span><span class="co">#&gt; Warning: The chains may not have converged: largest R-hat 1.457 (threshold 1.01), smallest effective sample size 8 (threshold 400). Run more draws or more chains.</span></span></code></pre></div>
 <p>A factor covariate becomes d - 1 treatment-contrast indicators, the
 first level as reference, as <code>model.matrix</code> encodes one.
 <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> returns the posterior mean and matches new data
 by column name and type:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">d</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 0.2373794 0.1139564 0.6631289 0.8431266 0.4777981 0.9805984</span></span>
+<span><span class="co">#&gt; [1] 0.2487482 0.1422802 0.6507389 0.8504028 0.4615400 0.9697501</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">d</span>, interval <span class="op">=</span> <span class="st">"credible"</span>, level <span class="op">=</span> <span class="fl">0.9</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;            fit      lower     upper</span></span>
-<span><span class="co">#&gt; [1,] 0.2373794 0.14127244 0.3191082</span></span>
-<span><span class="co">#&gt; [2,] 0.1139564 0.03866678 0.1859433</span></span>
-<span><span class="co">#&gt; [3,] 0.6631289 0.56411400 0.7900226</span></span>
-<span><span class="co">#&gt; [4,] 0.8431266 0.75900457 0.9378979</span></span>
-<span><span class="co">#&gt; [5,] 0.4777981 0.41383460 0.5433476</span></span>
-<span><span class="co">#&gt; [6,] 0.9805984 0.91549249 1.0467040</span></span></code></pre></div>
+<span><span class="co">#&gt; [1,] 0.2487482 0.16645838 0.3262066</span></span>
+<span><span class="co">#&gt; [2,] 0.1422802 0.06682134 0.2203331</span></span>
+<span><span class="co">#&gt; [3,] 0.6507389 0.55390796 0.7514768</span></span>
+<span><span class="co">#&gt; [4,] 0.8504028 0.75976749 0.9483209</span></span>
+<span><span class="co">#&gt; [5,] 0.4615400 0.37225783 0.5424575</span></span>
+<span><span class="co">#&gt; [6,] 0.9697501 0.88757243 1.0543148</span></span></code></pre></div>
 <p><code>predict(interval = "prediction")</code> covers a new
 observation rather than the mean, and <code>type = "draws"</code>
 returns the per-draw values.</p>
@@ -138,7 +142,7 @@ one argument replaced.</p>
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>nobs <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/nobs.html" class="external-link">nobs</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span>, sigma <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/sigma.html" class="external-link">sigma</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span>,</span>
 <span>  rmse <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/residuals.html" class="external-link">residuals</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;         nobs        sigma         rmse </span></span>
-<span><span class="co">#&gt; 200.00000000   0.09912894   0.07940401</span></span></code></pre></div>
+<span><span class="co">#&gt; 200.00000000   0.09917727   0.07421256</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="covariate-scaling">Covariate scaling<a class="anchor" aria-label="anchor" href="#covariate-scaling"></a>
@@ -182,6 +186,9 @@ reproduces the same draws for a given package version and platform. The
 resolved seed is on the fit.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">again</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">.</span>, <span class="va">d</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Warning in thiessen(y ~ ., d, control, seed = 1): The chains may not have</span></span>
+<span><span class="co">#&gt; converged: largest R-hat 1.457 (threshold 1.01), smallest effective sample size</span></span>
+<span><span class="co">#&gt; 8 (threshold 400). Run more draws or more chains.</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">d</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">again</span>, <span class="va">d</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 </div>
@@ -204,32 +211,37 @@ predicts the same values without a refit.</p>
 <code><a href="https://mc-stan.org/posterior/reference/draws_df.html" class="external-link">posterior::as_draws_df()</a></code>, <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code>, and the
 rstantools generics <code><a href="https://mc-stan.org/rstantools/reference/posterior_predict.html" class="external-link">posterior_predict()</a></code>,
 <code><a href="https://mc-stan.org/rstantools/reference/posterior_epred.html" class="external-link">posterior_epred()</a></code>, <code><a href="https://mc-stan.org/rstantools/reference/log_lik.html" class="external-link">log_lik()</a></code> and
-<code><a href="https://mc-stan.org/rstantools/reference/predictive_interval.html" class="external-link">predictive_interval()</a></code>. Two or more <code>chains</code> add
-rank-normalised split R-hat and effective sample sizes, and a fit warns
-where they cross the usual thresholds.</p>
+<code><a href="https://mc-stan.org/rstantools/reference/predictive_interval.html" class="external-link">predictive_interval()</a></code>. The default four <code>chains</code>
+carry rank-normalised split R-hat and effective sample sizes, and a fit
+warns where they cross the usual thresholds, as every fit in this
+article does at its short schedule. The chains run on
+<code>getOption("mc.cores", 1L)</code> threads, so
+<code>options(mc.cores = 4)</code> runs them on four cores for the same
+draws.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
 <span><span class="co">#&gt; AddiVortes fit</span></span>
 <span><span class="co">#&gt; Call: thiessen(formula = y ~ ., data = d, control = control, seed = 1)</span></span>
 <span><span class="co">#&gt; gaussian model, 200 observations, 4 covariates</span></span>
-<span><span class="co">#&gt; 25 tessellations, 200 draws kept after 100 burn-in, thinning 1</span></span>
+<span><span class="co">#&gt; 25 tessellations, 800 draws kept after 100 burn-in, thinning 1</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Residuals:</span></span>
 <span><span class="co">#&gt;         2.5%          25%          50%          75%        97.5% </span></span>
-<span><span class="co">#&gt; -0.163260078 -0.049799348  0.002716381  0.055474697  0.145138811 </span></span>
+<span><span class="co">#&gt; -0.158475949 -0.048499558  0.001712749  0.045790803  0.131873618 </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; sigma:</span></span>
 <span><span class="co">#&gt;       2.5%        25%        50%        75%      97.5% </span></span>
-<span><span class="co">#&gt; 0.08921890 0.09456918 0.09861395 0.10281368 0.11096115 </span></span>
+<span><span class="co">#&gt; 0.08810571 0.09460426 0.09903118 0.10307944 0.11194470 </span></span>
 <span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; In-sample RMSE 0.0794</span></span>
-<span><span class="co">#&gt; 1 chain; R-hat and effective sample sizes need two or more chains</span></span></code></pre></div>
+<span><span class="co">#&gt; In-sample RMSE 0.07421</span></span>
+<span><span class="co">#&gt; 4 chains, largest R-hat 1.457, smallest effective sample size 8</span></span>
+<span><span class="co">#&gt; Warning: The chains may not have converged: largest R-hat 1.457 (threshold 1.01), smallest effective sample size 8 (threshold 400). Run more draws or more chains.</span></span></code></pre></div>
 <p><code><a href="../reference/variable_inclusion.html">variable_inclusion()</a></code> reports the share of the ensemble’s
 active dimensions falling on each covariate.</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/variable_inclusion.html">variable_inclusion</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
 <span><span class="co">#&gt;         a         b      glow      gmid </span></span>
-<span><span class="co">#&gt; 0.2816334 0.2546651 0.2512142 0.2124872</span></span></code></pre></div>
+<span><span class="co">#&gt; 0.2896471 0.2531981 0.2334469 0.2237079</span></span></code></pre></div>
 <p>Read that as where the ensemble spent its dimensions, not as variable
 selection. At the default <code>omega</code> of <code>min(3, p)</code>
 every dimension is always active when p is 3 or fewer, so the
@@ -279,21 +291,26 @@ is set. Reporting does not change the draws.</p>
 <div class="section level3">
 <h3 id="r-hat-or-an-effective-sample-size-warns">R-hat or an effective sample size warns<a class="anchor" aria-label="anchor" href="#r-hat-or-an-effective-sample-size-warns"></a>
 </h3>
-<p><code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> reports both. More draws is the first answer,
-then more chains; <code>thinning</code> reduces the stored draws without
-adding information, so it is not the remedy for a low effective sample
-size. The warning fires on any short schedule, this article’s included,
-and carries the condition class <code>thiessen_warning</code>, so it can
-be silenced by class rather than by message:</p>
+<p><code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> reports both. More draws per chain,
+<code>general_params(draws = )</code>, is the first answer, then more
+chains; <code>thinning</code> reduces the stored draws without adding
+information, so it is not the remedy for a low effective sample size.
+The default schedule is itself short for the thresholds: on Friedman #1
+with n = 200 and p = 10 a default fit reaches a smallest effective
+sample size of about 100 against the threshold of 400 and a largest
+R-hat of about 1.05 against 1.01, so it warns. The warning fires on any
+short schedule, this article’s included, and carries the condition class
+<code>thiessen_warning</code>, so it can be silenced by class rather
+than by message:</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">withCallingHandlers</a></span><span class="op">(</span></span>
-<span>  <span class="va">two</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">.</span>, <span class="va">d</span>, <span class="va">control</span>, chains <span class="op">=</span> <span class="fl">2</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>,</span>
+<span>  <span class="va">quiet</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">.</span>, <span class="va">d</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>,</span>
 <span>  thiessen_warning <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">condition</span><span class="op">)</span> <span class="op">{</span></span>
 <span>    <span class="fu"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">invokeRestart</a></span><span class="op">(</span><span class="st">"muffleWarning"</span><span class="op">)</span></span>
 <span>  <span class="op">}</span></span>
 <span><span class="op">)</span></span>
-<span><span class="va">two</span><span class="op">$</span><span class="va">n_chains</span></span>
-<span><span class="co">#&gt; [1] 2</span></span></code></pre></div>
+<span><span class="va">quiet</span><span class="op">$</span><span class="va">n_chains</span></span>
+<span><span class="co">#&gt; [1] 4</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="a-saved-fit-will-not-load">A saved fit will not load<a class="anchor" aria-label="anchor" href="#a-saved-fit-will-not-load"></a>

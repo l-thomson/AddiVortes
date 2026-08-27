@@ -39,5 +39,6 @@ control <- thiessen_control(
   general_params = general_params(burn_in = 20, draws = 40)
 )
 sigma(thiessen(x, y, control, seed = 1))
-#> [1] 0.05876912
+#> Warning: The chains may not have converged: largest R-hat 1.777 (threshold 1.01), smallest effective sample size 7 (threshold 400). Run more draws or more chains.
+#> [1] 0.05985129
 ```

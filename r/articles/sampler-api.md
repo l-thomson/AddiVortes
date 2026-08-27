@@ -72,7 +72,7 @@ for (draw in seq_len(100)) {
 }
 driven <- sampler$finish()
 
-fit <- thiessen(x, y, control, seed = 1)
+fit <- thiessen(x, y, control, seed = 1, chains = 1)
 identical(predict(driven, x), predict(fit, x))
 #> [1] TRUE
 ```
@@ -120,13 +120,16 @@ clamped response:
 ``` r
 
 clamped <- thiessen(x, y_observed, control, seed = 1)
+#> Warning in thiessen(x, y_observed, control, seed = 1): The chains may not have
+#> converged: largest R-hat 2.074 (threshold 1.01), smallest effective sample size
+#> 6 (threshold 400). Run more draws or more chains.
 c(
   censored = max(predict(fit_censored, x)),
   clamped = max(predict(clamped, x)),
   limit = unname(limit)
 )
 #>  censored   clamped     limit 
-#> 0.8767076 0.7990626 0.8068637
+#> 0.8767076 0.7964520 0.8068637
 ```
 
 ## Prototyping an outcome model
@@ -167,8 +170,12 @@ family <- thiessen(x, labels, thiessen_control(
   tessellations = 10,
   general_params = general_params(burn_in = 50, draws = 100)
 ), seed = 1)
+#> Warning in thiessen(x, labels, thiessen_control(outcome = probit_outcome(), :
+#> The chains may not have converged: largest R-hat 1.172 (threshold 1.01),
+#> smallest effective sample size 17 (threshold 400). Run more draws or more
+#> chains.
 mean((latent_mean > 0) == (predict(family, x) > 0.5))
-#> [1] 0.9833333
+#> [1] 0.9916667
 ```
 
 The prototype and the family are the same model up to one difference:

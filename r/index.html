@@ -93,14 +93,14 @@
 <span><span class="co">#&gt; AddiVortes fit</span></span>
 <span><span class="co">#&gt; Call: thiessen(x = x, y = y, seed = 1)</span></span>
 <span><span class="co">#&gt; gaussian model, 200 observations, 2 covariates</span></span>
-<span><span class="co">#&gt; 200 tessellations, 1000 draws kept after 200 burn-in, thinning 1</span></span>
-<span><span class="co">#&gt; In-sample RMSE 0.07918, seed 1</span></span>
-<span><span class="co">#&gt; 1 chain; R-hat and effective sample sizes need two or more chains</span></span></code></pre></div>
+<span><span class="co">#&gt; 200 tessellations, 4000 draws kept after 200 burn-in, thinning 1</span></span>
+<span><span class="co">#&gt; In-sample RMSE 0.07966, seed 1</span></span>
+<span><span class="co">#&gt; 4 chains, largest R-hat 1.008, smallest effective sample size 899</span></span></code></pre></div>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">x</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 0.2181837 0.1508115 0.3662940 0.4198369 0.2212262 0.6757635</span></span>
+<span><span class="co">#&gt; [1] 0.2161658 0.1520645 0.3659401 0.4203385 0.2189898 0.6780119</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/sigma.html" class="external-link">sigma</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 0.09331458</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] 0.09372794</span></span></code></pre></div>
 <p><code>plot(fit)</code> traces the per-draw sampler diagnostics, one panel each. It is a convergence check rather than a display of the fit; for the fit itself pass <code>posterior::as_draws_df(fit)</code> to bayesplot.</p>
 </div>
 <div class="section level2">
@@ -126,7 +126,7 @@
 <div class="section level2">
 <h2 id="working-with-a-fit">Working with a fit<a class="anchor" aria-label="anchor" href="#working-with-a-fit"></a>
 </h2>
-<p>A formula interface takes data frames, with factor covariates encoded as <code>model.matrix</code> encodes them, and <code>chains = 2</code> or more adds R-hat and effective sample size diagnostics.</p>
+<p>A formula interface takes data frames, with factor covariates encoded as <code>model.matrix</code> encodes them, and the default four <code>chains</code> carry R-hat and effective sample size diagnostics.</p>
 <p><code><a href="https://mc-stan.org/posterior/reference/draws_df.html" class="external-link">posterior::as_draws_df()</a></code>, <code>summarise_draws()</code>, <code><a href="https://mc-stan.org/rstantools/reference/posterior_predict.html" class="external-link">posterior_predict()</a></code>, <code><a href="https://mc-stan.org/rstantools/reference/posterior_epred.html" class="external-link">posterior_epred()</a></code>, <code><a href="https://mc-stan.org/rstantools/reference/log_lik.html" class="external-link">log_lik()</a></code> and <code><a href="https://mc-stan.org/rstantools/reference/predictive_interval.html" class="external-link">predictive_interval()</a></code> work on a fit, so <code><a href="https://mc-stan.org/loo/reference/loo.html" class="external-link">loo::loo()</a></code>, bayesplot and tidybayes take one without adaptation. <code><a href="articles/posterior.html">vignette("posterior")</a></code> runs each of them.</p>
 <p><code><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS()</a></code> writes a fit and a later session reads it and predicts the same values; the sampler state travels in the object.</p>
 <p>Progress over the whole fit is signalled with progressr, so nothing is printed until a session chooses a handler:</p>
@@ -144,7 +144,8 @@
 <div class="section level2">
 <h2 id="runtime">Runtime<a class="anchor" aria-label="anchor" href="#runtime"></a>
 </h2>
-<p>Cost is linear in the sweeps and close to linear in the rows and in the tessellation count. The default schedule is 1200 sweeps, 200 of burn-in and 1000 draws. As one calibration point, 600 sweeps of n = 1000 and p = 3 with 100 tessellations take about 7 seconds on one core of a 2025 laptop. The chains run on <code>threads</code> threads, so <code>chains = 2</code> with <code>threads = 2</code> costs about one chain, and on one thread twice one.</p>
+<p>Cost is linear in the sweeps and close to linear in the rows and in the tessellation count. The default schedule is 1200 sweeps, 200 of burn-in and 1000 draws, and a default fit runs four chains of it on <code>getOption("mc.cores", 1L)</code> threads, so a session that sets nothing pays four chains on one core. As one calibration point, 600 sweeps of n = 1000 and p = 3 with 100 tessellations take about 7 seconds on one core of a 2025 laptop. <code>options(mc.cores = 4)</code> runs the chains on four cores for the same draws; the fit then takes less than half the one-thread time (about 45 per cent at n = 200 on four cores of a 2025 laptop), so it costs under two chains rather than four.</p>
+<p>A default fit is short for the diagnostics it carries: on Friedman #1 with n = 200 and p = 10 the smallest effective sample size over the monitored points is about 100 (threshold 400) and the largest R-hat about 1.05 (threshold 1.01), so the fit warns. More draws per chain, <code>general_params(draws = )</code>, is the answer; <code>thinning</code> is not.</p>
 </div>
 <div class="section level2">
 <h2 id="priors">Priors<a class="anchor" aria-label="anchor" href="#priors"></a>

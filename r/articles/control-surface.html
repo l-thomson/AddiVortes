@@ -199,6 +199,12 @@ here.</p>
 <span><span class="va">resolved</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">y</span>, <span class="fu"><a href="../reference/thiessen_control.html">thiessen_control</a></span><span class="op">(</span></span>
 <span>  general_params <span class="op">=</span> <span class="fu"><a href="../reference/general_params.html">general_params</a></span><span class="op">(</span>burn_in <span class="op">=</span> <span class="fl">1</span>, draws <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
 <span><span class="op">)</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span><span class="op">$</span><span class="va">control</span></span>
+<span><span class="co">#&gt; Warning in max(summary$rhat, na.rm = TRUE): no non-missing arguments to max;</span></span>
+<span><span class="co">#&gt; returning -Inf</span></span>
+<span><span class="co">#&gt; Warning in min(summary$ess_bulk, na.rm = TRUE): no non-missing arguments to</span></span>
+<span><span class="co">#&gt; min; returning Inf</span></span>
+<span><span class="co">#&gt; Warning in min(summary$ess_tail, na.rm = TRUE): no non-missing arguments to</span></span>
+<span><span class="co">#&gt; min; returning Inf</span></span>
 <span><span class="va">mean_params</span> <span class="op">&lt;-</span> <span class="va">resolved</span><span class="op">$</span><span class="va">mean_params</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>

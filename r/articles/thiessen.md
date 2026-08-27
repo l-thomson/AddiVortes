@@ -35,13 +35,17 @@ control <- thiessen_control(
   general_params = general_params(burn_in = 100, draws = 200)
 )
 fit <- thiessen(y ~ ., d, control, seed = 1)
+#> Warning in thiessen(y ~ ., d, control, seed = 1): The chains may not have
+#> converged: largest R-hat 1.457 (threshold 1.01), smallest effective sample size
+#> 8 (threshold 400). Run more draws or more chains.
 fit
 #> AddiVortes fit
 #> Call: thiessen(formula = y ~ ., data = d, control = control, seed = 1)
 #> gaussian model, 200 observations, 4 covariates
-#> 25 tessellations, 200 draws kept after 100 burn-in, thinning 1
-#> In-sample RMSE 0.0794, seed 1
-#> 1 chain; R-hat and effective sample sizes need two or more chains
+#> 25 tessellations, 800 draws kept after 100 burn-in, thinning 1
+#> In-sample RMSE 0.07421, seed 1
+#> 4 chains, largest R-hat 1.457, smallest effective sample size 8
+#> Warning: The chains may not have converged: largest R-hat 1.457 (threshold 1.01), smallest effective sample size 8 (threshold 400). Run more draws or more chains.
 ```
 
 A factor covariate becomes d - 1 treatment-contrast indicators, the
@@ -52,15 +56,15 @@ posterior mean and matches new data by column name and type:
 ``` r
 
 head(predict(fit, d))
-#> [1] 0.2373794 0.1139564 0.6631289 0.8431266 0.4777981 0.9805984
+#> [1] 0.2487482 0.1422802 0.6507389 0.8504028 0.4615400 0.9697501
 head(predict(fit, d, interval = "credible", level = 0.9))
 #>            fit      lower     upper
-#> [1,] 0.2373794 0.14127244 0.3191082
-#> [2,] 0.1139564 0.03866678 0.1859433
-#> [3,] 0.6631289 0.56411400 0.7900226
-#> [4,] 0.8431266 0.75900457 0.9378979
-#> [5,] 0.4777981 0.41383460 0.5433476
-#> [6,] 0.9805984 0.91549249 1.0467040
+#> [1,] 0.2487482 0.16645838 0.3262066
+#> [2,] 0.1422802 0.06682134 0.2203331
+#> [3,] 0.6507389 0.55390796 0.7514768
+#> [4,] 0.8504028 0.75976749 0.9483209
+#> [5,] 0.4615400 0.37225783 0.5424575
+#> [6,] 0.9697501 0.88757243 1.0543148
 ```
 
 `predict(interval = "prediction")` covers a new observation rather than
@@ -81,7 +85,7 @@ argument replaced.
 c(nobs = nobs(fit), sigma = sigma(fit),
   rmse = sqrt(mean(residuals(fit)^2)))
 #>         nobs        sigma         rmse 
-#> 200.00000000   0.09912894   0.07940401
+#> 200.00000000   0.09917727   0.07421256
 ```
 
 ## Covariate scaling
@@ -132,6 +136,9 @@ platform. The resolved seed is on the fit.
 ``` r
 
 again <- thiessen(y ~ ., d, control, seed = 1)
+#> Warning in thiessen(y ~ ., d, control, seed = 1): The chains may not have
+#> converged: largest R-hat 1.457 (threshold 1.01), smallest effective sample size
+#> 8 (threshold 400). Run more draws or more chains.
 identical(predict(fit, d), predict(again, d))
 #> [1] TRUE
 ```
@@ -160,8 +167,11 @@ generics
 [`posterior_epred()`](https://mc-stan.org/rstantools/reference/posterior_epred.html),
 [`log_lik()`](https://mc-stan.org/rstantools/reference/log_lik.html) and
 [`predictive_interval()`](https://mc-stan.org/rstantools/reference/predictive_interval.html).
-Two or more `chains` add rank-normalised split R-hat and effective
-sample sizes, and a fit warns where they cross the usual thresholds.
+The default four `chains` carry rank-normalised split R-hat and
+effective sample sizes, and a fit warns where they cross the usual
+thresholds, as every fit in this article does at its short schedule. The
+chains run on `getOption("mc.cores", 1L)` threads, so
+`options(mc.cores = 4)` runs them on four cores for the same draws.
 
 ``` r
 
@@ -169,18 +179,19 @@ summary(fit)
 #> AddiVortes fit
 #> Call: thiessen(formula = y ~ ., data = d, control = control, seed = 1)
 #> gaussian model, 200 observations, 4 covariates
-#> 25 tessellations, 200 draws kept after 100 burn-in, thinning 1
+#> 25 tessellations, 800 draws kept after 100 burn-in, thinning 1
 #> 
 #> Residuals:
 #>         2.5%          25%          50%          75%        97.5% 
-#> -0.163260078 -0.049799348  0.002716381  0.055474697  0.145138811 
+#> -0.158475949 -0.048499558  0.001712749  0.045790803  0.131873618 
 #> 
 #> sigma:
 #>       2.5%        25%        50%        75%      97.5% 
-#> 0.08921890 0.09456918 0.09861395 0.10281368 0.11096115 
+#> 0.08810571 0.09460426 0.09903118 0.10307944 0.11194470 
 #> 
-#> In-sample RMSE 0.0794
-#> 1 chain; R-hat and effective sample sizes need two or more chains
+#> In-sample RMSE 0.07421
+#> 4 chains, largest R-hat 1.457, smallest effective sample size 8
+#> Warning: The chains may not have converged: largest R-hat 1.457 (threshold 1.01), smallest effective sample size 8 (threshold 400). Run more draws or more chains.
 ```
 
 [`variable_inclusion()`](https://l-thomson.github.io/thiessen/r/reference/variable_inclusion.md)
@@ -191,7 +202,7 @@ covariate.
 
 variable_inclusion(fit)
 #>         a         b      glow      gmid 
-#> 0.2816334 0.2546651 0.2512142 0.2124872
+#> 0.2896471 0.2531981 0.2334469 0.2237079
 ```
 
 Read that as where the ensemble spent its dimensions, not as variable
@@ -246,22 +257,27 @@ That is the default, not a hang. See Progress above.
 ### R-hat or an effective sample size warns
 
 [`summary()`](https://rdrr.io/r/base/summary.html) reports both. More
-draws is the first answer, then more chains; `thinning` reduces the
-stored draws without adding information, so it is not the remedy for a
-low effective sample size. The warning fires on any short schedule, this
-article’s included, and carries the condition class `thiessen_warning`,
-so it can be silenced by class rather than by message:
+draws per chain, `general_params(draws = )`, is the first answer, then
+more chains; `thinning` reduces the stored draws without adding
+information, so it is not the remedy for a low effective sample size.
+The default schedule is itself short for the thresholds: on Friedman \#1
+with n = 200 and p = 10 a default fit reaches a smallest effective
+sample size of about 100 against the threshold of 400 and a largest
+R-hat of about 1.05 against 1.01, so it warns. The warning fires on any
+short schedule, this article’s included, and carries the condition class
+`thiessen_warning`, so it can be silenced by class rather than by
+message:
 
 ``` r
 
 withCallingHandlers(
-  two <- thiessen(y ~ ., d, control, chains = 2, seed = 1),
+  quiet <- thiessen(y ~ ., d, control, seed = 1),
   thiessen_warning = function(condition) {
     invokeRestart("muffleWarning")
   }
 )
-two$n_chains
-#> [1] 2
+quiet$n_chains
+#> [1] 4
 ```
 
 ### A saved fit will not load

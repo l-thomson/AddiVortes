@@ -47,19 +47,21 @@ control <- thiessen_control(
   general_params = general_params(burn_in = 20, draws = 40)
 )
 summary(thiessen(x, y, control, seed = 1))
+#> Warning: The chains may not have converged: largest R-hat 1.777 (threshold 1.01), smallest effective sample size 7 (threshold 400). Run more draws or more chains.
 #> AddiVortes fit
 #> Call: thiessen(x = x, y = y, control = control, seed = 1)
 #> gaussian model, 60 observations, 2 covariates
-#> 10 tessellations, 40 draws kept after 20 burn-in, thinning 1
+#> 10 tessellations, 160 draws kept after 20 burn-in, thinning 1
 #> 
 #> Residuals:
 #>         2.5%          25%          50%          75%        97.5% 
-#> -0.053658678 -0.023596686 -0.005973156  0.024384175  0.087277594 
+#> -0.031431959 -0.016728154 -0.008114297  0.014119159  0.090292511 
 #> 
 #> sigma:
 #>       2.5%        25%        50%        75%      97.5% 
-#> 0.04593405 0.04851163 0.05469341 0.07051679 0.07995568 
+#> 0.04596719 0.05100876 0.05624163 0.06604908 0.08676376 
 #> 
-#> In-sample RMSE 0.04022
-#> 1 chain; R-hat and effective sample sizes need two or more chains
+#> In-sample RMSE 0.03107
+#> 4 chains, largest R-hat 1.777, smallest effective sample size 7
+#> Warning: The chains may not have converged: largest R-hat 1.777 (threshold 1.01), smallest effective sample size 7 (threshold 400). Run more draws or more chains.
 ```

@@ -24,13 +24,17 @@ control <- thiessen_control(
   general_params = general_params(burn_in = 100, draws = 200)
 )
 fit <- thiessen(x, y, control, seed = 1)
+#> Warning in thiessen(x, y, control, seed = 1): The chains may not have
+#> converged: largest R-hat 1.202 (threshold 1.01), smallest effective sample size
+#> 15 (threshold 400). Run more draws or more chains.
 fit
 #> AddiVortes fit
 #> Call: thiessen(x = x, y = y, control = control, seed = 1)
 #> heteroscedastic model, 300 observations, 2 covariates
-#> 25 tessellations, 200 draws kept after 100 burn-in, thinning 1
-#> In-sample RMSE 0.2063, seed 1
-#> 1 chain; R-hat and effective sample sizes need two or more chains
+#> 25 tessellations, 800 draws kept after 100 burn-in, thinning 1
+#> In-sample RMSE 0.2027, seed 1
+#> 4 chains, largest R-hat 1.202, smallest effective sample size 15
+#> Warning: The chains may not have converged: largest R-hat 1.202 (threshold 1.01), smallest effective sample size 15 (threshold 400). Run more draws or more chains.
 ```
 
 `predict(type = "variance")` returns s^2(x) per draw; its posterior mean
@@ -45,7 +49,7 @@ c(
   high_x = mean(variance[tail(order, 50)])
 )
 #>       low_x      high_x 
-#> 0.009948418 0.100199597
+#> 0.009572963 0.093159358
 ```
 
 Predictive intervals widen where the variance is high, which is the
@@ -62,8 +66,8 @@ widths <- c(
 # The claim above, asserted rather than read: a wrong number fails the build.
 stopifnot(widths[["high_x"]] > widths[["low_x"]])
 widths
-#>    low_x   high_x 
-#> 0.362752 1.078838
+#>     low_x    high_x 
+#> 0.3571411 1.0476867
 ```
 
 ## What is shared and what is separate

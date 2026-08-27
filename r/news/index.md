@@ -68,6 +68,17 @@
   [`summary()`](https://rdrr.io/r/base/summary.html) repeat the warning,
   where R-hat exceeds 1.01 or an effective sample size falls below 400
   (Vehtari and others, 2021); a fit of one chain says so instead.
+- The defaults are `chains = 4` and
+  `threads = getOption("mc.cores", 1L)`, read when the fit is called, as
+  Stan’s interfaces do: a session that sets nothing runs the four chains
+  on one thread and pays four chains, and `options(mc.cores = 4)` runs
+  them on four cores for the same draws, in less than half the
+  one-thread time (about 45 per cent at n = 200 on four cores of a 2025
+  laptop). On Friedman
+  [\#1](https://github.com/l-thomson/thiessen/issues/1) with n = 200 and
+  p = 10 the default schedule reaches a smallest effective sample size
+  of about 100 and a largest R-hat of about 1.05, so a default fit
+  warns; more draws per chain is the remedy.
 - Five vignettes, executed at build: getting started, H-AddiVortes and
   Binary AddiVortes by their paper names, the control surface, and the
   sampler API with a worked censored-response imputation. A pkgdown site

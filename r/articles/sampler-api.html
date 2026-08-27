@@ -138,7 +138,7 @@ in <code>$finish()</code>’s draws. Keep and diagnose those yourself.</p>
 <span><span class="op">}</span></span>
 <span><span class="va">driven</span> <span class="op">&lt;-</span> <span class="va">sampler</span><span class="op">$</span><span class="fu">finish</span><span class="op">(</span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">y</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">y</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span>, chains <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">driven</span>, <span class="va">x</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, <span class="va">x</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 </div>
@@ -180,13 +180,16 @@ truncated normal.</p>
 clamped response:</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">clamped</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">y_observed</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Warning in thiessen(x, y_observed, control, seed = 1): The chains may not have</span></span>
+<span><span class="co">#&gt; converged: largest R-hat 2.074 (threshold 1.01), smallest effective sample size</span></span>
+<span><span class="co">#&gt; 6 (threshold 400). Run more draws or more chains.</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>  censored <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit_censored</span>, <span class="va">x</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>  clamped <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">clamped</span>, <span class="va">x</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>  limit <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">limit</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span><span class="co">#&gt;  censored   clamped     limit </span></span>
-<span><span class="co">#&gt; 0.8767076 0.7990626 0.8068637</span></span></code></pre></div>
+<span><span class="co">#&gt; 0.8767076 0.7964520 0.8068637</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="prototyping-an-outcome-model">Prototyping an outcome model<a class="anchor" aria-label="anchor" href="#prototyping-an-outcome-model"></a>
@@ -225,8 +228,12 @@ the side its label demands (Albert and Chib 1993).</p>
 <span>  tessellations <span class="op">=</span> <span class="fl">10</span>,</span>
 <span>  general_params <span class="op">=</span> <span class="fu"><a href="../reference/general_params.html">general_params</a></span><span class="op">(</span>burn_in <span class="op">=</span> <span class="fl">50</span>, draws <span class="op">=</span> <span class="fl">100</span><span class="op">)</span></span>
 <span><span class="op">)</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Warning in thiessen(x, labels, thiessen_control(outcome = probit_outcome(), :</span></span>
+<span><span class="co">#&gt; The chains may not have converged: largest R-hat 1.172 (threshold 1.01),</span></span>
+<span><span class="co">#&gt; smallest effective sample size 17 (threshold 400). Run more draws or more</span></span>
+<span><span class="co">#&gt; chains.</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="op">(</span><span class="va">latent_mean</span> <span class="op">&gt;</span> <span class="fl">0</span><span class="op">)</span> <span class="op">==</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">family</span>, <span class="va">x</span><span class="op">)</span> <span class="op">&gt;</span> <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 0.9833333</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] 0.9916667</span></span></code></pre></div>
 <p>The prototype and the family are the same model up to one difference:
 the family fixes the latent variance at 1 for identification, while the
 prototype keeps sampling sigma^2. Differences of that kind are what

@@ -45,9 +45,9 @@ control <- thiessen_control(
   general_params = general_params(burn_in = 20, draws = 40)
 )
 fit <- thiessen(x, y, control, seed = 1)
+#> Warning: The chains may not have converged: largest R-hat 1.777 (threshold 1.01), smallest effective sample size 7 (threshold 400). Run more draws or more chains.
 nobs(fit)
 #> [1] 60
 head(residuals(fit))
-#> [1]  0.113794337  0.084912549  0.048295917  0.021712320 -0.011099737
-#> [6]  0.003525624
+#> [1] 0.08337970 0.09654695 0.03354623 0.05462711 0.03440560 0.03597332
 ```

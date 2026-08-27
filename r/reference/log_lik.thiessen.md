@@ -52,22 +52,23 @@ if (requireNamespace("loo", quietly = TRUE)) {
   fit <- thiessen(x, y, control, seed = 1)
   loo::loo(log_lik(fit))
 }
+#> Warning: The chains may not have converged: largest R-hat 1.777 (threshold 1.01), smallest effective sample size 7 (threshold 400). Run more draws or more chains.
 #> Warning: Some Pareto k diagnostic values are too high. See help('pareto-k-diagnostic') for details.
 #> 
-#> Computed from 40 by 60 log-likelihood matrix.
+#> Computed from 160 by 60 log-likelihood matrix.
 #> 
 #>          Estimate  SE
-#> elpd_loo     87.7 3.6
-#> p_loo        11.2 1.8
-#> looic      -175.4 7.3
+#> elpd_loo     81.3 4.1
+#> p_loo        17.4 2.8
+#> looic      -162.5 8.3
 #> ------
 #> MCSE of elpd_loo is NA.
 #> MCSE and ESS estimates assume independent draws (r_eff=1).
 #> 
 #> Pareto k diagnostic values:
 #>                           Count Pct.    Min. ESS
-#> (-Inf, 0.38]   (good)     33    55.0%   12      
-#>    (0.38, 1]   (bad)      26    43.3%   <NA>    
-#>     (1, Inf)   (very bad)  1     1.7%   <NA>    
+#> (-Inf, 0.55]   (good)     47    78.3%   26      
+#>    (0.55, 1]   (bad)      13    21.7%   <NA>    
+#>     (1, Inf)   (very bad)  0     0.0%   <NA>    
 #> See help('pareto-k-diagnostic') for details.
 ```

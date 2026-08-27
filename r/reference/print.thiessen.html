@@ -79,12 +79,14 @@
 <span class="r-in"><span>  general_params <span class="op">=</span> <span class="fu"><a href="general_params.html">general_params</a></span><span class="op">(</span>burn_in <span class="op">=</span> <span class="fl">20</span>, draws <span class="op">=</span> <span class="fl">40</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="fu"><a href="thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">y</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>The chains may not have converged: largest R-hat 1.777 (threshold 1.01), smallest effective sample size 7 (threshold 400). Run more draws or more chains.</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> AddiVortes fit</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Call: thiessen(x = x, y = y, control = control, seed = 1)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> gaussian model, 60 observations, 2 covariates</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 10 tessellations, 40 draws kept after 20 burn-in, thinning 1</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> In-sample RMSE 0.04022, seed 1</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1 chain; R-hat and effective sample sizes need two or more chains</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10 tessellations, 160 draws kept after 20 burn-in, thinning 1</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> In-sample RMSE 0.03107, seed 1</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4 chains, largest R-hat 1.777, smallest effective sample size 7</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Warning: The chains may not have converged: largest R-hat 1.777 (threshold 1.01), smallest effective sample size 7 (threshold 400). Run more draws or more chains.</span>
 </code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

@@ -93,13 +93,17 @@ count is 40.</p>
 <span>  general_params <span class="op">=</span> <span class="fu"><a href="../reference/general_params.html">general_params</a></span><span class="op">(</span>burn_in <span class="op">=</span> <span class="fl">100</span>, draws <span class="op">=</span> <span class="fl">200</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">y</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Warning in thiessen(x, y, control, seed = 1): The chains may not have</span></span>
+<span><span class="co">#&gt; converged: largest R-hat 1.202 (threshold 1.01), smallest effective sample size</span></span>
+<span><span class="co">#&gt; 15 (threshold 400). Run more draws or more chains.</span></span>
 <span><span class="va">fit</span></span>
 <span><span class="co">#&gt; AddiVortes fit</span></span>
 <span><span class="co">#&gt; Call: thiessen(x = x, y = y, control = control, seed = 1)</span></span>
 <span><span class="co">#&gt; heteroscedastic model, 300 observations, 2 covariates</span></span>
-<span><span class="co">#&gt; 25 tessellations, 200 draws kept after 100 burn-in, thinning 1</span></span>
-<span><span class="co">#&gt; In-sample RMSE 0.2063, seed 1</span></span>
-<span><span class="co">#&gt; 1 chain; R-hat and effective sample sizes need two or more chains</span></span></code></pre></div>
+<span><span class="co">#&gt; 25 tessellations, 800 draws kept after 100 burn-in, thinning 1</span></span>
+<span><span class="co">#&gt; In-sample RMSE 0.2027, seed 1</span></span>
+<span><span class="co">#&gt; 4 chains, largest R-hat 1.202, smallest effective sample size 15</span></span>
+<span><span class="co">#&gt; Warning: The chains may not have converged: largest R-hat 1.202 (threshold 1.01), smallest effective sample size 15 (threshold 400). Run more draws or more chains.</span></span></code></pre></div>
 <p><code>predict(type = "variance")</code> returns s^2(x) per draw; its
 posterior mean recovers the rising noise scale:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
@@ -110,7 +114,7 @@ posterior mean recovers the rising noise scale:</p>
 <span>  high_x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">variance</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">tail</a></span><span class="op">(</span><span class="va">order</span>, <span class="fl">50</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span><span class="co">#&gt;       low_x      high_x </span></span>
-<span><span class="co">#&gt; 0.009948418 0.100199597</span></span></code></pre></div>
+<span><span class="co">#&gt; 0.009572963 0.093159358</span></span></code></pre></div>
 <p>Predictive intervals widen where the variance is high, which is the
 point of the model:</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
@@ -123,8 +127,8 @@ point of the model:</p>
 <span><span class="co"># The claim above, asserted rather than read: a wrong number fails the build.</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html" class="external-link">stopifnot</a></span><span class="op">(</span><span class="va">widths</span><span class="op">[[</span><span class="st">"high_x"</span><span class="op">]</span><span class="op">]</span> <span class="op">&gt;</span> <span class="va">widths</span><span class="op">[[</span><span class="st">"low_x"</span><span class="op">]</span><span class="op">]</span><span class="op">)</span></span>
 <span><span class="va">widths</span></span>
-<span><span class="co">#&gt;    low_x   high_x </span></span>
-<span><span class="co">#&gt; 0.362752 1.078838</span></span></code></pre></div>
+<span><span class="co">#&gt;     low_x    high_x </span></span>
+<span><span class="co">#&gt; 0.3571411 1.0476867</span></span></code></pre></div>
 <div class="section level2">
 <h2 id="what-is-shared-and-what-is-separate">What is shared and what is separate<a class="anchor" aria-label="anchor" href="#what-is-shared-and-what-is-separate"></a>
 </h2>

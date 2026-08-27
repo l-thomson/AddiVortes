@@ -19,8 +19,8 @@ thiessen(
   y,
   control = thiessen_control(),
   seed = NULL,
-  chains = 1,
-  threads = 1,
+  chains = 4,
+  threads = getOption("mc.cores", 1L),
   ...
 )
 
@@ -30,8 +30,8 @@ thiessen(
   y,
   control = thiessen_control(),
   seed = NULL,
-  chains = 1,
-  threads = 1,
+  chains = 4,
+  threads = getOption("mc.cores", 1L),
   ...
 )
 
@@ -41,8 +41,8 @@ thiessen(
   data,
   control = thiessen_control(),
   seed = NULL,
-  chains = 1,
-  threads = 1,
+  chains = 4,
+  threads = getOption("mc.cores", 1L),
   ...
 )
 ```
@@ -83,7 +83,8 @@ thiessen(
   The number of chains to run, a whole number. Each chain has its own
   seed, derived from `seed` in the core, and the draws of the chains are
   pooled. Two or more chains give the convergence diagnostics; one chain
-  does not.
+  does not. Default 4, the number Vehtari and others (2021) recommend
+  and the Stan default.
 
 - threads:
 
@@ -91,7 +92,11 @@ thiessen(
   most this many threads, each chain on one thread with its own
   generator, so the draws do not depend on it;
   [`predict()`](https://rdrr.io/r/stats/predict.html) on the fit splits
-  the rows over the same number. Default 1.
+  the rows over the same number. The default reads
+  `getOption("mc.cores", 1L)` when the fit is called, as Stan's
+  interfaces do, so `options(mc.cores = 4)` is the one-line opt-in and a
+  session that sets nothing runs on one thread, where a default fit is
+  four chains long.
 
 - formula:
 
@@ -156,6 +161,18 @@ A fit warns, and [`print()`](https://rdrr.io/r/base/print.html) and
 where R-hat exceeds 1.01 or an effective sample size falls below 400
 (Vehtari and others, 2021). A fit of one chain says so instead.
 
+A default fit runs four chains of 200 burn-in and 1000 draws each, on
+`getOption("mc.cores", 1L)` threads, so on one thread it costs four
+chains; `options(mc.cores = 4)` runs the chains on four cores for the
+same draws, and the fit then takes less than half the one-thread time
+(about 45 per cent at n = 200 on four cores of a 2025 laptop; pooling
+the draws and the diagnostics run on one thread), so it costs under two
+chains rather than four. On Friedman \#1 with n = 200 and p = 10 the
+smallest effective sample size over the monitored points is about 100
+(threshold 400) and the largest R-hat about 1.05 (threshold 1.01), so
+the default fit warns. More draws per chain, `general_params(draws = )`,
+is the answer; `thinning` is not.
+
 ## Progress
 
 Progress over the whole fit is signalled with progressr, so a session
@@ -195,7 +212,7 @@ fires on any short schedule, so silencing it deliberately is a routine
 need:
 
     withCallingHandlers(
-      fit <- thiessen(x, y, control, chains = 2),
+      fit <- thiessen(x, y, control),
       thiessen_warning = function(condition) {
         invokeRestart("muffleWarning")
       }
@@ -229,31 +246,34 @@ control <- thiessen_control(
   general_params = general_params(burn_in = 20, draws = 40)
 )
 fit <- thiessen(x, y, control, seed = 1)
+#> Warning: The chains may not have converged: largest R-hat 1.777 (threshold 1.01), smallest effective sample size 7 (threshold 400). Run more draws or more chains.
 fit
 #> AddiVortes fit
 #> Call: thiessen(x = x, y = y, control = control, seed = 1)
 #> gaussian model, 60 observations, 2 covariates
+#> 10 tessellations, 160 draws kept after 20 burn-in, thinning 1
+#> In-sample RMSE 0.03107, seed 1
+#> 4 chains, largest R-hat 1.777, smallest effective sample size 7
+#> Warning: The chains may not have converged: largest R-hat 1.777 (threshold 1.01), smallest effective sample size 7 (threshold 400). Run more draws or more chains.
+
+# The default four chains carry the convergence diagnostics, and warn on
+# a schedule this short; one chain reports none.
+thiessen(x, y, control, seed = 1, chains = 1)
+#> AddiVortes fit
+#> Call: thiessen(x = x, y = y, control = control, seed = 1, chains = 1)
+#> gaussian model, 60 observations, 2 covariates
 #> 10 tessellations, 40 draws kept after 20 burn-in, thinning 1
 #> In-sample RMSE 0.04022, seed 1
 #> 1 chain; R-hat and effective sample sizes need two or more chains
-
-# Two chains add the convergence diagnostics; one chain reports none.
-thiessen(x, y, control, seed = 1, chains = 2)
-#> Warning: The chains may not have converged: largest R-hat 1.739 (threshold 1.01), smallest effective sample size 4 (threshold 400). Run more draws or more chains.
-#> AddiVortes fit
-#> Call: thiessen(x = x, y = y, control = control, seed = 1, chains = 2)
-#> gaussian model, 60 observations, 2 covariates
-#> 10 tessellations, 80 draws kept after 20 burn-in, thinning 1
-#> In-sample RMSE 0.03779, seed 1
-#> 2 chains, largest R-hat 1.739, smallest effective sample size 4
-#> Warning: The chains may not have converged: largest R-hat 1.739 (threshold 1.01), smallest effective sample size 4 (threshold 400). Run more draws or more chains.
 
 frame <- data.frame(y = y, a = x[, 1], b = factor(x[, 2] > 0))
 thiessen(y ~ a + b, frame, control, seed = 1)
+#> Warning: The chains may not have converged: largest R-hat 1.777 (threshold 1.01), smallest effective sample size 7 (threshold 400). Run more draws or more chains.
 #> AddiVortes fit
 #> Call: thiessen(formula = y ~ a + b, data = frame, control = control,      seed = 1)
 #> gaussian model, 60 observations, 2 covariates
-#> 10 tessellations, 40 draws kept after 20 burn-in, thinning 1
-#> In-sample RMSE 0.04022, seed 1
-#> 1 chain; R-hat and effective sample sizes need two or more chains
+#> 10 tessellations, 160 draws kept after 20 burn-in, thinning 1
+#> In-sample RMSE 0.03107, seed 1
+#> 4 chains, largest R-hat 1.777, smallest effective sample size 7
+#> Warning: The chains may not have converged: largest R-hat 1.777 (threshold 1.01), smallest effective sample size 7 (threshold 400). Run more draws or more chains.
 ```

@@ -23,13 +23,17 @@ control <- thiessen_control(
   general_params = general_params(burn_in = 100, draws = 200)
 )
 fit <- thiessen(x, label, control, seed = 1)
+#> Warning in thiessen(x, label, control, seed = 1): The chains may not have
+#> converged: largest R-hat 1.129 (threshold 1.01), smallest effective sample size
+#> 23 (threshold 400). Run more draws or more chains.
 fit
 #> AddiVortes fit
 #> Call: thiessen(x = x, y = label, control = control, seed = 1)
 #> probit model, 300 observations, 2 covariates
-#> 25 tessellations, 200 draws kept after 100 burn-in, thinning 1
-#> In-sample RMSE 0.362, seed 1
-#> 1 chain; R-hat and effective sample sizes need two or more chains
+#> 25 tessellations, 800 draws kept after 100 burn-in, thinning 1
+#> In-sample RMSE 0.3619, seed 1
+#> 4 chains, largest R-hat 1.129, smallest effective sample size 23
+#> Warning: The chains may not have converged: largest R-hat 1.129 (threshold 1.01), smallest effective sample size 23 (threshold 400). Run more draws or more chains.
 ```
 
 A two-level factor response becomes 0 and 1 with the first level as the
@@ -42,9 +46,9 @@ posterior mean probability of the second level, and
 
 probabilities <- predict(fit, x)
 range(probabilities)
-#> [1] 0.05785467 0.97805843
+#> [1] 0.06117562 0.97740046
 mean((probabilities > 0.5) == (label == "yes"))
-#> [1] 0.7866667
+#> [1] 0.7933333
 ```
 
 Credible intervals are on the probability scale:
@@ -53,12 +57,12 @@ Credible intervals are on the probability scale:
 
 head(predict(fit, x, interval = "credible", level = 0.9))
 #>            fit      lower     upper
-#> [1,] 0.2493825 0.11678199 0.4562457
-#> [2,] 0.3883306 0.15240819 0.6389193
-#> [3,] 0.7034044 0.49475748 0.8891872
-#> [4,] 0.9594971 0.89170780 0.9950113
-#> [5,] 0.2085537 0.09022212 0.3620440
-#> [6,] 0.9408933 0.81420680 0.9948472
+#> [1,] 0.2896943 0.13070505 0.5026607
+#> [2,] 0.3491636 0.14599493 0.5803786
+#> [3,] 0.6775203 0.44608101 0.8809248
+#> [4,] 0.9660410 0.89482532 0.9967260
+#> [5,] 0.2140054 0.08942802 0.3792176
+#> [6,] 0.9444154 0.82475811 0.9957574
 ```
 
 ## What the model fixes

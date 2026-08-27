@@ -99,6 +99,7 @@ additive regression trees. <em>The Annals of Applied Statistics</em> 4(1),
 <span class="r-in"><span>  general_params <span class="op">=</span> <span class="fu"><a href="general_params.html">general_params</a></span><span class="op">(</span>burn_in <span class="op">=</span> <span class="fl">20</span>, draws <span class="op">=</span> <span class="fl">40</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="thiessen.html">thiessen</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">y</span>, <span class="va">control</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></span>
+<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>The chains may not have converged: largest R-hat 1.777 (threshold 1.01), smallest effective sample size 7 (threshold 400). Run more draws or more chains.</span>
 <span class="r-in"><span><span class="fu">variable_inclusion</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> [1] 0.5 0.5</span>
 </code></pre></div>
