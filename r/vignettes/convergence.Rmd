@@ -1,0 +1,150 @@
+---
+title: "Chains, convergence and compute"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Chains, convergence and compute}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE, comment = "#>",
+  fig.width = 7, fig.height = 3, dpi = 96, out.width = "100%"
+)
+```
+
+A default fit runs four chains and pools their draws, so every fit
+carries the convergence diagnostics of Vehtari and others (2021):
+rank-normalised split R-hat and the bulk and tail effective sample
+sizes. This page shows what is monitored, what a fit that fails the
+check looks like beside one that passes, what the thresholds mean, and
+what the chains cost in time.
+
+```{r data}
+library(thiessen)
+library(posterior)
+
+set.seed(1)
+n <- 200
+x <- cbind(a = runif(n), b = runif(n))
+y <- 2 * (x[, "a"] - 0.5)^2 + 0.5 * x[, "b"] + rnorm(n, sd = 0.1)
+```
+
+## What is monitored
+
+The check runs over sigma and over the mean function at up to twenty
+training rows, spread through the data. Each chain has its own seed,
+derived from `seed` in the core, and each starts from the same
+initial state, so the chains differ by their random streams alone. A
+fit warns where R-hat exceeds 1.01 or an effective sample size falls
+below 400, the thresholds Vehtari and others (2021) give, and
+`print()` and `summary()` repeat the warning.
+
+## A fit that warns, and one that does not
+
+A schedule of 50 burn-in sweeps and 100 draws is too short for the
+chains to agree:
+
+```{r short}
+short <- thiessen(x, y, thiessen_control(
+  general_params = general_params(burn_in = 50, draws = 100)
+), seed = 1)
+```
+
+The default schedule of 200 burn-in sweeps and 1000 draws per chain
+passes on these data:
+
+```{r long}
+long <- thiessen(x, y, seed = 1)
+long$convergence[c("rhat", "ess_bulk", "ess_tail")]
+```
+
+The trace of sigma over the chains shows what the schedule buys: 100
+draws per chain against 1000. The short fit fails the check on the
+effective sample size, 80 against 400, and on an R-hat of 1.06 over
+the monitored quantities; the chains of the default fit overlap and
+its smallest effective sample size is in the hundreds.
+
+```{r trace-short}
+bayesplot::mcmc_trace(as_draws_array(short), pars = "sigma")
+```
+
+```{r trace-long}
+bayesplot::mcmc_trace(as_draws_array(long), pars = "sigma")
+```
+
+`summarise_draws()` gives the per-variable numbers behind the check.
+Here, sigma and the mean function at three training rows:
+
+```{r table}
+draws <- as_draws_df(long)
+summarise_draws(
+  subset_draws(draws, variable = c("sigma", "mu[1]", "mu[2]", "mu[3]")),
+  "mean", "sd", "rhat", "ess_bulk", "ess_tail"
+)
+```
+
+## What to change when the fit warns
+
+More draws per chain, `general_params(draws = )`, is the first
+remedy: the effective sample size grows with the draws, and R-hat
+falls as the chains have longer to mix. More chains add draws at the
+same cost per draw. `thinning` reduces the stored draws without adding
+information, so it is not a remedy for a low effective sample size.
+
+The default schedule is short for a harder problem. On Friedman #1
+with n = 200 and p = 10 it reaches a smallest effective sample size of
+about 130 and an R-hat of about 1.02, so the fit warns; the [Gaussian
+regression](gaussian.html) page runs 3000 draws per chain, which
+clears both thresholds.
+
+A fit of one chain carries no diagnostics and says so:
+
+```{r one-chain}
+one <- thiessen(x, y, seed = 1, chains = 1)
+one
+```
+
+## Compute
+
+Cost is linear in the sweeps and close to linear in the rows and in
+the tessellation count. The chains run on `getOption("mc.cores", 1L)`
+threads, read when the fit is called, as Stan's interfaces do: a
+session that sets nothing runs the four chains on one thread and pays
+four chains; `options(mc.cores = 4)` runs them on four cores for the
+same draws. The draws do not depend on the thread count.
+
+Effective sample size per second is the number to compare schedules
+and thread counts by, since it measures information gained rather than
+draws stored. On the machine that built this page, the default fit on
+one thread and on two:
+
+```{r timing}
+seconds <- function(threads) {
+  elapsed <- system.time(
+    fit <- thiessen(x, y, seed = 1, threads = threads)
+  )[["elapsed"]]
+  c(threads = threads, seconds = round(elapsed, 1),
+    min_ess = round(fit$convergence$ess_bulk),
+    ess_per_second = round(fit$convergence$ess_bulk / elapsed))
+}
+rbind(seconds(1), seconds(2))
+```
+
+Pooling the draws and the diagnostics run on one thread after the
+sweeps, so the speed-up from more threads is less than the thread
+count; at n = 200, four threads take about 45 per cent of the
+one-thread time. `predict()` splits its rows over the fit's thread
+count, or over its own `threads` argument.
+
+Progress over the whole fit is signalled with progressr, so nothing is
+printed unless a session chooses a handler; the [getting
+started](thiessen.html) page shows the two lines that set one.
+
+## References
+
+Vehtari, A., Gelman, A., Simpson, D., Carpenter, B. and Buerkner, P.-C.
+(2021). Rank-normalization, folding, and localization: an improved R-hat
+for assessing convergence of MCMC. *Bayesian Analysis* 16(2), 667-718.
+doi:10.1214/20-BA1221

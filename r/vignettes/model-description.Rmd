@@ -1,0 +1,182 @@
+---
+title: "Model description"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Model description}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+This page states the three published models in one notation, every
+prior with its default, and the argument each symbol is set through.
+The model pages cite it and repeat none of it. The statements are
+those of Stone and Gosling (2025), s. 2, with the corrections CRAN
+AddiVortes made in 0.6.8, and they are the statements the core crate
+documents in
+[`docs/models.md`](https://github.com/l-thomson/thiessen/blob/dev/docs/models.md).
+
+## The mean function
+
+A tessellation T is a set of b centres c_1, ..., c_b in the space of a
+subset of d of the p covariates. The cell of centre c_l is the set of
+x nearer to c_l than to any other centre, over those d coordinates, so
+the cells are a Voronoi partition. A tessellation with cell values
+M = (mu_1, ..., mu_b) is the piecewise-constant function
+
+    g(x; T, M) = mu_l   where c_l is the nearest centre to x,
+
+and the mean function is a sum of m of them:
+
+    f(x) = g(x; T_1, M_1) + ... + g(x; T_m, M_m).
+
+Each tessellation is a weak learner, held small by its priors, and
+the sum is flexible; this is the construction of BART (Chipman, George
+and McCulloch 2010) with a tessellation in place of a tree. A boundary
+oblique to the axes is one cell boundary here and many splits there.
+
+Distance is Euclidean on covariates scaled to [-0.5, 0.5] over their
+training range, with two exceptions the [covariates](covariates.html)
+page describes: a categorical column takes a mismatch distance, and
+the columns of a sphere take the great-circle angle.
+
+## The priors on a tessellation
+
+For each tessellation j, independently:
+
+- Cells: b_j - 1 ~ Poisson(lambda_c).
+- Active covariates: d_j - 1 ~ Binomial(p - 1, omega / p), the subset
+  drawn uniformly given its size.
+- Centre coordinates: each coordinate of each centre ~ N(0, sigma_c^2)
+  on the scaled covariates.
+- Cell values: each mu ~ N(0, sigma_mu^2), with sigma_mu = w / (k
+  sqrt(m)) and w a half-width the outcome model owns: 0.5 on the
+  response scaled to [-0.5, 0.5] for the Gaussian model, 3 on the
+  latent scale for the probit model. The sum of m tessellations then
+  has prior standard deviation w / k, so the prior on f(x) puts most of
+  its mass across the range the model works on.
+
+The sampler is the backfitting Gibbs sampler of Algorithm 1 in Stone
+and Gosling (2025), with the six structural Metropolis-Hastings moves
+of its Appendix B on the centres and dimensions of each tessellation
+and a closed-form draw of the cell values.
+
+## The three models
+
+### Gaussian
+
+    y_i = f(x_i) + e_i,   e_i ~ N(0, sigma^2)
+
+    sigma^2 ~ nu lambda / chi^2_nu,   lambda: Pr(sigma < sigma_hat) = q
+
+sigma_hat is the residual standard deviation of a least-squares fit
+(the sample standard deviation where that fit is degenerate). Nothing
+is fixed.
+
+### Probit
+
+    y_i in {0, 1},   P(y_i = 1 | x_i) = Phi(c + f(x_i))
+
+The latent variance is fixed at 1, since the model does not identify
+it; the offset c defaults to Phi^-1(ybar). The sampler is the data
+augmentation of Albert and Chib (1993): a latent z_i ~ N(c + f(x_i),
+1), truncated to the side of zero its label demands, is drawn before
+each sweep, and the ensemble is updated as in the Gaussian model with
+z - c as the response and unit variance.
+
+### Heteroscedastic
+
+    y_i = f(x_i) + s(x_i) e_i,   e_i ~ N(0, 1)
+
+    s^2(x) = v(x; T'_1, V_1) * ... * v(x; T'_m', V_m')
+
+with m' variance tessellations whose cell values are inverse-gamma,
+
+    v ~ Inv-Gamma(nu' / 2, nu' lambda' / 2),
+    lambda' = lambda^(1 / m'),   nu' = 2 / (1 - (1 - 2 / nu)^(1 / m')),
+
+which makes the prior mean of s^2(x) equal to the prior mean of the
+Gaussian model's sigma^2 whatever m' is (Pratola, Chipman, George and
+McCulloch 2020, s. 3.2); nu > 2 is required. The variance ensemble
+shares lambda_c, omega and sigma_c with the mean ensemble, and one
+sweep updates it given the residuals y - f, then the mean ensemble
+with per-observation precision 1 / s^2(x_i).
+
+## Symbols and arguments
+
+| Symbol | Meaning | Argument | Default |
+|---|---|---|---|
+| m | mean tessellations | `term_params(tessellations = )` as `mean_params` | 200 |
+| m' | variance tessellations | `term_params(tessellations = )` as `variance_params` | 0, none |
+| k | cell-value prior spread | `term_params(k = )` | 3 |
+| lambda_c | cell-count prior rate | `term_params(lambda_c = )` | 5 |
+| omega | prior mean active covariates | `structure_params(omega = )` | min(3, p) |
+| sigma_c | centre-coordinate scale | `geometry_params(sigma_c = )` | 0.8 |
+| nu | noise prior degrees of freedom | `gaussian_outcome(nu = )` | 6 |
+| q | noise prior calibration quantile | `gaussian_outcome(q = )` | 0.85 |
+| c | probit offset | `probit_outcome(offset = )` | Phi^-1(ybar) |
+| burn-in, draws, thinning | the sweep schedule | `general_params()` | 200, 1000, 1 |
+
+`thiessen_control(tessellations = )` is a shortcut for the first row.
+The default lambda_c of 5 follows CRAN AddiVortes 0.6.8 and later; the
+paper reports 25, and `term_params(lambda_c = 25)` is that setting.
+The [control surface](control-surface.html) page reads every default
+back from the core.
+
+## What a fit returns
+
+| Quantity | Gaussian | Probit | Heteroscedastic |
+|---|---|---|---|
+| `predict()` | posterior mean of f(x) | posterior mean of Phi(c + f(x)) | posterior mean of f(x) |
+| `predict(type = "draws")` | f(x) per draw | Phi(c + f(x)) per draw | f(x) per draw |
+| `predict(type = "latent")` | f(x) per draw | c + f(x) per draw | f(x) per draw |
+| `predict(type = "variance")` | sigma^2 per draw, constant over x | not defined | s^2(x) per draw |
+| `predict(interval = "prediction")` | from N(f(x), sigma^2) | not defined | from N(f(x), s^2(x)) |
+| `sigma()` | posterior mean of sigma | 1 | not defined |
+| `log_lik()` | Gaussian | Bernoulli | Gaussian at s^2(x) |
+| `posterior_predict()` | replicates of y | labels | replicates of y |
+
+The draws of `posterior::as_draws_df()` carry `mu[i]`, the mean
+function at each training row; `sigma` under the Gaussian model; and
+`cell_count` and `dimension_count`, the mean cells and mean active
+covariates per mean tessellation.
+
+## Correspondence with other implementations
+
+| Here | Paper | CRAN AddiVortes | BART `wbart` |
+|---|---|---|---|
+| `tessellations` | m | `m` | `ntree` |
+| `nu` | nu | `nu` | `sigdf` |
+| `q` | q | `q` | `sigquant` |
+| `k` | k | `k` | `k` |
+| `sigma_c` | sigma_c | `sd` | none |
+| `omega` | omega | `Omega` | none |
+| `lambda_c` | lambda_c | `LambdaRate` | none |
+| `burn_in` | | `mcmcBurnIn` | `nskip` |
+| `draws` | | `totalMCMCIter - mcmcBurnIn` | `ndpost` |
+| `thinning` | | | `keepevery` |
+
+The [related software](related-software.html) page adds dbarts and
+stochtree and says what each package fits that this one does not.
+
+## References
+
+Albert, J. H. and Chib, S. (1993). Bayesian analysis of binary and
+polychotomous response data. *Journal of the American Statistical
+Association* 88(422), 669-679. doi:10.1080/01621459.1993.10476321
+
+Chipman, H. A., George, E. I. and McCulloch, R. E. (2010). BART:
+Bayesian additive regression trees. *The Annals of Applied Statistics*
+4(1), 266-298. doi:10.1214/09-AOAS285
+
+Pratola, M. T., Chipman, H. A., George, E. I. and McCulloch, R. E.
+(2020). Heteroscedastic BART via multiplicative regression trees.
+*Journal of Computational and Graphical Statistics* 29(2), 405-417.
+doi:10.1080/10618600.2019.1677243
+
+Stone, A. and Gosling, J. P. (2025). AddiVortes: (Bayesian) additive
+Voronoi tessellations. *Journal of Computational and Graphical
+Statistics* 34(3), 859-871. doi:10.1080/10618600.2024.2414104

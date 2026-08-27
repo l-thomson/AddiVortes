@@ -35,6 +35,7 @@ Imports:
     stats
 Suggests:
     bayesplot,
+    ggplot2,
     callr,
     grDevices,
     knitr,
