@@ -40,8 +40,9 @@ progressr::handlers(global = TRUE)
 progressr::handlers("txtprogressbar")
 ```
 
-The bar stands until the fit is complete, since pooling the draws and
-the convergence summary run after the last sweep and report too.
+The bar stands until the fit is complete, since pooling the draws,
+saving the state and the convergence summary run after the last sweep
+and report too.
 
 ## The fit warns that the chains may not have converged
 

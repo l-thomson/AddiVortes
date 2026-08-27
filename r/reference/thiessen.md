@@ -181,14 +181,17 @@ reports it after
 and nothing is printed by default; `progressr::handlers(global = TRUE)`
 sets one for a whole session. The schedule raises one progression per
 sweep, to a maximum of a hundred over the sweeps of every chain, then
-pooling the draws and the convergence summary, so the report closes when
-the fit is complete rather than at the last sweep. Pooling predicts at
-every training row for every kept draw, so it costs about twice what the
-sweeps cost and carries their weight, and the bar is around a third of
-the way along when the sweeps end. Each phase names itself in a sticky
-message, which a terminal handler pushes above the bar rather than
-overwriting, so the phase that is running is named whatever handler is
-set. The draws do not depend on whether a handler is set.
+pooling the draws, saving the state and the convergence summary, so the
+report closes when the fit is complete rather than at the last sweep.
+The phases after the sweeps scale with the kept draws and run on one
+thread, while the sweeps scale with the training rows and run on
+`threads`, so their share of the bar is set from that ratio: the bar is
+most of the way along when the sweeps of a one-chain fit end, and about
+a third of the way for four chains on four threads at n = 200. Each
+phase names itself in a sticky message, which a terminal handler pushes
+above the bar rather than overwriting, so the phase that is running is
+named whatever handler is set. The draws do not depend on whether a
+handler is set.
 
 ## Persistence
 

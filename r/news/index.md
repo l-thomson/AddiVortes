@@ -114,13 +114,14 @@
 - Progress over the whole fit is signalled with progressr, so a session
   reports it after
   [`progressr::handlers()`](https://progressr.futureverse.org/reference/handlers.html)
-  and nothing is printed by default. The sweeps, pooling the draws and
-  the convergence summary each report, and each names itself in a sticky
-  message a terminal handler pushes above the bar, so the bar stands
-  until the fit is complete and the phase running is named. Pooling
-  costs about twice what the sweeps cost and carries their weight, so
-  the bar is around a third of the way along when the sweeps end. The
-  draws do not depend on whether a handler is set.
+  and nothing is printed by default. The sweeps, pooling the draws,
+  saving the state and the convergence summary each report, and each
+  names itself in a sticky message a terminal handler pushes above the
+  bar, so the bar stands until the fit is complete and the phase running
+  is named. The phases after the sweeps take a share of the bar set from
+  their cost against the sweeps’, which scale with the kept draws and
+  the training rows respectively. The draws do not depend on whether a
+  handler is set.
 - A fit is a plain R object, so
   [`saveRDS()`](https://rdrr.io/r/base/readRDS.html) writes one and a
   later session reads it without a refit. The fitted state lives on the

@@ -124,8 +124,9 @@ and nothing is printed until the session chooses a handler:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">progressr</span><span class="fu">::</span><span class="fu"><a href="https://progressr.futureverse.org/reference/handlers.html" class="external-link">handlers</a></span><span class="op">(</span>global <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span><span class="fu">progressr</span><span class="fu">::</span><span class="fu"><a href="https://progressr.futureverse.org/reference/handlers.html" class="external-link">handlers</a></span><span class="op">(</span><span class="st">"txtprogressbar"</span><span class="op">)</span></span></code></pre></div>
-<p>The bar stands until the fit is complete, since pooling the draws and
-the convergence summary run after the last sweep and report too.</p>
+<p>The bar stands until the fit is complete, since pooling the draws,
+saving the state and the convergence summary run after the last sweep
+and report too.</p>
 </div>
 <div class="section level2">
 <h2 id="the-fit-warns-that-the-chains-may-not-have-converged">The fit warns that the chains may not have converged<a class="anchor" aria-label="anchor" href="#the-fit-warns-that-the-chains-may-not-have-converged"></a>
