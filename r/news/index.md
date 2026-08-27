@@ -88,8 +88,10 @@
   surface; the sampler API with a worked censored-response imputation;
   troubleshooting; and related software. A precomputed article group for
   the experimental build, knitted by `tools/articles.sh` from an opt-in
-  build, opens with the catalogue and takes one case study per item. A
-  pkgdown site configuration groups the reference by surface.
+  build, opens with the catalogue and takes one case study per item, the
+  first on soft membership against SoftBart, scored through scoringRules
+  with the mixing of every method beside its accuracy. A pkgdown site
+  configuration groups the reference by surface.
 - [`thiessen_sampler()`](https://l-thomson.github.io/thiessen/r/reference/thiessen_sampler.md)
   (experimental) drives the core’s Gibbs loop one call at a time:
   `$step(n)`, `$keep()`, `$set_response()`, `$fitted_values()`,

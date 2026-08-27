@@ -83,7 +83,7 @@ pull request that added each item is
 | Ordinal outcome | outcome model | `thiessen(x, ordered)`, or [`ordinal_outcome()`](https://l-thomson.github.io/thiessen/r/reference/ordinal_outcome.md); `predict(type = "probs")` | known answer; SBC and Geweke |
 | Student-t outcome | outcome model | `thiessen_control(outcome = student_t_outcome(df = 4))`, or a grid `df = c(3, 6, 12)` | known answer; SBC and Geweke |
 | Laplace outcome | outcome model | `thiessen_control(outcome = laplace_outcome())` | known answer; SBC and Geweke |
-| Soft membership | membership rule | `geometry_params(membership = soft_membership())` | known answer; SBC and Geweke |
+| [Soft membership](https://l-thomson.github.io/thiessen/r/articles/soft-membership.md) | membership rule | `geometry_params(membership = soft_membership())` | known answer; SBC and Geweke |
 | Linear cell basis | cell basis | `term_params(cell = cell_params(basis = "linear"))` | known answer; SBC and Geweke |
 | DART inclusion | inclusion prior | `structure_params(inclusion = dart_inclusion())` | SBC and Geweke |
 | Weighted inclusion | inclusion prior | `structure_params(inclusion = weighted_inclusion(w))` | conformance; small SBC |

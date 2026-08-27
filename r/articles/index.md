@@ -49,6 +49,8 @@ These pages are precomputed from an opt-in build.
 
 - [The experimental build and the
   catalogue](https://l-thomson.github.io/thiessen/r/articles/experimental.md):
+- [Soft
+  membership](https://l-thomson.github.io/thiessen/r/articles/soft-membership.md):
 
 ### Help
 
