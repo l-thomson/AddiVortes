@@ -52,6 +52,7 @@ articles:
     each graduates. These pages are precomputed from an opt-in build.
   contents:
   - articles/experimental
+  - articles/soft-membership
 - title: Help
   navbar: Help
   contents:

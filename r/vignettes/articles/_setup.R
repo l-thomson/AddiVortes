@@ -39,18 +39,23 @@ friedman <- function(n, p = 10, sd = 1, seed, n_test = 500, contaminate = 0) {
   data
 }
 
-# A surface on the unit square with Gaussian noise of standard deviation
-# `sd`: sin(pi x1) cos(pi x2), or 2 x1 - x2 + 0.5 sin(2 pi x1) under
-# `f = "linear"`.
+# A surface on the unit square: sin(pi x1) cos(pi x2), or
+# 2 x1 - x2 + 0.5 sin(2 pi x1) under `f = "linear"`.
+surface_f <- function(x, f = c("sine", "linear")) {
+  f <- match.arg(f)
+  switch(f,
+    sine = sin(pi * x[, "x1"]) * cos(pi * x[, "x2"]),
+    linear = 2 * x[, "x1"] - x[, "x2"] + 0.5 * sin(2 * pi * x[, "x1"])
+  )
+}
+
+# The surface observed with Gaussian noise of standard deviation `sd`.
 smooth_surface <- function(n, sd = 0.1, seed, n_test = 500, f = c("sine", "linear")) {
   f <- match.arg(f)
   set.seed(seed)
   draw <- function(n) {
     x <- cbind(x1 = runif(n), x2 = runif(n))
-    truth <- switch(f,
-      sine = sin(pi * x[, "x1"]) * cos(pi * x[, "x2"]),
-      linear = 2 * x[, "x1"] - x[, "x2"] + 0.5 * sin(2 * pi * x[, "x1"])
-    )
+    truth <- surface_f(x, f)
     list(x = x, f = truth, y = truth + rnorm(n, sd = sd))
   }
   list(train = draw(n), test = draw(n_test))
@@ -100,35 +105,179 @@ ordinal_friedman <- function(n, p = 5, categories = 4, seed, n_test = 500) {
   list(train = train, test = test, cutpoints = cutpoints)
 }
 
+# Evaluates a fit and records its wall-clock as the attribute `seconds`.
+timed <- function(expr) {
+  start <- Sys.time()
+  fit <- expr
+  attr(fit, "seconds") <- as.numeric(Sys.time() - start, units = "secs")
+  fit
+}
+
 # One fit per seed for each named control, on the training rows.
 paired_fits <- function(data, controls, seeds) {
   lapply(controls, function(control) {
     lapply(seeds, function(seed) {
-      thiessen(data$train$x, data$train$y, control, seed = seed)
+      timed(thiessen(data$train$x, data$train$y, control, seed = seed))
     })
   })
 }
 
-# Held-out root mean squared error against the noise-free truth, the
-# coverage and mean width of the central predictive interval, and the
-# log score; the mean and standard error over the seeds.
-score <- function(fits, data, level = 0.95) {
-  one <- function(fit) {
-    interval <- predict(fit, data$test$x, interval = "prediction",
-                        level = level)
-    log_likelihood <- log_lik(fit, newdata = data$test$x, y = data$test$y)
-    c(rmse = sqrt(mean((interval[, "fit"] - data$test$f)^2)),
-      coverage = mean(data$test$y >= interval[, "lower"] &
-                        data$test$y <= interval[, "upper"]),
-      width = mean(interval[, "upper"] - interval[, "lower"]),
-      log_score = mean(log(colMeans(exp(log_likelihood)))))
+# SoftBart chains as one fit: one `softbart_regression()` run per seed,
+# on as many cores as there are seeds, pooled by the methods below the
+# way the chains of a thiessen fit are pooled. A forked worker cannot
+# hand its forest back, so each chain returns its draws of the mean at
+# the rows of `newdata`, and the fit predicts at those rows only.
+softbart_chains <- function(formula, data, newdata, seeds, ...) {
+  frame <- as.data.frame(newdata)
+  frame[[all.vars(formula)[1]]] <- 0
+  timed(structure(
+    list(
+      newdata = newdata,
+      chains = parallel::mclapply(seeds, function(seed) {
+        set.seed(seed)
+        fit <- SoftBart::softbart_regression(formula, data, frame, ..., verbose = FALSE)
+        list(mean = fit$mu_test, sigma = fit$sigma)
+      }, mc.cores = length(seeds))
+    ),
+    class = "softbart_chains"
+  ))
+}
+
+# The rows of `x` among the rows a SoftBart fit predicted at.
+softbart_rows <- function(fit, x) {
+  key <- function(m) apply(m, 1, paste, collapse = ",")
+  rows <- match(key(x), key(fit$newdata))
+  if (anyNA(rows)) stop("rows of `x` were not given as `newdata` to softbart_chains()")
+  rows
+}
+
+# The predictive distribution of a fit at the rows of `x` as a mixture of
+# normals with equal weights: a draws by rows matrix of the mean function
+# and one of the residual standard deviation. Every method the articles
+# score is reduced to this pair, so one scorer serves them all.
+predictive <- function(fit, x) UseMethod("predictive")
+
+predictive.thiessen <- function(fit, x) {
+  list(mean = predict(fit, x, type = "draws"),
+       sd = sqrt(predict(fit, x, type = "variance")))
+}
+
+predictive.softbart_chains <- function(fit, x) {
+  parts <- chains(fit, x)
+  list(mean = do.call(rbind, parts),
+       sd = do.call(rbind, lapply(seq_along(parts), function(k) {
+         matrix(fit$chains[[k]]$sigma, nrow(parts[[k]]), ncol(parts[[k]]))
+       })))
+}
+
+# The quantile of each row's mixture, by bisection on the mixture CDF.
+mixture_quantile <- function(p, m, s) {
+  lower <- apply(m - 8 * s, 1, min)
+  upper <- apply(m + 8 * s, 1, max)
+  for (step in seq_len(60)) {
+    mid <- (lower + upper) / 2
+    below <- rowMeans(pnorm(mid, m, s)) < p
+    lower[below] <- mid[below]
+    upper[!below] <- mid[!below]
   }
-  rows <- lapply(names(fits), function(name) {
-    scores <- t(vapply(fits[[name]], one, numeric(4)))
-    data.frame(model = name, metric = colnames(scores),
-               mean = colMeans(scores),
-               se = apply(scores, 2, sd) / sqrt(nrow(scores)),
-               row.names = NULL)
+  (lower + upper) / 2
+}
+
+# Held-out scores of one predictive distribution: the root mean squared
+# error of the posterior mean against the noise-free truth, the coverage
+# and mean width of the central predictive interval, and the CRPS and the
+# log score of the response, exact for the mixture (scoringRules). The
+# mixture is thinned to at most 400 draws, since the CRPS of a mixture
+# costs the square of its size.
+score_one <- function(p, data, level = 0.95) {
+  keep <- unique(round(seq(1, nrow(p$mean), length.out = min(nrow(p$mean), 400))))
+  m <- t(p$mean[keep, , drop = FALSE])
+  s <- t(p$sd[keep, , drop = FALSE])
+  y <- data$test$y
+  lower <- mixture_quantile((1 - level) / 2, m, s)
+  upper <- mixture_quantile((1 + level) / 2, m, s)
+  c(rmse = sqrt(mean((colMeans(p$mean) - data$test$f)^2)),
+    coverage = mean(y >= lower & y <= upper),
+    width = mean(upper - lower),
+    crps = mean(scoringRules::crps_mixnorm(y, m, s)),
+    log_score = -mean(scoringRules::logs_mixnorm(y, m, s)))
+}
+
+# One row per fit and metric for every named list of fits. A method with
+# no sampling variation is passed as a list of one fit.
+score <- function(fits, data, level = 0.95) {
+  rows <- lapply(names(fits), function(model) {
+    per_fit <- lapply(seq_along(fits[[model]]), function(i) {
+      scores <- score_one(predictive(fits[[model]][[i]], data$test$x), data, level)
+      data.frame(model = model, fit = i, metric = names(scores), value = unname(scores))
+    })
+    do.call(rbind, per_fit)
   })
+  scores <- do.call(rbind, rows)
+  scores$model <- factor(scores$model, names(fits))
+  scores$metric <- factor(scores$metric, c("rmse", "coverage", "width", "crps", "log_score"))
+  scores
+}
+
+# The mean over fits with its standard error in parentheses, one row per
+# model; a model with one fit shows the value alone.
+score_table <- function(scores) {
+  cell <- function(value) {
+    if (length(value) == 1) return(sprintf("%.3f", value))
+    sprintf("%.3f (%.3f)", mean(value), sd(value) / sqrt(length(value)))
+  }
+  wide <- tapply(scores$value, scores[c("model", "metric")], cell)
+  table <- data.frame(model = rownames(wide), as.data.frame.matrix(wide), row.names = NULL)
+  names(table) <- c("model", "RMSE", "coverage", "width", "CRPS", "log score")
+  table
+}
+
+# Held-out root mean squared error of one fit against the truth.
+rmse <- function(fit, data) {
+  sqrt(mean((colMeans(predictive(fit, data$test$x)$mean) - data$test$f)^2))
+}
+
+# The draws of the mean function at the rows of `x`, one draws by rows
+# matrix per chain. A thiessen fit keeps its pooled draws in chain order.
+chains <- function(fit, x) UseMethod("chains")
+
+chains.thiessen <- function(fit, x) {
+  draws <- predict(fit, x, type = "draws")
+  iterations <- nrow(draws) / fit$n_chains
+  lapply(seq_len(fit$n_chains), function(k) {
+    draws[(k - 1) * iterations + seq_len(iterations), , drop = FALSE]
+  })
+}
+
+chains.softbart_chains <- function(fit, x) {
+  rows <- softbart_rows(fit, x)
+  lapply(fit$chains, function(chain) chain$mean[, rows, drop = FALSE])
+}
+
+# The convergence of one fit over the mean function at the rows of `x`:
+# the largest and median split R-hat and the smallest and median bulk
+# effective sample size over those rows (Vehtari and others 2021), the
+# wall-clock of the fit, and the smallest effective sample size per
+# second.
+mixing <- function(fit, x) {
+  by_chain <- chains(fit, x)
+  draws <- nrow(by_chain[[1]])
+  array <- aperm(
+    array(unlist(by_chain), dim = c(draws, ncol(by_chain[[1]]), length(by_chain))),
+    c(1, 3, 2)
+  )
+  summary <- posterior::summarise_draws(posterior::as_draws_array(array), "rhat", "ess_bulk")
+  seconds <- attr(fit, "seconds")
+  data.frame(
+    `largest R-hat` = max(summary$rhat), `median R-hat` = median(summary$rhat),
+    `smallest ESS` = min(summary$ess_bulk), `median ESS` = median(summary$ess_bulk),
+    seconds = seconds, `ESS per second` = min(summary$ess_bulk) / seconds,
+    check.names = FALSE
+  )
+}
+
+# One row of `mixing()` per named fit.
+mixing_table <- function(fits, x) {
+  rows <- lapply(names(fits), function(name) cbind(method = name, mixing(fits[[name]], x)))
   do.call(rbind, rows)
 }
