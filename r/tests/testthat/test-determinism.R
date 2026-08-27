@@ -35,7 +35,8 @@ test_that("the draws equal the core's committed chain", {
   fixture <- core_fixture()
   stored <- stored_chain()
 
-  fit <- thiessen(fixture$x, fixture$y, core_control(), seed = CORE_SEED)
+  fit <- thiessen(fixture$x, fixture$y, core_control(), seed = CORE_SEED,
+                  chains = 1)
 
   expect_identical(fit$n_draws, nrow(stored))
   expect_identical(core_sigma(fit_state(fit)), stored[, 1])
@@ -55,7 +56,7 @@ test_that("the probit draws equal the core's committed chain", {
   labels <- as.double(fixture$y >= threshold)
 
   fit <- thiessen(fixture$x, labels, core_control(outcome = probit_outcome()),
-                  seed = CORE_SEED)
+                  seed = CORE_SEED, chains = 1)
 
   expect_identical(fit$n_draws, nrow(stored))
   expect_identical(
@@ -75,7 +76,7 @@ test_that("the heteroscedastic draws equal the core's committed chain", {
   fit <- thiessen(
     fixture$x, y,
     core_control(variance_params = term_params(tessellations = 5)),
-    seed = CORE_SEED
+    seed = CORE_SEED, chains = 1
   )
 
   expect_identical(fit$n_draws, nrow(stored))

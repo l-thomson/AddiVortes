@@ -48,8 +48,8 @@ def test_an_unsupported_type_is_rejected():
 def test_the_same_integer_gives_the_same_draws(gaussian_fixture):
     x, y = gaussian_fixture
 
-    first = Model(**SMALL).fit(x, y, random_state=3)
-    second = Model(**SMALL).fit(x, y, random_state=3)
+    first = Model(**SMALL).fit(x, y, random_state=3, n_chains=1)
+    second = Model(**SMALL).fit(x, y, random_state=3, n_chains=1)
 
     np.testing.assert_array_equal(first.predict_draws(x), second.predict_draws(x))
     assert first.random_state == second.random_state == 3
@@ -58,8 +58,8 @@ def test_the_same_integer_gives_the_same_draws(gaussian_fixture):
 def test_different_seeds_give_different_draws(gaussian_fixture):
     x, y = gaussian_fixture
 
-    first = Model(**SMALL).fit(x, y, random_state=3)
-    second = Model(**SMALL).fit(x, y, random_state=4)
+    first = Model(**SMALL).fit(x, y, random_state=3, n_chains=1)
+    second = Model(**SMALL).fit(x, y, random_state=4, n_chains=1)
 
     assert not np.array_equal(first.predict_draws(x), second.predict_draws(x))
 
@@ -67,6 +67,6 @@ def test_different_seeds_give_different_draws(gaussian_fixture):
 def test_the_resolved_seed_is_stored(gaussian_fixture):
     x, y = gaussian_fixture
 
-    fitted = Model(**SMALL).fit(x, y, random_state=np.random.default_rng(0))
+    fitted = Model(**SMALL).fit(x, y, random_state=np.random.default_rng(0), n_chains=1)
 
     assert fitted.random_state == _resolve_seed(np.random.default_rng(0))

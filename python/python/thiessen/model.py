@@ -149,7 +149,7 @@ class Model(Params):
         X: Any,
         y: Any,
         random_state: SeedLike = None,
-        n_chains: int = 1,
+        n_chains: int = 4,
         n_threads: int = 1,
     ) -> FittedModel:
         """Fit the model to `X` and `y`.
@@ -175,7 +175,7 @@ class Model(Params):
         random_state : int, numpy.random.Generator, numpy.random.RandomState or None
             The seed. `None` draws fresh entropy. The resolved seed is on
             the returned object.
-        n_chains : int, default=1
+        n_chains : int, default=4
             The number of chains to run. Each chain has its own seed,
             derived from the resolved seed in the core, and the draws of
             the chains are pooled.

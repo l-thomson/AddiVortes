@@ -169,7 +169,8 @@ test_that("a control object is required", {
   fixture <- small_fixture()
 
   expect_error(
-    thiessen(fixture$x, fixture$y, control = list(tessellations = 5)),
+    thiessen(fixture$x, fixture$y, control = list(tessellations = 5),
+             chains = 1),
     class = "thiessen_error"
   )
 })
@@ -181,7 +182,7 @@ test_that("a fit resolves every default the control-surface article prints", {
   resolved <- thiessen(
     fixture$x, fixture$y,
     thiessen_control(general_params = general_params(burn_in = 1, draws = 1)),
-    seed = 1
+    seed = 1, chains = 1
   )$control
 
   expect_true(is.numeric(resolved$mean_params$tessellations))

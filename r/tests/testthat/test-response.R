@@ -6,8 +6,9 @@ test_that("the response selects the family where the control names none", {
   fixture <- small_fixture()
   labels <- factor(fixture$x[, 2] > 0.3)
 
-  gaussian <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
-  probit <- thiessen(fixture$x, labels, small_control(), seed = 1)
+  gaussian <- thiessen(fixture$x, fixture$y, small_control(), seed = 1,
+                       chains = 1)
+  probit <- thiessen(fixture$x, labels, small_control(), seed = 1, chains = 1)
 
   expect_null(small_control()$outcome)
   expect_identical(attr(gaussian$control$outcome, "kind"), "gaussian")
@@ -23,7 +24,7 @@ test_that("a named family that disagrees with the response is an error", {
   condition <- rlang::catch_cnd(
     thiessen(
       fixture$x, ordered, small_control(outcome = gaussian_outcome()),
-      seed = 1
+      seed = 1, chains = 1
     )
   )
 
@@ -33,7 +34,7 @@ test_that("a named family that disagrees with the response is an error", {
   expect_error(
     thiessen(
       fixture$x, fixture$y, small_control(outcome = probit_outcome()),
-      seed = 1
+      seed = 1, chains = 1
     ),
     class = "thiessen_error"
   )
@@ -46,7 +47,7 @@ test_that("a Surv of another type is rejected by name", {
   y <- survival::Surv(rep(0, n), exp(fixture$y), rep(1, n), type = "counting")
 
   expect_error(
-    thiessen(fixture$x, y, small_control(), seed = 1),
+    thiessen(fixture$x, y, small_control(), seed = 1, chains = 1),
     "counting",
     class = "thiessen_error"
   )
@@ -58,7 +59,7 @@ test_that("a factor of more than two unordered levels is rejected", {
   y <- factor(c("a", "b", "c")[(seq_len(n) %% 3) + 1])
 
   expect_error(
-    thiessen(fixture$x, y, small_control(), seed = 1),
+    thiessen(fixture$x, y, small_control(), seed = 1, chains = 1),
     "ordered",
     class = "thiessen_error"
   )

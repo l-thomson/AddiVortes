@@ -52,7 +52,8 @@ test_that("a fit signals every progression it requests", {
   )
 
   expect_identical(progress_updates(control), 100L)
-  seen <- progressions(thiessen(fixture$x, fixture$y, control, seed = 1))
+  seen <- progressions(thiessen(fixture$x, fixture$y, control, seed = 1,
+                                chains = 1))
   expect_identical(sweep_updates(seen), 100L)
   expect_identical(total_advance(seen), progress_steps(control))
 })
@@ -62,7 +63,7 @@ test_that("a fit shorter than a hundred sweeps signals one per sweep", {
 
   expect_identical(progress_updates(small_control()), 30L)
   seen <- progressions(
-    thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+    thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
   )
   expect_identical(sweep_updates(seen), 30L)
 })
@@ -86,7 +87,7 @@ test_that("the sweeps leave the budget the phases after them need", {
   sweeps <- progress_updates(small_control())
 
   seen <- progressions(
-    thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+    thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
   )
 
   expect_identical(sweep_updates(seen), sweeps)
@@ -118,7 +119,7 @@ test_that("every phase names itself in a sticky progression", {
   fixture <- small_fixture()
 
   seen <- progressions(
-    thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+    thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
   )
   named <- seen[nzchar(seen$message), ]
 
@@ -199,7 +200,7 @@ test_that("a fit runs under a handler", {
   fixture <- small_fixture()
 
   fit <- progressr::with_progress(
-    thiessen(fixture$x, fixture$y, small_control(), seed = 1),
+    thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1),
     handlers = progressr::handler_void()
   )
 
@@ -209,7 +210,8 @@ test_that("a fit runs under a handler", {
 test_that("nothing is printed without a handler", {
   fixture <- small_fixture()
 
-  expect_silent(thiessen(fixture$x, fixture$y, small_control(), seed = 1))
+  expect_silent(thiessen(fixture$x, fixture$y, small_control(), seed = 1,
+                         chains = 1))
 })
 
 test_that("a sampler assembles a fit without a progressor", {
@@ -225,9 +227,9 @@ test_that("a sampler assembles a fit without a progressor", {
 test_that("reporting progress does not change the draws", {
   fixture <- small_fixture()
 
-  plain <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  plain <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
   reported <- progressr::with_progress(
-    thiessen(fixture$x, fixture$y, small_control(), seed = 1),
+    thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1),
     handlers = progressr::handler_void()
   )
 

@@ -23,7 +23,7 @@ def _driven(x, y, **kwargs):
 def test_a_driven_fit_matches_fit_bit_for_bit(gaussian_fixture):
     x, y = gaussian_fixture
 
-    through_fit = Model(**SMALL).fit(x, y, random_state=1)
+    through_fit = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
     through_sampler = _driven(x, y, random_state=1).finish()
 
     np.testing.assert_array_equal(
@@ -34,7 +34,7 @@ def test_a_driven_fit_matches_fit_bit_for_bit(gaussian_fixture):
 
 def test_thinning_is_the_caller_loop(gaussian_fixture):
     x, y = gaussian_fixture
-    thinned = Model(thinning=3, **SMALL).fit(x, y, random_state=1)
+    thinned = Model(thinning=3, **SMALL).fit(x, y, random_state=1, n_chains=1)
 
     sampler = Sampler(x, y, mean_params=TermParams(tessellations=8), random_state=1)
     sampler.step(10)

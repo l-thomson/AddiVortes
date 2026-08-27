@@ -14,8 +14,8 @@ thiessen(x, ...)
   y,
   control = thiessen_control(),
   seed = NULL,
-  chains = 1,
-  threads = 1,
+  chains = 4,
+  threads = getOption("mc.cores", 1L),
   ...
 )
 
@@ -24,8 +24,8 @@ thiessen(x, ...)
   y,
   control = thiessen_control(),
   seed = NULL,
-  chains = 1,
-  threads = 1,
+  chains = 4,
+  threads = getOption("mc.cores", 1L),
   ...
 )
 
@@ -34,8 +34,8 @@ thiessen(x, ...)
   data,
   control = thiessen_control(),
   seed = NULL,
-  chains = 1,
-  threads = 1,
+  chains = 4,
+  threads = getOption("mc.cores", 1L),
   ...
 )
 }
@@ -61,12 +61,17 @@ draws for a given package version and platform.}
 \item{chains}{The number of chains to run, a whole number. Each chain
 has its own seed, derived from \code{seed} in the core, and the draws of the
 chains are pooled. Two or more chains give the convergence
-diagnostics; one chain does not.}
+diagnostics; one chain does not. Default 4, the number Vehtari and
+others (2021) recommend and the Stan default.}
 
 \item{threads}{The number of threads, a whole number. The chains are
 spread over at most this many threads, each chain on one thread with
 its own generator, so the draws do not depend on it; \code{predict()} on
-the fit splits the rows over the same number. Default 1.}
+the fit splits the rows over the same number. The default reads
+\code{getOption("mc.cores", 1L)} when the fit is called, as Stan's
+interfaces do, so \code{options(mc.cores = 4)} is the one-line opt-in and
+a session that sets nothing runs on one thread, where a default fit
+is four chains long.}
 
 \item{formula}{A two-sided formula. The left side names the response and
 the right side the covariates, \code{.} for every remaining column.}
@@ -130,6 +135,18 @@ of sigma and of the mean function at up to twenty training rows
 \code{summary()} repeat the warning, where R-hat exceeds 1.01 or an effective
 sample size falls below 400 (Vehtari and others, 2021). A fit of one
 chain says so instead.
+
+A default fit runs four chains of 200 burn-in and 1000 draws each, on
+\code{getOption("mc.cores", 1L)} threads, so on one thread it costs four
+chains; \code{options(mc.cores = 4)} runs the chains on four cores for the
+same draws, and the fit then takes less than half the one-thread time
+(about 45 per cent at n = 200 on four cores of a 2025 laptop; pooling
+the draws and the diagnostics run on one thread), so it costs under
+two chains rather than four. On Friedman #1 with n = 200 and p = 10 the
+smallest effective sample size over the monitored points is about 100
+(threshold 400) and the largest R-hat about 1.05 (threshold 1.01), so
+the default fit warns. More draws per chain, \code{general_params(draws = )},
+is the answer; \code{thinning} is not.
 }
 \section{Progress}{
 
@@ -173,7 +190,7 @@ convergence warning fires on any short schedule, so silencing it
 deliberately is a routine need:
 
 \if{html}{\out{<div class="sourceCode">}}\preformatted{withCallingHandlers(
-  fit <- thiessen(x, y, control, chains = 2),
+  fit <- thiessen(x, y, control),
   thiessen_warning = function(condition) \{
     invokeRestart("muffleWarning")
   \}
@@ -192,8 +209,9 @@ control <- thiessen_control(
 fit <- thiessen(x, y, control, seed = 1)
 fit
 
-# Two chains add the convergence diagnostics; one chain reports none.
-thiessen(x, y, control, seed = 1, chains = 2)
+# The default four chains carry the convergence diagnostics, and warn on
+# a schedule this short; one chain reports none.
+thiessen(x, y, control, seed = 1, chains = 1)
 
 frame <- data.frame(y = y, a = x[, 1], b = factor(x[, 2] > 0))
 thiessen(y ~ a + b, frame, control, seed = 1)

@@ -96,7 +96,7 @@ test_that("the factor encoding is the shared fixture", {
       tessellations = 4,
       general_params = general_params(burn_in = 2, draws = 2)
     ),
-    seed = 1
+    seed = 1, chains = 1
   )
 
   expected <- cbind(

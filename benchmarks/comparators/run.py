@@ -11,11 +11,16 @@ without it:
   throttling, another process waking. In a fixed order that drift is
   confounded with the method; shuffled, it becomes noise, and fixing the
   shuffle seed keeps the run reproducible.
-- One thread per cell, pinned through the environment of every library
-  that reads a thread count. A comparison where one method uses eight
-  cores and another one is a comparison of thread counts.
+- A thread count per cell, set in the environment of every library that
+  reads one there and passed to every method explicitly by its adapter.
+  One on the main and scaling grids, so the tables compare work per
+  core: a comparison where one method uses eight cores and another one
+  is a comparison of thread counts. The cores grid runs the same cells
+  at one, two and four threads and is reported apart, as wall-clock.
 - A user-against-elapsed guard. If a cell's user time exceeds its elapsed
-  time, the pinning did not take and the cell's timing is void.
+  time times its thread count, by more than the 5 per cent slack that
+  process start-up and the runtime's own threads take, the pinning did
+  not take and the cell's timing is void.
 - A held-out accuracy guard. A method that is fast because it is wrong is
   the failure mode a timing table cannot see; a cell whose held-out error
   is far worse than the best method's on the same data is flagged.
@@ -24,7 +29,9 @@ without it:
 
 Options:
 
-    --grid main|scaling         the main comparison or the scaling sweeps
+    --grid main|scaling|cores   the main comparison, the scaling sweeps,
+                                or the main sizes at one, two and four
+                                threads
     --methods NAME [NAME ...]   only these methods
     --datasets NAME [NAME ...]  only these processes or real datasets
     --sizes N,P [N,P ...]       only these sizes
@@ -62,6 +69,7 @@ from cells import (  # noqa: E402
     R_METHODS,
     SEEDS,
     Cell,
+    cores_grid,
     grid,
     scaling_grid,
 )
@@ -75,17 +83,30 @@ ROOT = HERE.parents[1]
 #: metadata.
 SHUFFLE_SEED = 20260825
 
-#: Every environment variable a library in this comparison reads for a
-#: thread count. Set to one, so the tables compare methods and not
-#: thread counts.
-SINGLE_THREAD = {
-    "OMP_NUM_THREADS": "1",
-    "OPENBLAS_NUM_THREADS": "1",
-    "MKL_NUM_THREADS": "1",
-    "NUMEXPR_NUM_THREADS": "1",
-    "VECLIB_MAXIMUM_THREADS": "1",
-    "RAYON_NUM_THREADS": "1",
-}
+#: The slack the user-against-elapsed guard allows: interpreter start-up,
+#: the runtime's own threads and the parent's bookkeeping run beside the
+#: fit, and a cell that stays within it ran on its thread count.
+THREAD_SLACK = 1.05
+
+
+def thread_env(cores: int) -> dict[str, str]:
+    """The environment that sets every library's thread count to `cores`.
+
+    These are the variables the numerical libraries in this comparison
+    read; the methods that take a thread count as an argument (dbarts,
+    stochtree, this library) get it from `COMPARATOR_THREADS` through
+    their adapter, because none of them reads `OMP_NUM_THREADS`.
+    """
+    count = str(cores)
+    return {
+        "OMP_NUM_THREADS": count,
+        "OPENBLAS_NUM_THREADS": count,
+        "MKL_NUM_THREADS": count,
+        "NUMEXPR_NUM_THREADS": count,
+        "VECLIB_MAXIMUM_THREADS": count,
+        "COMPARATOR_THREADS": count,
+    }
+
 
 #: A cell whose held-out error is worse than this multiple of the best on
 #: the same data is flagged: fast because wrong is the failure a timing
@@ -139,6 +160,7 @@ def command(cell: Cell, train: Path, test: Path, out: Path) -> list[str]:
             str(CHAINS),
             str(cell.ensemble),
             str(DECLARED_ROWS),
+            str(cell.cores),
         ]
     module = {"thiessen": "thiessen_py", "xgboost": "xgboost_py"}.get(
         cell.method, f"{cell.method}_py"
@@ -154,15 +176,16 @@ def command(cell: Cell, train: Path, test: Path, out: Path) -> list[str]:
     ]
 
 
-def run_cell(cell: Cell, out: Path) -> dict | None:
+def run_cell(cell: Cell, out: Path, grid: str) -> dict | None:
     """Run one cell in its own process; return its metadata."""
     directory = out / cell.id
     train, test = dataset_files(cell, out)
     environment = {
         **os.environ,
-        **SINGLE_THREAD,
+        **thread_env(cell.cores),
         "PYTHONPATH": str(HERE),
         "COMPARATOR_ENSEMBLE": str(cell.ensemble),
+        "COMPARATOR_GRID": grid,
     }
     started = time.perf_counter()
     invocation = command(cell, train, test, directory)
@@ -174,7 +197,10 @@ def run_cell(cell: Cell, out: Path) -> dict | None:
         return None
     meta = json.loads((directory / "meta.json").read_text())
     scale = 1 if sys.platform == "darwin" else 1024
+    meta["cores"] = cell.cores
     meta["peak_rss_bytes"] = usage.ru_maxrss * scale
+    # `wait4` reports the child and every descendant it reaped, so the
+    # forked workers of the R adapters count towards the guard.
     meta["user_seconds"] = usage.ru_utime
     meta["system_seconds"] = usage.ru_stime
     meta["elapsed_seconds"] = elapsed
@@ -192,7 +218,7 @@ def run_cells(cells: list[Cell], args: argparse.Namespace) -> list[dict]:
             meta = json.loads(done.read_text())
         else:
             print(f"[{index}/{len(cells)}] {cell.id}", file=sys.stderr)
-            meta = run_cell(cell, args.out)
+            meta = run_cell(cell, args.out, args.grid)
         if meta is None:
             continue
         meta.update(
@@ -203,6 +229,7 @@ def run_cells(cells: list[Cell], args: argparse.Namespace) -> list[dict]:
                 "n": cell.n,
                 "p": cell.p,
                 "m": cell.ensemble,
+                "cores": cell.cores,
                 "seed": cell.seed,
                 "shuffle_seed": SHUFFLE_SEED,
                 "schedule": f"{BURN_IN}+{DRAWS}x{CHAINS}@{cell.ensemble}",
@@ -220,7 +247,14 @@ def underpowered(rows: list[dict], seen: dict[str, Cell]) -> list[Cell]:
     """
     groups: dict[tuple, list[dict]] = {}
     for row in rows:
-        key = (row["method"], row["dataset"], row["n"], row["p"], row["m"])
+        key = (
+            row["method"],
+            row["dataset"],
+            row["n"],
+            row["p"],
+            row["m"],
+            row["cores"],
+        )
         groups.setdefault(key, []).append(row)
     extra = []
     for members in groups.values():
@@ -233,7 +267,15 @@ def underpowered(rows: list[dict], seen: dict[str, Cell]) -> list[Cell]:
             latest = max(members, key=lambda r: r["seed"])
             done = seen[latest["cell"]]
             extra.append(
-                Cell(done.method, done.dataset, done.n, done.p, done.seed + 1, done.m)
+                Cell(
+                    done.method,
+                    done.dataset,
+                    done.n,
+                    done.p,
+                    done.seed + 1,
+                    done.m,
+                    done.cores,
+                )
             )
     return extra
 
@@ -242,7 +284,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=ROOT / "target" / "comparators")
     parser.add_argument("--csv", type=Path)
-    parser.add_argument("--grid", choices=("main", "scaling"), default="main")
+    parser.add_argument("--grid", choices=("main", "scaling", "cores"), default="main")
     parser.add_argument("--methods", nargs="+", default=list(METHODS))
     parser.add_argument("--datasets", nargs="+")
     parser.add_argument("--sizes", nargs="+")
@@ -252,6 +294,8 @@ def main() -> None:
 
     if args.grid == "scaling":
         cells = scaling_grid(tuple(m for m in args.methods if m != "xgboost"))
+    elif args.grid == "cores":
+        cells = cores_grid(tuple(m for m in args.methods if m != "xgboost"))
     else:
         cells = grid(tuple(args.methods))
     if args.datasets:
@@ -269,7 +313,7 @@ def main() -> None:
     # its numbers are dropped.
     warmup = cells[0]
     print(f"warm-up: {warmup.id}, discarded", file=sys.stderr)
-    run_cell(warmup, args.out / "warmup")
+    run_cell(warmup, args.out / "warmup", args.grid)
 
     args.out.mkdir(parents=True, exist_ok=True)
     seen = {cell.id: cell for cell in cells}
@@ -288,7 +332,10 @@ def main() -> None:
             rows.extend(run_cells(extra, args))
 
     table = pd.DataFrame(rows)
-    table["threads_ok"] = table["user_seconds"] <= table["elapsed_seconds"] * 1.05
+    table["threads_ok"] = (
+        table["user_seconds"]
+        <= table["elapsed_seconds"] * table["cores"] * THREAD_SLACK
+    )
     best = table.groupby("data")["rmse"].transform("min")
     table["accuracy_ok"] = table["rmse"] <= best * ACCURACY_GUARD
     destination = args.csv or args.out / "comparison.csv"
@@ -296,7 +343,10 @@ def main() -> None:
     print(f"wrote {destination}", file=sys.stderr)
 
     for flag, message in (
-        ("threads_ok", "single-thread pinning did not take"),
+        (
+            "threads_ok",
+            "thread pinning did not take: user time above elapsed times cores",
+        ),
         ("accuracy_ok", "held-out error far worse than the best on the same data"),
     ):
         bad = table[~table[flag]]

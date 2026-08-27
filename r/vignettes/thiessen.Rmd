@@ -122,9 +122,12 @@ identical(predict(readRDS(path), d), predict(fit, d))
 
 The established generics are available: `posterior::as_draws_df()`,
 `summary()`, and the rstantools generics `posterior_predict()`,
-`posterior_epred()`, `log_lik()` and `predictive_interval()`. Two or
-more `chains` add rank-normalised split R-hat and effective sample
-sizes, and a fit warns where they cross the usual thresholds.
+`posterior_epred()`, `log_lik()` and `predictive_interval()`. The
+default four `chains` carry rank-normalised split R-hat and effective
+sample sizes, and a fit warns where they cross the usual thresholds, as
+every fit in this article does at its short schedule. The chains run on
+`getOption("mc.cores", 1L)` threads, so `options(mc.cores = 4)` runs
+them on four cores for the same draws.
 
 ```{r}
 summary(fit)
@@ -185,21 +188,26 @@ That is the default, not a hang. See Progress above.
 
 ### R-hat or an effective sample size warns
 
-`summary()` reports both. More draws is the first answer, then more
-chains; `thinning` reduces the stored draws without adding information,
-so it is not the remedy for a low effective sample size. The warning
-fires on any short schedule, this article's included, and carries the
-condition class `thiessen_warning`, so it can be silenced by class
-rather than by message:
+`summary()` reports both. More draws per chain,
+`general_params(draws = )`, is the first answer, then more chains;
+`thinning` reduces the stored draws without adding information, so it
+is not the remedy for a low effective sample size. The default schedule
+is itself short for the thresholds: on Friedman #1 with n = 200 and
+p = 10 a default fit reaches a smallest effective sample size of about
+100 against the threshold of 400 and a largest R-hat of about 1.05
+against 1.01, so it warns. The warning fires on any short schedule,
+this article's included, and carries the condition class
+`thiessen_warning`, so it can be silenced by class rather than by
+message:
 
 ```{r}
 withCallingHandlers(
-  two <- thiessen(y ~ ., d, control, chains = 2, seed = 1),
+  quiet <- thiessen(y ~ ., d, control, seed = 1),
   thiessen_warning = function(condition) {
     invokeRestart("muffleWarning")
   }
 )
-two$n_chains
+quiet$n_chains
 ```
 
 ### A saved fit will not load

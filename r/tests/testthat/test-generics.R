@@ -1,13 +1,14 @@
 gaussian_fit <- function() {
   fixture <- small_fixture()
-  thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
 }
 
 probit_fit <- function() {
   fixture <- small_fixture()
   labels <- as.double(fixture$y >= stats::median(fixture$y))
   thiessen(
-    fixture$x, labels, small_control(outcome = probit_outcome()), seed = 1
+    fixture$x, labels, small_control(outcome = probit_outcome()), seed = 1,
+    chains = 1
   )
 }
 
@@ -38,7 +39,8 @@ test_that("the heteroscedastic model exposes no sigma variable", {
   fixture <- small_fixture()
   fit <- thiessen(
     fixture$x, fixture$y,
-    small_control(variance_params = term_params(tessellations = 4)), seed = 1
+    small_control(variance_params = term_params(tessellations = 4)), seed = 1,
+    chains = 1
   )
 
   expect_false("sigma" %in% posterior::variables(posterior::as_draws_df(fit)))
@@ -145,7 +147,7 @@ test_that("log_lik on new rows needs the response", {
 test_that("log_lik takes the response from a formula fit's newdata", {
   fixture <- small_fixture()
   frame <- data.frame(y = fixture$y, a = fixture$x[, 1], b = fixture$x[, 2])
-  fit <- thiessen(y ~ a + b, frame, small_control(), seed = 1)
+  fit <- thiessen(y ~ a + b, frame, small_control(), seed = 1, chains = 1)
 
   expect_identical(dim(log_lik(fit, frame)), c(20L, 40L))
 })

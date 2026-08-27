@@ -91,6 +91,44 @@ print("variance at low x: ", round(float(variance[order[:20]].mean()), 4))
 print("variance at high x:", round(float(variance[order[-20:]].mean()), 4))
 ```
 
+## Chains and threads
+
+`fit` runs `n_chains=4` chains by default, each with a seed the core derives
+from the resolved seed, and pools their draws; four is the number Vehtari and
+others (2021) recommend for the R-hat and effective sample size checks a fit
+of two or more chains makes. The chains run on `n_threads=1` threads by
+default, the scikit-learn convention, so a call that sets nothing pays four
+chains on one core. `n_threads=os.cpu_count()` runs the chains on
+every core for the same draws, which do not depend on the thread count; on
+Friedman #1 with n = 200 and p = 10 the fit is then about 2.7 times faster on
+four cores of a 2025 laptop, so it costs about one and a half chains rather
+than four.
+
+The default schedule is short for the thresholds: on that data a default fit
+reaches a smallest effective sample size of about 290 against the threshold
+of 400 and a largest R-hat of about 1.014 against 1.01, so it warns. More
+draws per chain, `Model(draws=)`, is the answer; `thinning` is not.
+
+```python exec="on" source="above" result="text"
+import os
+import warnings
+
+import numpy as np
+from thiessen import Model, TermParams
+
+rng = np.random.default_rng(0)
+x = rng.uniform(size=(120, 2))
+y = x[:, 0] ** 2 + rng.normal(scale=0.1, size=120)
+
+model = Model(mean_params=TermParams(tessellations=25), burn_in=50, draws=100)
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    fitted = model.fit(x, y, random_state=1, n_threads=os.cpu_count())
+print("chains:", fitted.n_chains)
+print("draws:", fitted.n_draws)
+print("warned:", any("converged" in str(w.message) for w in caught))
+```
+
 ## Column metrics
 
 The geometry's `metric` (`TermParams(geometry=GeometryParams(metric=[...]))`)

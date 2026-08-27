@@ -24,7 +24,7 @@ test_that("the posterior mean recovers a known signal within tolerance", {
   data <- recovery_fixture()
   y <- data$f + 0.1 * sin(seq_along(data$f))
 
-  fit <- thiessen(data$x, y, recovery_control(), seed = 1)
+  fit <- thiessen(data$x, y, recovery_control(), seed = 1, chains = 1)
 
   expect_lt(recovery_rmse(fit, data$f), 0.1)
   expect_true(all(is.finite(fitted(fit))))
@@ -37,7 +37,7 @@ test_that("different seeds agree within tolerance", {
   y <- data$f + 0.1 * sin(seq_along(data$f))
 
   fits <- lapply(1:3, function(seed) {
-    thiessen(data$x, y, recovery_control(), seed = seed)
+    thiessen(data$x, y, recovery_control(), seed = seed, chains = 1)
   })
 
   means <- vapply(fits, fitted, numeric(nrow(data$x)))
@@ -51,8 +51,9 @@ test_that("noise at machine precision does not move the posterior mean far", {
   jitter <- .Machine$double.eps * (1 + abs(data$x)) *
     rep(c(1, -1), length.out = length(data$x))
 
-  plain <- thiessen(data$x, y, recovery_control(), seed = 1)
-  moved <- thiessen(data$x + jitter, y, recovery_control(), seed = 1)
+  plain <- thiessen(data$x, y, recovery_control(), seed = 1, chains = 1)
+  moved <- thiessen(data$x + jitter, y, recovery_control(), seed = 1,
+                    chains = 1)
 
   expect_lt(max(abs(fitted(moved) - fitted(plain))), 0.15)
 })
@@ -61,7 +62,7 @@ test_that("a response far from zero keeps its scale", {
   data <- recovery_fixture()
   y <- 1000 + 50 * data$f + 5 * sin(seq_along(data$f))
 
-  fit <- thiessen(data$x, y, recovery_control(), seed = 1)
+  fit <- thiessen(data$x, y, recovery_control(), seed = 1, chains = 1)
 
   expect_lt(recovery_rmse(fit, 1000 + 50 * data$f), 5)
   expect_equal(mean(fitted(fit)), mean(y), tolerance = 0.01)

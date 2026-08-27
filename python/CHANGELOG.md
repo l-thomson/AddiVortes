@@ -8,6 +8,19 @@ the core crate version the package builds against, which
 
 ## [Unreleased]
 
+### Changed
+
+- `Model.fit` and the estimators default to `n_chains=4`, the number
+  Vehtari and others (2021) recommend for the convergence checks, on one
+  thread (`n_threads=1`, `n_jobs=None`), the scikit-learn convention. A
+  call that sets nothing pays four chains on one core; `n_jobs=-1` or
+  `n_threads=os.cpu_count()` runs them on every core for the same
+  draws, about 2.7 times faster on four cores at n = 200. On Friedman #1
+  with n = 200 and p = 10 the default schedule reaches a smallest
+  effective sample size of about 290 and a largest R-hat of about 1.014,
+  so a default fit warns; more draws per chain is the remedy.
+  `FittedModel.load` and `Sampler` are unchanged.
+
 ### Added
 
 - The response selects the outcome family where `Model` and `Sampler`
