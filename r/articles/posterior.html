@@ -181,13 +181,13 @@ bare <code><a href="https://rdrr.io/r/base/print.html" class="external-link">pri
 <h2 id="cross-validation-with-loo">Cross-validation with loo<a class="anchor" aria-label="anchor" href="#cross-validation-with-loo"></a>
 </h2>
 <p><code><a href="https://mc-stan.org/rstantools/reference/log_lik.html" class="external-link">log_lik()</a></code> returns the pointwise log-likelihood, draws by
-observations, which is what <code><a href="https://mc-stan.org/loo/reference/loo.html" class="external-link">loo::loo()</a></code> expects.</p>
+observations, which is what <code><a href="https://rdrr.io/pkg/loo/man/loo.html" class="external-link">loo::loo()</a></code> expects.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">log_likelihood</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://mc-stan.org/rstantools/reference/log_lik.html" class="external-link">log_lik</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/dim.html" class="external-link">dim</a></span><span class="op">(</span><span class="va">log_likelihood</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] 400 120</span></span>
 <span></span>
-<span><span class="va">estimate</span> <span class="op">&lt;-</span> <span class="fu">loo</span><span class="fu">::</span><span class="fu"><a href="https://mc-stan.org/loo/reference/loo.html" class="external-link">loo</a></span><span class="op">(</span><span class="va">log_likelihood</span><span class="op">)</span></span>
+<span><span class="va">estimate</span> <span class="op">&lt;-</span> <span class="fu">loo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/loo/man/loo.html" class="external-link">loo</a></span><span class="op">(</span><span class="va">log_likelihood</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Warning: Some Pareto k diagnostic values are too high. See help('pareto-k-diagnostic') for details.</span></span>
 <span><span class="va">estimate</span><span class="op">$</span><span class="va">estimates</span></span>
 <span><span class="co">#&gt;            Estimate        SE</span></span>

@@ -133,7 +133,7 @@ own. It is not for printing: a bare
 
 [`log_lik()`](https://mc-stan.org/rstantools/reference/log_lik.html)
 returns the pointwise log-likelihood, draws by observations, which is
-what [`loo::loo()`](https://mc-stan.org/loo/reference/loo.html) expects.
+what [`loo::loo()`](https://rdrr.io/pkg/loo/man/loo.html) expects.
 
 ``` r
 

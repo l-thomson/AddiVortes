@@ -115,9 +115,8 @@ and effective sample size diagnostics.
 [`posterior_epred()`](https://mc-stan.org/rstantools/reference/posterior_epred.html),
 [`log_lik()`](https://mc-stan.org/rstantools/reference/log_lik.html) and
 [`predictive_interval()`](https://mc-stan.org/rstantools/reference/predictive_interval.html)
-work on a fit, so
-[`loo::loo()`](https://mc-stan.org/loo/reference/loo.html), bayesplot
-and tidybayes take one without adaptation.
+work on a fit, so [`loo::loo()`](https://rdrr.io/pkg/loo/man/loo.html),
+bayesplot and tidybayes take one without adaptation.
 [`vignette("posterior")`](https://l-thomson.github.io/thiessen/r/articles/posterior.md)
 runs each of them.
 

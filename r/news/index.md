@@ -55,7 +55,7 @@
   [`predictive_interval()`](https://mc-stan.org/rstantools/reference/predictive_interval.html)
   from rstantools, re-exported so no
   [`library(rstantools)`](https://mc-stan.org/rstantools/) is needed.
-  [`loo::loo()`](https://mc-stan.org/loo/reference/loo.html) runs on
+  [`loo::loo()`](https://rdrr.io/pkg/loo/man/loo.html) runs on
   [`log_lik()`](https://mc-stan.org/rstantools/reference/log_lik.html).
   The draws carry `mu[i]`, `sigma` under the Gaussian model only, and
   the per-draw `cell_count` and `dimension_count`.
@@ -208,3 +208,15 @@
   under `src/rust` did not carry: fits about 7 per cent and predictions
   10 to 15 per cent faster on one machine, the shared library half the
   size, sampled values unchanged.
+- [`posterior_predict()`](https://mc-stan.org/rstantools/reference/posterior_predict.html)
+  draws from each family’s own observation model: category codes under
+  the ordinal family, times under the AFT family, values clipped to the
+  limits under the tobit family, the working value under the
+  interval-censored family, and Student-t or Laplace errors at the drawn
+  scale under those families; the Gaussian and probit replicates are
+  unchanged. [`sigma()`](https://rdrr.io/r/stats/sigma.html) and the
+  family resolution at fit dispatch on the outcome’s class. A fit no
+  longer stores `response_levels`; the levels are read from `response`.
+  A saved fit naming an item the build gates signals
+  `thiessen_requires_feature` through the core’s typed load path, and an
+  `NA` event flag is refused at the boundary.
