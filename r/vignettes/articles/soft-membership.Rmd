@@ -54,11 +54,13 @@ enough that the steps of the hard rule are visible, and the schedule of
 300 burn-in and 300 kept sweeps on four chains. The two rules are fitted
 at the same five seeds.
 
-```{r setup}
+
+``` r
 source("_setup.R")
 ```
 
-```{r example}
+
+``` r
 data <- smooth_surface(n = 300, sd = 0.1, seed = 1)
 hard <- thiessen_control(tessellations = 20, general_params = schedule)
 soft <- thiessen_control(
@@ -66,7 +68,53 @@ soft <- thiessen_control(
   mean_params = term_params(geometry = geometry_params(membership = soft_membership()))
 )
 fits <- paired_fits(data, list(hard = hard, soft = soft), seeds)
+#> Warning in thiessen(data$train$x, data$train$y, control, seed = seed): The
+#> chains may not have converged: largest R-hat 2.046 (threshold 1.01), smallest
+#> effective sample size 6 (threshold 400). Run more draws or more chains.
+#> Warning in thiessen(data$train$x, data$train$y, control, seed = seed): The
+#> chains may not have converged: largest R-hat 1.831 (threshold 1.01), smallest
+#> effective sample size 6 (threshold 400). Run more draws or more chains.
+#> Warning in thiessen(data$train$x, data$train$y, control, seed = seed): The
+#> chains may not have converged: largest R-hat 1.621 (threshold 1.01), smallest
+#> effective sample size 7 (threshold 400). Run more draws or more chains.
+#> Warning in thiessen(data$train$x, data$train$y, control, seed = seed): The
+#> chains may not have converged: largest R-hat 1.510 (threshold 1.01), smallest
+#> effective sample size 7 (threshold 400). Run more draws or more chains.
+#> Warning in thiessen(data$train$x, data$train$y, control, seed = seed): The
+#> chains may not have converged: largest R-hat 2.250 (threshold 1.01), smallest
+#> effective sample size 5 (threshold 400). Run more draws or more chains.
+#> Warning in thiessen(data$train$x, data$train$y, control, seed = seed): The
+#> chains may not have converged: largest R-hat 1.428 (threshold 1.01), smallest
+#> effective sample size 9 (threshold 400). Run more draws or more chains.
+#> Warning in thiessen(data$train$x, data$train$y, control, seed = seed): The
+#> chains may not have converged: largest R-hat 1.483 (threshold 1.01), smallest
+#> effective sample size 8 (threshold 400). Run more draws or more chains.
+#> Warning in thiessen(data$train$x, data$train$y, control, seed = seed): The
+#> chains may not have converged: largest R-hat 1.321 (threshold 1.01), smallest
+#> effective sample size 10 (threshold 400). Run more draws or more chains.
+#> Warning in thiessen(data$train$x, data$train$y, control, seed = seed): The
+#> chains may not have converged: largest R-hat 1.516 (threshold 1.01), smallest
+#> effective sample size 8 (threshold 400). Run more draws or more chains.
+#> Warning in thiessen(data$train$x, data$train$y, control, seed = seed): The
+#> chains may not have converged: largest R-hat 1.400 (threshold 1.01), smallest
+#> effective sample size 9 (threshold 400). Run more draws or more chains.
 summary(fits$soft[[1]])
+#> AddiVortes fit
+#> Call: thiessen(x = data$train$x, y = data$train$y, control = control,      seed = seed)
+#> gaussian model, 300 observations, 2 covariates
+#> 20 tessellations, 1200 draws kept after 300 burn-in, thinning 1
+#> 
+#> Residuals:
+#>          2.5%           25%           50%           75%         97.5% 
+#> -0.1597108575 -0.0582881531 -0.0001191953  0.0599379543  0.1735278177 
+#> 
+#> sigma:
+#>       2.5%        25%        50%        75%      97.5% 
+#> 0.09294550 0.09847516 0.10187852 0.10536875 0.11225547 
+#> 
+#> In-sample RMSE 0.08874
+#> 4 chains, largest R-hat 1.428, smallest effective sample size 9
+#> Warning: The chains may not have converged: largest R-hat 1.428 (threshold 1.01), smallest effective sample size 9 (threshold 400). Run more draws or more chains.
 ```
 
 The check fails, and it fails for the hard rule too. With twenty
@@ -76,7 +124,8 @@ between chains by a step; R-hat on `mu[i]` reports that. A schedule
 seven times longer narrows the gap for the soft rule and leaves the
 hard rule where it was:
 
-```{r long}
+
+``` r
 long <- general_params(burn_in = 2000, draws = 2000)
 largest_rhat <- function(control) {
   fit <- thiessen(data$train$x, data$train$y, control, seed = 1)
@@ -85,6 +134,14 @@ largest_rhat <- function(control) {
 c(hard = largest_rhat(thiessen_control(tessellations = 20, general_params = long)),
   soft = largest_rhat(thiessen_control(tessellations = 20, general_params = long,
     mean_params = term_params(geometry = geometry_params(membership = soft_membership())))))
+#> Warning in thiessen(data$train$x, data$train$y, control, seed = 1): The chains
+#> may not have converged: largest R-hat 1.795 (threshold 1.01), smallest
+#> effective sample size 6 (threshold 400). Run more draws or more chains.
+#> Warning in thiessen(data$train$x, data$train$y, control, seed = 1): The chains
+#> may not have converged: largest R-hat 1.119 (threshold 1.01), smallest
+#> effective sample size 23 (threshold 400). Run more draws or more chains.
+#>     hard     soft 
+#> 1.795427 1.118882
 ```
 
 The held-out error does not depend on which partition a chain found,
@@ -98,7 +155,8 @@ per seed; its bandwidth prior is the one used here. `mgcv::gam()` with
 a tensor-product smooth is the standard smoother, fitted once, since it
 has no chain to seed.
 
-```{r comparators, message = FALSE}
+
+``` r
 library(SoftBart)
 library(mgcv)
 frame <- data.frame(data$train$x, y = data$train$y)
@@ -118,10 +176,22 @@ and the log score (higher is better) of the held-out response, both
 exact for the predictive mixture (Jordan, Krueger and Lerch 2019). The
 mean over the five seeds with its standard error in parentheses:
 
-```{r scores}
+
+``` r
 scores <- score(c(fits, list(SoftBart = softbart, GAM = list(gam))), data)
 knitr::kable(score_table(scores))
 ```
+
+
+
+|model    |RMSE          |coverage      |width         |CRPS          |log score     |
+|:--------|:-------------|:-------------|:-------------|:-------------|:-------------|
+|hard     |0.060 (0.001) |0.962 (0.004) |0.506 (0.002) |0.067 (0.000) |0.696 (0.007) |
+|soft     |0.048 (0.000) |0.954 (0.002) |0.456 (0.001) |0.064 (0.000) |0.759 (0.003) |
+|SoftBart |0.040 (0.001) |0.960 (0.003) |0.456 (0.004) |0.062 (0.000) |0.781 (0.003) |
+|GAM      |0.031         |0.954         |0.422         |0.060         |0.810         |
+
+
 
 ## What it shows
 
@@ -129,7 +199,8 @@ Figure 1, the mechanism: a transect of the surface at x2 = 0.25, the
 truth beside the posterior mean of each method at seed 1. The hard
 rule is a staircase; the soft rule, at the same ensemble size, is not.
 
-```{r mechanism, fig.height = 3.5, fig.cap = "Figure 1. The surface along x2 = 0.25: the truth and the posterior mean of each method at seed 1."}
+
+``` r
 grid <- cbind(x1 = seq(0, 1, length.out = 200), x2 = 0.25)
 methods <- list(hard = fits$hard[[1]], soft = fits$soft[[1]],
                 SoftBart = softbart[[1]], GAM = gam)
@@ -145,22 +216,34 @@ ggplot(transect, aes(x1, f, colour = method, linetype = method)) +
   labs(y = "f(x1, 0.25)", colour = NULL, linetype = NULL)
 ```
 
+<div class="figure">
+<img src="figures/soft-membership/mechanism-1.png" alt="Figure 1. The surface along x2 = 0.25: the truth and the posterior mean of each method at seed 1." width="100%" />
+<p class="caption">Figure 1. The surface along x2 = 0.25: the truth and the posterior mean of each method at seed 1.</p>
+</div>
+
 Figure 2, the comparison: the error and the CRPS of every fit, one
 point per seed, so the gap between the rules is read against the
 spread over seeds.
 
-```{r comparison, fig.height = 3.5, fig.cap = "Figure 2. Held-out RMSE and CRPS of every fit, one point per seed."}
+
+``` r
 ggplot(subset(scores, metric %in% c("rmse", "crps")), aes(model, value)) +
   geom_point(position = position_jitter(width = 0.1, height = 0, seed = 1)) +
   facet_wrap(~ metric, scales = "free_y") +
   labs(x = NULL, y = NULL)
 ```
 
+<div class="figure">
+<img src="figures/soft-membership/comparison-1.png" alt="Figure 2. Held-out RMSE and CRPS of every fit, one point per seed." width="100%" />
+<p class="caption">Figure 2. Held-out RMSE and CRPS of every fit, one point per seed.</p>
+</div>
+
 The bandwidth the data chose, against its prior. `bandwidth[j]` is the
 bandwidth of tessellation j, and the tessellations are exchangeable, so
 the draws are pooled over j and over the chains.
 
-```{r bandwidth, fig.height = 3, fig.cap = "The pooled posterior of the bandwidth tau in the soft fit at seed 1 (grey) against its Exponential(10) prior (dashed)."}
+
+``` r
 draws <- posterior::subset_draws(posterior::as_draws_df(fits$soft[[1]]), variable = "bandwidth")
 bandwidth <- as.vector(posterior::as_draws_matrix(draws))
 ggplot(data.frame(bandwidth), aes(bandwidth)) +
@@ -168,6 +251,11 @@ ggplot(data.frame(bandwidth), aes(bandwidth)) +
   stat_function(fun = dexp, args = list(rate = 10), linetype = "dashed") +
   labs(x = "tau", y = "density")
 ```
+
+<div class="figure">
+<img src="figures/soft-membership/bandwidth-1.png" alt="The pooled posterior of the bandwidth tau in the soft fit at seed 1 (grey) against its Exponential(10) prior (dashed)." width="100%" />
+<p class="caption">The pooled posterior of the bandwidth tau in the soft fit at seed 1 (grey) against its Exponential(10) prior (dashed).</p>
+</div>
 
 Figure 3, the boundary: the same two rules at 20, 50 and 200
 tessellations, five seeds each, the fits at 20 being the ones above.
@@ -177,7 +265,8 @@ these fits warns as the fits above did; the table carries the largest
 R-hat over the five seeds at each size in place of the thirty warnings,
 and it falls with the ensemble size for both rules.
 
-```{r boundary, warning = FALSE, fig.height = 3.5, fig.cap = "Figure 3. Held-out RMSE against the ensemble size, the mean and standard error over five seeds."}
+
+``` r
 sizes <- c(20, 50, 200)
 by_size <- c(list(fits), lapply(sizes[-1], function(m) paired_fits(data, list(
   hard = thiessen_control(tessellations = m, general_params = schedule),
@@ -194,12 +283,33 @@ boundary <- do.call(rbind, lapply(seq_along(sizes), function(i) {
   }))
 }))
 knitr::kable(boundary, digits = 3)
+```
+
+
+
+| tessellations|rule |  RMSE|    SE| largest R-hat|
+|-------------:|:----|-----:|-----:|-------------:|
+|            20|hard | 0.060| 0.001|         2.250|
+|            20|soft | 0.048| 0.000|         1.516|
+|            50|hard | 0.056| 0.001|         1.463|
+|            50|soft | 0.052| 0.001|         1.345|
+|           200|hard | 0.055| 0.001|         1.114|
+|           200|soft | 0.052| 0.000|         1.061|
+
+
+
+``` r
 ggplot(boundary, aes(tessellations, RMSE, colour = rule)) +
   geom_line() +
   geom_pointrange(aes(ymin = RMSE - SE, ymax = RMSE + SE)) +
   scale_x_log10(breaks = sizes) +
   labs(x = "tessellations", y = "held-out RMSE", colour = NULL)
 ```
+
+<div class="figure">
+<img src="figures/soft-membership/boundary-1.png" alt="Figure 3. Held-out RMSE against the ensemble size, the mean and standard error over five seeds." width="100%" />
+<p class="caption">Figure 3. Held-out RMSE against the ensemble size, the mean and standard error over five seeds.</p>
+</div>
 
 ## Validity
 
@@ -212,9 +322,9 @@ integrated likelihood, which the gates reject. The figures are the
 SBC rank-ECDF difference and the Geweke ECDF from the nightly run
 named below.
 
-```{r battery, results = "asis", echo = FALSE}
-cat(readLines("figures/soft-membership/battery.md"), sep = "\n")
-```
+Nightly run 33073537519, stem `soft`.
+SBC: 1000 simulations, 99 posterior draws each, quantities sigma_sq, cells, dims, f_a, f_b, f_c, tau0.
+Geweke: 20000 samples per simulator, quantities sigma_sq, cells, dims, f_a, f_b, f_c, tau0, y_mean.
 
 ![SBC rank-ECDF difference](figures/soft-membership/sbc_ecdf_diff_soft.png)
 
