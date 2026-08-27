@@ -19,17 +19,17 @@ rstantools::predictive_interval
 
 #' Draw from the posterior predictive distribution
 #'
-#' One replicate per kept draw from the fitted family's observation
-#' model: the mean function of that draw plus a Gaussian residual at the
-#' draw's scale under the Gaussian and heteroscedastic models; Bernoulli
-#' labels under the probit model; category codes, 0 to K - 1, from the
-#' latent value against the draw's cutpoints under the ordinal model; a
-#' time, the exponential of the log-time draw, under the AFT model; the
-#' value clipped to the censoring limits under the tobit model; the
-#' working value under the interval-censored model; and a Student-t or
-#' Laplace error at the drawn scale under those models. The residuals are
-#' drawn from R's stream, so [set.seed()] governs them; they are not part
-#' of the chain the core draws.
+#' One replicate per kept draw from the fitted family's observation model:
+#' the mean function of that draw plus a Gaussian residual at the scale of
+#' that draw under the Gaussian and heteroscedastic models; Bernoulli labels
+#' under the probit model; category codes, 0 to K - 1, from the latent value
+#' against the cutpoints of that draw under the ordinal model; a time, the
+#' exponential of the log-time draw, under the AFT model; the value clipped
+#' to the censoring limits under the tobit model; the working value under
+#' the interval-censored model; and a Student-t or Laplace error at the
+#' drawn scale under those models. The residuals are drawn from R's stream,
+#' so [set.seed()] governs them; they are not part of the chain the core
+#' draws.
 #'
 #' @param object An object of class `"thiessen"`.
 #' @param newdata New covariates, as [predict.thiessen()] takes them.
