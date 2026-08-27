@@ -105,13 +105,50 @@ ordinal_friedman <- function(n, p = 5, categories = 4, seed, n_test = 500) {
   list(train = train, test = test, cutpoints = cutpoints)
 }
 
+# Evaluates a fit and records its wall-clock as the attribute `seconds`.
+timed <- function(expr) {
+  start <- Sys.time()
+  fit <- expr
+  attr(fit, "seconds") <- as.numeric(Sys.time() - start, units = "secs")
+  fit
+}
+
 # One fit per seed for each named control, on the training rows.
 paired_fits <- function(data, controls, seeds) {
   lapply(controls, function(control) {
     lapply(seeds, function(seed) {
-      thiessen(data$train$x, data$train$y, control, seed = seed)
+      timed(thiessen(data$train$x, data$train$y, control, seed = seed))
     })
   })
+}
+
+# SoftBart chains as one fit: one `softbart_regression()` run per seed,
+# on as many cores as there are seeds, pooled by the methods below the
+# way the chains of a thiessen fit are pooled. A forked worker cannot
+# hand its forest back, so each chain returns its draws of the mean at
+# the rows of `newdata`, and the fit predicts at those rows only.
+softbart_chains <- function(formula, data, newdata, seeds, ...) {
+  frame <- as.data.frame(newdata)
+  frame[[all.vars(formula)[1]]] <- 0
+  timed(structure(
+    list(
+      newdata = newdata,
+      chains = parallel::mclapply(seeds, function(seed) {
+        set.seed(seed)
+        fit <- SoftBart::softbart_regression(formula, data, frame, ..., verbose = FALSE)
+        list(mean = fit$mu_test, sigma = fit$sigma)
+      }, mc.cores = length(seeds))
+    ),
+    class = "softbart_chains"
+  ))
+}
+
+# The rows of `x` among the rows a SoftBart fit predicted at.
+softbart_rows <- function(fit, x) {
+  key <- function(m) apply(m, 1, paste, collapse = ",")
+  rows <- match(key(x), key(fit$newdata))
+  if (anyNA(rows)) stop("rows of `x` were not given as `newdata` to softbart_chains()")
+  rows
 }
 
 # The predictive distribution of a fit at the rows of `x` as a mixture of
@@ -125,23 +162,12 @@ predictive.thiessen <- function(fit, x) {
        sd = sqrt(predict(fit, x, type = "variance")))
 }
 
-# SoftBart's predict method wants the response column in the new data.
-predictive.softbart_regression <- function(fit, x) {
-  newdata <- as.data.frame(x)
-  newdata[[all.vars(fit$formula)[1]]] <- 0
-  mean <- predict(fit, newdata)$mu
-  list(mean = mean, sd = matrix(fit$sigma, nrow(mean), ncol(mean)))
-}
-
-# The smoothing uncertainty of a GAM enters through draws of the
-# coefficients from their Gaussian approximation (Wood 2017, section
-# 6.10); the residual scale is the fitted one.
-predictive.gam <- function(fit, x, draws = 400, seed = 1) {
-  set.seed(seed)
-  design <- predict(fit, as.data.frame(x), type = "lpmatrix")
-  beta <- mgcv::rmvn(draws, coef(fit), vcov(fit))
-  mean <- beta %*% t(design)
-  list(mean = mean, sd = matrix(sqrt(fit$sig2), nrow(mean), ncol(mean)))
+predictive.softbart_chains <- function(fit, x) {
+  parts <- chains(fit, x)
+  list(mean = do.call(rbind, parts),
+       sd = do.call(rbind, lapply(seq_along(parts), function(k) {
+         matrix(fit$chains[[k]]$sigma, nrow(parts[[k]]), ncol(parts[[k]]))
+       })))
 }
 
 # The quantile of each row's mixture, by bisection on the mixture CDF.
@@ -209,4 +235,49 @@ score_table <- function(scores) {
 # Held-out root mean squared error of one fit against the truth.
 rmse <- function(fit, data) {
   sqrt(mean((colMeans(predictive(fit, data$test$x)$mean) - data$test$f)^2))
+}
+
+# The draws of the mean function at the rows of `x`, one draws by rows
+# matrix per chain. A thiessen fit keeps its pooled draws in chain order.
+chains <- function(fit, x) UseMethod("chains")
+
+chains.thiessen <- function(fit, x) {
+  draws <- predict(fit, x, type = "draws")
+  iterations <- nrow(draws) / fit$n_chains
+  lapply(seq_len(fit$n_chains), function(k) {
+    draws[(k - 1) * iterations + seq_len(iterations), , drop = FALSE]
+  })
+}
+
+chains.softbart_chains <- function(fit, x) {
+  rows <- softbart_rows(fit, x)
+  lapply(fit$chains, function(chain) chain$mean[, rows, drop = FALSE])
+}
+
+# The convergence of one fit over the mean function at the rows of `x`:
+# the largest and median split R-hat and the smallest and median bulk
+# effective sample size over those rows (Vehtari and others 2021), the
+# wall-clock of the fit, and the smallest effective sample size per
+# second.
+mixing <- function(fit, x) {
+  by_chain <- chains(fit, x)
+  draws <- nrow(by_chain[[1]])
+  array <- aperm(
+    array(unlist(by_chain), dim = c(draws, ncol(by_chain[[1]]), length(by_chain))),
+    c(1, 3, 2)
+  )
+  summary <- posterior::summarise_draws(posterior::as_draws_array(array), "rhat", "ess_bulk")
+  seconds <- attr(fit, "seconds")
+  data.frame(
+    `largest R-hat` = max(summary$rhat), `median R-hat` = median(summary$rhat),
+    `smallest ESS` = min(summary$ess_bulk), `median ESS` = median(summary$ess_bulk),
+    seconds = seconds, `ESS per second` = min(summary$ess_bulk) / seconds,
+    check.names = FALSE
+  )
+}
+
+# One row of `mixing()` per named fit.
+mixing_table <- function(fits, x) {
+  rows <- lapply(names(fits), function(name) cbind(method = name, mixing(fits[[name]], x)))
+  do.call(rbind, rows)
 }

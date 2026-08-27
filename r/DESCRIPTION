@@ -40,7 +40,6 @@ Suggests:
     grDevices,
     knitr,
     loo,
-    mgcv,
     rmarkdown,
     scoringRules,
     SoftBart,
