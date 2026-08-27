@@ -148,3 +148,33 @@ test_that("the bare-string metric entries are the defaulted struct variants", {
     expect_false(validates(name), label = name)
   }
 })
+
+test_that("a one-column precision matrix crosses as an array", {
+  geometry <- geometry_params(metric = list("mahalanobis"), precision = diag(1))
+  control <- structure(
+    list(
+      outcome = gaussian_outcome(),
+      mean_params = term_params(geometry = geometry),
+      variance_params = NULL,
+      general_params = general_params()
+    ),
+    class = "thiessen_control"
+  )
+  config <- config_json(control)
+
+  expect_match(as.character(config), '"precision":[1]', fixed = TRUE)
+  condition <- rlang::catch_cnd(core_call(core_validate(config)))
+  expect_true(
+    is.null(condition) || inherits(condition, "thiessen_requires_feature")
+  )
+  parsed <- jsonlite::fromJSON(config, simplifyVector = FALSE)
+  expect_equal(
+    control_from_config(parsed)$mean_params$geometry$precision, diag(1)
+  )
+  if (core_experimental()) {
+    expect_s3_class(
+      thiessen_control(mean_params = term_params(geometry = geometry)),
+      "thiessen_control"
+    )
+  }
+})

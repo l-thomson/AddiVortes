@@ -267,9 +267,10 @@ term_group <- function(params) {
     if (inherits(geometry$membership, "thiessen_option")) {
       geometry$membership <- tagged_group(geometry$membership)
     }
-    # The core takes the precision matrix row-major; R stores column-major.
+    # The core takes the precision matrix row-major as a sequence; R stores
+    # column-major, and `auto_unbox` would unbox a one-element vector.
     if (!is.null(geometry$precision)) {
-      geometry$precision <- as.vector(t(geometry$precision))
+      geometry$precision <- I(as.vector(t(geometry$precision)))
     }
     group$geometry <- geometry
   }
