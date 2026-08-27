@@ -4,7 +4,9 @@
 # opt-in build, each installed into a library of its own, so every page
 # shows the behaviour of the build it names. Each `<name>.Rmd.orig` is
 # knitted to `<name>.Rmd` with its figures under `figures/<name>/`; the
-# `.Rmd` executes nothing, so the site build needs neither build.
+# `.Rmd` executes nothing, so the site build needs neither build. A
+# source whose front matter carries `draft: true` is a skeleton and is
+# skipped.
 #
 # Usage: tools/articles.sh [landing|features|all]
 set -eu
@@ -18,6 +20,10 @@ knit() {
   shift
   for orig in "$@"; do
     name=$(basename "$orig" .Rmd.orig)
+    if grep -q '^draft: true$' "$orig"; then
+      echo "skipping draft $name"
+      continue
+    fi
     R_LIBS="$lib" Rscript -e "
       setwd('$articles')
       knitr::opts_chunk[['set']](fig.path = 'figures/$name/')

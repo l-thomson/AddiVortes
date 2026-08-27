@@ -1,0 +1,118 @@
+---
+title: "Soft membership"
+output: rmarkdown::html_vignette
+draft: true
+---
+
+[![Experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+
+Needs a build made with `THIESSEN_EXPERIMENTAL=1 R CMD INSTALL r`; the
+[experimental](experimental.html) page has the catalogue and the rule.
+
+Draft: the skeleton of the article, on the template every article in
+this group follows. `tools/articles.sh` skips it until the `draft` line
+leaves the front matter.
+
+## Introduction
+
+Points belong to every cell by a softmax over the squared distance to
+each centre, with a per-tessellation bandwidth tau under an Exponential
+prior, in place of the hard nearest-centre rule; as tau falls to 0 the
+hard assignment returns. This is the Voronoi analogue of soft BART
+(Linero and Yang 2018), the kernel acting on the distance to each centre
+rather than on a chain of split gates. Reach for it when the truth is
+smooth and the ensemble is small, the setting soft BART was built for.
+
+Prerequisite: BART (Chipman, George and McCulloch 2010) and AddiVortes
+(Stone and Gosling 2025).
+
+## The model
+
+The four display lines of `docs/models.md`, "Soft membership": the
+weights, the cell function, the prior on tau, and the rate default of
+10 (the SoftBart `tau_rate` default, a prior mean bandwidth of a tenth
+of a column's range). Link to `crates/thiessen/src/cells.rs`.
+
+## Example
+
+```{r example}
+source("_setup.R")
+data <- smooth_surface(n = 300, sd = 0.1, seed = 1)
+control <- thiessen_control(tessellations = 20, general_params = schedule)
+soft <- thiessen_control(
+  tessellations = 20, general_params = schedule,
+  mean_params = term_params(geometry = geometry_params(membership = soft_membership()))
+)
+fits <- paired_fits(data, list(default = control, soft = soft), seeds)
+summary(fits$soft[[1]])
+score(fits, data)
+```
+
+m = 20 so the piecewise-constant steps are visible. No external
+comparator: nothing on CRAN softens a tessellation, and SoftBart on
+trees would compare the geometry rather than the softening.
+
+## What it shows
+
+Figure 1, mechanism: a transect at x2 = 0.5, truth, hard fit, soft fit,
+the steps of the hard fit visible.
+
+```{r mechanism}
+```
+
+Figure 2, comparison: paired RMSE and interval width per seed, default
+against soft, beside the table above; second panel, the posterior of
+`bandwidth[j]` from `posterior::as_draws_df()` against its
+Exponential(10) prior.
+
+```{r comparison}
+```
+
+Figure 3, boundary: the RMSE gap against m in {20, 50, 200}; the
+advantage closes as the hard ensemble gets the cells it needs.
+
+```{r boundary}
+```
+
+## Validity
+
+Stem `soft`: the SBC rank-ECDF difference and Geweke plots from the
+nightly calibration battery, copied by `tools/calibration-figures.R`,
+with the run in the caption. Validation is the battery; this page is
+illustration. Mention the known-answer tests of the marginal and the
+joint draw and the broken-sampler fixture that drops the determinant
+term.
+
+```{r battery, results = "asis"}
+cat(readLines("figures/soft-membership/battery.md"), sep = "\n")
+```
+
+![SBC rank-ECDF difference](figures/soft-membership/sbc_ecdf_diff_soft.png)
+
+![Geweke](figures/soft-membership/geweke_ecdf_soft.png)
+
+## Limits
+
+State only what the module note supports. Candidates: the kernel is on
+the distance to each centre, and the smoothness and adaptation results
+of Linero and Yang (2018, Theorems 1 to 3) are for gated splits; the
+Exponential prior and its rate are borrowed from SoftBart with no
+Voronoi-specific argument, and the interaction between tau and sigma_c
+is unstudied; the empty-cell rule still counts nearest-centre members;
+no weighted update exists for the linear basis and the variance
+ensemble's inverse-gamma cells have no closed-form weighted conditional,
+so both compositions are rejected at validation.
+
+## References
+
+Chipman, H. A., George, E. I. and McCulloch, R. E. (2010). BART:
+Bayesian additive regression trees. *The Annals of Applied Statistics*
+4(1), 266-298. doi:10.1214/09-AOAS285
+
+Linero, A. R. and Yang, Y. (2018). Bayesian regression tree ensembles
+that adapt to smoothness and sparsity. *Journal of the Royal
+Statistical Society Series B* 80(5), 1087-1110. doi:10.1111/rssb.12293
+
+Stone, A. and Gosling, J. P. (2025). AddiVortes: (Bayesian) additive
+Voronoi tessellations. *Journal of Computational and Graphical
+Statistics* 34(3), 859-871. doi:10.1080/10618600.2024.2414104
