@@ -190,7 +190,8 @@ failing on any warning.
 ## Pull requests
 
 Branch from `dev`; pull requests squash-merge into `dev` with a green
-`alls-green` status. Commit messages follow Conventional Commits. The
+`alls-green` status, the one job of that name, reported by `ci.yml`
+alone. Commit messages follow Conventional Commits. The
 template's four boxes (tests, docs, changelog, breaking or
 sampled-values change) are the whole checklist.
 

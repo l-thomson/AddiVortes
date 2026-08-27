@@ -619,6 +619,9 @@ jobs:
       - run: python -m pytest
         working-directory: python
 
+  # The one required status on `dev`. Branch protection matches the
+  # context by name, so no other workflow may define a job called
+  # `alls-green`.
   alls-green:
     name: alls-green
     if: always()
@@ -628,6 +631,8 @@ jobs:
             r-source, r-check, r-docs]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: test "$(grep -l '^  alls-green:' .github/workflows/*.yml)" = .github/workflows/ci.yml
       - uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # release/v1
         with:
           jobs: ${{ toJSON(needs) }}
