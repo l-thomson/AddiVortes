@@ -1,6 +1,5 @@
-# Performance recipes. Every other gate is a plain cargo command and is
-# documented as one in CONTRIBUTING.md; these three take enough arguments
-# to be worth a name.
+# Recipes that take enough arguments to be worth a name. Every other gate
+# is a plain cargo command and is documented as one in CONTRIBUTING.md.
 
 # Same-machine A/B of the wall-clock benchmarks over two revisions.
 perf-compare rev-a rev-b filter="":
@@ -16,3 +15,10 @@ perf-bench filter="":
 perf-instructions:
     cargo bench --locked --manifest-path bench/Cargo.toml \
         --bench instructions
+
+# The precomputed experimental articles of the R site: the landing page
+# from a default build, the feature articles from an opt-in build. Knits
+# every `*.Rmd.orig` under r/vignettes/articles into its `.Rmd` and
+# figures, which are committed.
+articles what="all":
+    tools/articles.sh {{what}}
