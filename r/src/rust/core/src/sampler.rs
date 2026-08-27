@@ -741,9 +741,8 @@ impl Sampler {
         let half_width = match &config.outcome {
             OutcomeConfig::Probit(_) => ProbitOutcome::CELL_PRIOR_HALF_WIDTH,
             OutcomeConfig::Gaussian(_) => GaussianOutcome::CELL_PRIOR_HALF_WIDTH,
-            // `Config::validate`, called above, rejects a gated outcome.
             #[cfg(not(feature = "experimental"))]
-            OutcomeConfig::Gated(_) => GaussianOutcome::CELL_PRIOR_HALF_WIDTH,
+            OutcomeConfig::Gated(gated) => gated.unreachable(),
             #[cfg(feature = "experimental")]
             OutcomeConfig::Tobit(_) => TobitOutcome::CELL_PRIOR_HALF_WIDTH,
             #[cfg(feature = "experimental")]
@@ -827,13 +826,8 @@ impl Sampler {
                 outcome.init(&y_scaled);
                 Outcome::Gaussian(outcome)
             }
-            // `Config::validate`, called above, rejects a gated outcome.
             #[cfg(not(feature = "experimental"))]
-            OutcomeConfig::Gated(_) => {
-                let mut outcome = GaussianOutcome;
-                outcome.init(&y_scaled);
-                Outcome::Gaussian(outcome)
-            }
+            OutcomeConfig::Gated(gated) => gated.unreachable(),
             OutcomeConfig::Probit(_) => {
                 let mut outcome = ProbitOutcome::new(config.offset(), mean_y);
                 config.set_offset(outcome.offset());
@@ -1239,10 +1233,7 @@ impl Sampler {
             .map(StudentTOutcome::df);
         #[cfg(not(feature = "experimental"))]
         let df = None;
-        #[cfg(feature = "experimental")]
         let inclusion = self.inclusion_state().map(|(s, theta)| (s.to_vec(), theta));
-        #[cfg(not(feature = "experimental"))]
-        let inclusion = None;
         self.kept.push(
             sigma_sq,
             self.mean.tessellations().to_vec(),

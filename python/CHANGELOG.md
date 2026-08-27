@@ -8,6 +8,19 @@ the core crate version the package builds against, which
 
 ## [Unreleased]
 
+### Changed
+
+- `to_inference_data` names the AFT replicate and log-likelihood
+  variable `time`, the name of the observed variable it pairs with, so
+  `arviz.plot_ppc` and `loo_pit` find the pair without renaming; the
+  interval-censored replicate keeps `y`, its observation being a pair of
+  bounds with no single partner.
+- Equality of parameter objects compares field by field, an array
+  element-wise, so a value holding one (`GeometryParams(precision=)`,
+  `weighted_inclusion()`) compares rather than raising.
+- A saved model naming an item the build gates raises
+  `RequiresFeatureError` through the core's typed load path.
+
 ### Added
 
 - The response selects the outcome family where `Model` and `Sampler`

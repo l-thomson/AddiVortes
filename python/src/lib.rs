@@ -53,34 +53,6 @@ fn flags(events: &PyReadonlyArray1<'_, bool>) -> Vec<bool> {
     events.as_array().iter().copied().collect()
 }
 
-/// Run the configured schedule over `samplers`, one chain each, over at
-/// most `n_threads` threads, and pool their draws. The in-sample fit is
-/// measured against the response the core reports, the observed values
-/// under the models whose working response is replaced by latents.
-fn run_chains(
-    config: &thiessen::Config,
-    data: &thiessen::Data,
-    mut samplers: Vec<thiessen::Sampler>,
-    n_threads: usize,
-) -> PyResult<Fitted> {
-    let y = samplers
-        .first()
-        .ok_or_else(|| ThiessenError::new_err("a fit needs at least one chain"))?
-        .training_response();
-    let schedule = &config.general_params;
-    let mut chains: Vec<&mut thiessen::Sampler> = samplers.iter_mut().collect();
-    thiessen::Sampler::advance_all(
-        &mut chains,
-        schedule.burn_in,
-        schedule.draws,
-        schedule.thinning,
-        n_threads,
-    );
-    let (mut inner, _) = thiessen::Fitted::pool_samplers(samplers, data, &y).map_err(core_error)?;
-    inner.set_threads(n_threads);
-    Ok(Fitted { inner })
-}
-
 fn matrix<'py>(py: Python<'py>, rows: Vec<Vec<f64>>) -> PyResult<Bound<'py, PyArray2<f64>>> {
     PyArray2::from_vec2(py, &rows).map_err(|e| ThiessenError::new_err(e.to_string()))
 }
@@ -569,7 +541,7 @@ fn fit(
 }
 
 /// Fit the AFT model to `x`, the times and the event flags: as [`fit`],
-/// through [`thiessen::Sampler::aft`] per chain. The GIL is released for
+/// through [`thiessen::fit_aft_chains_with_threads`]. The GIL is released for
 /// the fit.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -587,25 +559,24 @@ fn fit_aft(
     let data = design(&x)?;
     let times = response(&times);
     let events = flags(&events);
-    py.detach(|| {
-        let samplers = (0..n_chains.max(1))
-            .map(|k| {
-                thiessen::Sampler::aft(
-                    &config,
-                    &data,
-                    &times,
-                    &events,
-                    thiessen::chain_seed(seed, k),
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(core_error)?;
-        run_chains(&config, &data, samplers, n_threads.max(1))
-    })
+    let (inner, _) = py
+        .detach(|| {
+            thiessen::fit_aft_chains_with_threads(
+                &config,
+                &data,
+                &times,
+                &events,
+                seed,
+                n_chains.max(1),
+                n_threads.max(1),
+            )
+        })
+        .map_err(core_error)?;
+    Ok(Fitted { inner })
 }
 
 /// Fit the interval-censored model to `x` and the bound pairs: as
-/// [`fit`], through [`thiessen::Sampler::interval_censored`] per chain.
+/// [`fit`], through [`thiessen::fit_interval_censored_chains_with_threads`].
 /// The GIL is released for the fit.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -623,27 +594,20 @@ fn fit_interval_censored(
     let data = design(&x)?;
     let lower = response(&lower);
     let upper = response(&upper);
-    py.detach(|| {
-        let samplers = (0..n_chains.max(1))
-            .map(|k| {
-                thiessen::Sampler::interval_censored(
-                    &config,
-                    &data,
-                    &lower,
-                    &upper,
-                    thiessen::chain_seed(seed, k),
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(core_error)?;
-        run_chains(&config, &data, samplers, n_threads.max(1))
-    })
-}
-
-/// The configuration of a saved model, the rest of the payload ignored.
-#[derive(serde::Deserialize)]
-struct SavedConfig {
-    config: thiessen::Config,
+    let (inner, _) = py
+        .detach(|| {
+            thiessen::fit_interval_censored_chains_with_threads(
+                &config,
+                &data,
+                &lower,
+                &upper,
+                seed,
+                n_chains.max(1),
+                n_threads.max(1),
+            )
+        })
+        .map_err(core_error)?;
+    Ok(Fitted { inner })
 }
 
 /// Load a fitted model from the JSON of `Fitted.to_json`, predicting on
@@ -651,20 +615,13 @@ struct SavedConfig {
 #[pyfunction]
 #[pyo3(signature = (json, n_threads = 1))]
 fn fitted_from_json(json: &str, n_threads: usize) -> PyResult<Fitted> {
-    let mut inner: thiessen::Fitted =
-        serde_json::from_str(json).map_err(|error| saved_error(json, error))?;
+    let mut deserializer = serde_json::Deserializer::from_str(json);
+    let mut inner = thiessen::Fitted::load(&mut deserializer).map_err(core_error)?;
+    deserializer
+        .end()
+        .map_err(|e| ThiessenError::new_err(e.to_string()))?;
     inner.set_threads(n_threads);
     Ok(Fitted { inner })
-}
-
-/// The error of a payload that failed to load. Loading validates the
-/// saved configuration, and serde reports a failure as text, so the
-/// configuration is validated again here to recover its type.
-fn saved_error(json: &str, error: serde_json::Error) -> PyErr {
-    match serde_json::from_str::<SavedConfig>(json).map(|saved| saved.config.validate()) {
-        Ok(Err(typed)) => core_error(typed),
-        _ => ThiessenError::new_err(error.to_string()),
-    }
 }
 
 /// Validate a configuration without data.

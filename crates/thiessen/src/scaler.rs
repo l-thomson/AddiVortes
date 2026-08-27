@@ -134,7 +134,7 @@ impl Scaler {
 }
 
 #[derive(serde::Deserialize)]
-struct ScalerParts {
+pub(crate) struct ScalerParts {
     y_min: f64,
     y_max: f64,
     x_min: Vec<f64>,

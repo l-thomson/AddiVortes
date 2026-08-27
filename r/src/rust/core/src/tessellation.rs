@@ -106,8 +106,7 @@ impl Tessellation {
     }
 
     /// The soft-membership kernel bandwidth; `None` under hard
-    /// membership.
-    #[cfg(feature = "experimental")]
+    /// membership, and in a build without the `experimental` feature.
     pub fn bandwidth(&self) -> Option<f64> {
         self.tau
     }
@@ -204,7 +203,7 @@ impl Tessellation {
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct TessellationParts {
+pub(crate) struct TessellationParts {
     centres: Vec<f64>,
     dims: Vec<usize>,
     mus: Vec<f64>,
@@ -251,21 +250,10 @@ impl TryFrom<TessellationParts> for Tessellation {
                 return Err(bad("tessellation dimensions must be distinct"));
             }
         }
-        if let Some(tau) = parts.tau {
-            #[cfg(not(feature = "experimental"))]
-            {
-                let _ = tau;
-                return Err(Error::RequiresFeature {
-                    item: "the soft-membership bandwidth".into(),
-                    feature: "experimental",
-                });
-            }
-            #[cfg(feature = "experimental")]
-            if !(tau.is_finite() && tau > 0.0) {
-                return Err(bad(
-                    "the soft-membership bandwidth must be finite and positive",
-                ));
-            }
+        if parts.tau.is_some_and(|tau| !(tau.is_finite() && tau > 0.0)) {
+            return Err(bad(
+                "the soft-membership bandwidth must be finite and positive",
+            ));
         }
         Ok(Self {
             centres: parts.centres,

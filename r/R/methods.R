@@ -65,7 +65,7 @@ predict.thiessen <- function(object, newdata = NULL,
   core_state_set_threads(state, threads)
   if (type == "probs") {
     probs <- core_call(core_predict_probs(state, design))
-    colnames(probs) <- object$response_levels
+    colnames(probs) <- object$response$levels
     return(probs)
   }
   if (type != "mean") {
@@ -103,9 +103,22 @@ predict.thiessen <- function(object, newdata = NULL,
 #' @importFrom stats sigma
 #' @export
 sigma.thiessen <- function(object, ...) {
-  if (object$model %in% c("probit", "ordinal")) {
-    return(1)
-  }
+  residual_scale(object$control$outcome, object)
+}
+
+#' The single residual scale of a fit under its outcome family
+#'
+#' @param outcome The fit's outcome family, an object of class
+#'   `"thiessen_outcome"`.
+#' @param object An object of class `"thiessen"`.
+#' @return A single number.
+#' @noRd
+residual_scale <- function(outcome, object) {
+  UseMethod("residual_scale")
+}
+
+#' @export
+residual_scale.default <- function(outcome, object) {
   draws <- core_call(core_sigma(fit_state(object)))
   if (length(draws) == 0L) {
     thiessen_abort(paste0(
@@ -114,6 +127,16 @@ sigma.thiessen <- function(object, ...) {
     ))
   }
   mean(draws)
+}
+
+#' @export
+residual_scale.thiessen_probit <- function(outcome, object) {
+  1
+}
+
+#' @export
+residual_scale.thiessen_ordinal <- function(outcome, object) {
+  1
 }
 
 #' Fitted values, residuals and observation count of a fitted model

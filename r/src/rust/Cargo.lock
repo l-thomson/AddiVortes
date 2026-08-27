@@ -295,7 +295,6 @@ version = "0.0.0"
 dependencies = [
  "extendr-api",
  "rmp-serde",
- "serde",
  "serde_json",
  "thiessen",
 ]

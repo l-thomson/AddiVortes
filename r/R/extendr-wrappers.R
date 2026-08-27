@@ -30,6 +30,10 @@ core_version <- function() .Call(wrap__core_version)
 #' @export
 core_experimental <- function() .Call(wrap__core_experimental)
 
+core_requires_feature_prefix <- function() {
+  .Call(wrap__core_requires_feature_prefix)
+}
+
 core_defaults <- function() .Call(wrap__core_defaults)
 
 core_outcome_defaults <- function() .Call(wrap__core_outcome_defaults)

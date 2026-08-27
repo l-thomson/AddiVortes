@@ -4,12 +4,6 @@
 # the families from the core and hold no list of their own: an item added
 # or graduated needs no change here.
 
-# The outcome families the core in use carries, by their stored names.
-core_families <- function() {
-  catalogue <- jsonlite::fromJSON(core_outcome_defaults(), simplifyVector = FALSE)
-  vapply(catalogue, function(family) names(family)[[1L]], character(1))
-}
-
 # The families this package constructs, by their stored names.
 surface_families <- function() {
   exports <- grep("_outcome$", getNamespaceExports("thiessen"), value = TRUE)
@@ -124,4 +118,33 @@ test_that("a saved fit naming an unknown model fails to load", {
   fit <- unserialize(serialize(fit, NULL))
 
   expect_error(predict(fit), class = "thiessen_error")
+})
+
+test_that("the bare-string metric entries are the defaulted struct variants", {
+  # The metric variants of crates/thiessen/src/geometry.rs without a
+  # required field: the unit variants serialise as bare strings, the
+  # struct variants as a map under their name.
+  unit <- c("euclidean", "categorical", "mahalanobis")
+  defaulted <- c("manhattan", "cosine")
+  validates <- function(entry) {
+    config <- jsonlite::toJSON(
+      list(mean_params = list(geometry = list(metric = list(entry, entry)))),
+      auto_unbox = TRUE
+    )
+    condition <- rlang::catch_cnd(core_call(core_validate(config)))
+    is.null(condition) || inherits(condition, "thiessen_requires_feature")
+  }
+
+  for (name in unit) {
+    expect_identical(metric_entry(name), name)
+  }
+  for (name in setdiff(unit, "mahalanobis")) {
+    expect_true(validates(name), label = name)
+  }
+  for (name in defaulted) {
+    tagged <- metric_entry(name)
+    expect_identical(names(tagged), name)
+    expect_true(validates(tagged), label = name)
+    expect_false(validates(name), label = name)
+  }
 })

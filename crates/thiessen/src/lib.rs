@@ -150,7 +150,8 @@ pub use fitted::{Fitted, Interval, IntervalKind, Posterior};
 pub use geometry::GowerKind;
 pub use geometry::Metric;
 pub use models::{
-    fit, fit_aft, fit_chains, fit_chains_with_threads, fit_interval_censored, fit_with_progress,
+    fit, fit_aft, fit_aft_chains_with_threads, fit_chains, fit_chains_with_threads,
+    fit_interval_censored, fit_interval_censored_chains_with_threads, fit_with_progress,
 };
 pub use rng::chain_seed;
 pub use sampler::Sampler;

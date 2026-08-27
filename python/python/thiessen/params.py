@@ -24,7 +24,7 @@ from typing import Any, Union
 
 import numpy as np
 
-from ._params import Params, _dense
+from ._params import Params, Tagged, _dense
 
 __all__ = [
     "CellParams",
@@ -53,21 +53,17 @@ def _metric_entry(entry: MetricEntry) -> MetricEntry:
     return entry
 
 
-class Option(Params):
+class Option(Tagged):
     """An experimental component option, the value of a configuration field.
 
     Subclasses name the tag the field stores the option under and the
     constructor that returns them.
     """
 
-    _tag: str
     _constructor: str
 
     def _display_name(self) -> str:
         return self._constructor
-
-    def _core(self) -> dict[str, Any]:
-        return {self._tag: _dense(self.get_params(deep=False))}
 
 
 class SoftMembership(Option):

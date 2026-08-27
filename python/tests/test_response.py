@@ -9,16 +9,13 @@ from thiessen._response import _as_response, _resolve_outcome
 from thiessen.families import Aft, Gaussian, IntervalCensored, Ordinal, Probit
 from thiessen.sampler import Sampler
 
-from .conftest import SMALL
+from .conftest import SMALL, survival
 
 pd = pytest.importorskip("pandas")
 
 
-def survival(n):
-    return np.array(
-        [(i % 2 == 0, 1.0 + i) for i in range(n)],
-        dtype=[("event", bool), ("time", float)],
-    )
+def right_censored(n):
+    return survival([i % 2 == 0 for i in range(n)], [1.0 + i for i in range(n)])
 
 
 def test_a_numeric_array_is_a_plain_response():
@@ -64,7 +61,7 @@ def test_an_ordered_categorical_selects_the_ordinal_family():
 
 
 def test_a_survival_array_selects_the_aft_family():
-    response = _as_response(survival(4))
+    response = _as_response(right_censored(4))
 
     assert (response.kind, response.shape) == ("aft", "right")
     np.testing.assert_array_equal(response.events, [True, False, True, False])
@@ -100,7 +97,7 @@ def test_a_survival_array_needs_the_event_then_the_time():
 @pytest.mark.parametrize(
     ("outcome", "y", "named"),
     [
-        (probit(), survival(4), "probit"),
+        (probit(), right_censored(4), "probit"),
         (gaussian(), np.array([True, False, True, True]), "gaussian"),
         (aft(), np.arange(4.0), "aft"),
     ],
@@ -145,9 +142,9 @@ def test_the_fitted_family_checks_the_response_shape(gaussian_fixture):
     fitted = Model(**SMALL).fit(x, y, random_state=1)
 
     with pytest.raises(ValueError, match="selects the aft family"):
-        fitted.log_likelihood(x, survival(48))
+        fitted.log_likelihood(x, right_censored(48))
     with pytest.raises(ValueError, match="selects the aft family"):
-        fitted.to_inference_data(x, survival(48))
+        fitted.to_inference_data(x, right_censored(48))
 
 
 def test_the_sampler_takes_the_response_shapes(probit_fixture):
@@ -157,4 +154,4 @@ def test_the_sampler_takes_the_response_shapes(probit_fixture):
 
     assert "probit" in sampler.config["outcome"]
     with pytest.raises(ValueError, match="selects the aft family"):
-        sampler.set_response(survival(48))
+        sampler.set_response(right_censored(48))

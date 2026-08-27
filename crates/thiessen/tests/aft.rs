@@ -7,7 +7,9 @@
 mod common;
 
 use common::{fixture, SEED};
-use thiessen::{fit, fit_aft, Config, Error, Outcome, Sampler};
+use thiessen::{
+    chain_seed, fit, fit_aft, fit_aft_chains_with_threads, Config, Error, Outcome, Sampler,
+};
 
 /// The Gaussian fixture as survival data: times exp(y), a third of the
 /// rows right-censored at their own times.
@@ -45,6 +47,24 @@ fn censoring_changes_the_chain_and_round_trips() {
     let back: thiessen::Fitted = serde_json::from_str(&json).unwrap();
     assert_eq!(fitted.predict(&x).unwrap(), back.predict(&x).unwrap());
     assert_eq!(back.model_name(), "aft");
+}
+
+/// The chains of a multi-chain fit are the one-chain fits on
+/// `chain_seed(seed, k)`, pooled in chain order.
+#[test]
+fn chains_pool_the_one_chain_fits() {
+    let (config, x, times, events) = aft_fixture();
+    let (pooled, values) =
+        fit_aft_chains_with_threads(&config, &x, &times, &events, SEED, 2, 2).unwrap();
+    let first = fit_aft(&config, &x, &times, &events, chain_seed(SEED, 0)).unwrap();
+    let second = fit_aft(&config, &x, &times, &events, chain_seed(SEED, 1)).unwrap();
+    assert_eq!(pooled.n_draws(), first.n_draws() + second.n_draws());
+    let sigma = pooled.sigma();
+    assert_eq!(&sigma[..first.n_draws()], first.sigma());
+    assert_eq!(&sigma[first.n_draws()..], second.sigma());
+    for (value, predicted) in values.iter().zip(pooled.predict(&x).unwrap()) {
+        assert!((value - predicted).abs() <= 1e-12 * predicted.abs().max(1.0));
+    }
 }
 
 #[test]

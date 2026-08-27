@@ -5,6 +5,7 @@
 //! model is selected by [`Config::outcome`]; every model runs through
 //! [`fit`] and the [`Sampler`].
 
+use crate::chain_seed;
 use crate::config::Config;
 use crate::data::Data;
 use crate::error::Result;
@@ -73,7 +74,7 @@ pub fn fit_with_progress(
 }
 
 /// Fit `n_chains` chains of the model the configuration names, seeded by
-/// [`chain_seed`](crate::chain_seed)`(seed, k)` for k below `n_chains`,
+/// [`chain_seed`]`(seed, k)` for k below `n_chains`,
 /// and pool their draws in chain order.
 ///
 /// # Arguments
@@ -113,27 +114,10 @@ pub fn fit_chains_with_threads(
     n_chains: usize,
     n_threads: usize,
 ) -> Result<(Fitted, Vec<f64>)> {
-    if n_chains == 0 {
-        return Err(crate::error::invalid(
-            "n_chains",
-            "a fit needs at least one chain",
-        ));
-    }
-    let mut samplers = (0..n_chains)
-        .map(|k| Sampler::new(config, x, y, crate::chain_seed(seed, k)))
-        .collect::<Result<Vec<_>>>()?;
-    let schedule = &config.general_params;
-    let mut chains: Vec<&mut Sampler> = samplers.iter_mut().collect();
-    Sampler::advance_all(
-        &mut chains,
-        schedule.burn_in,
-        schedule.draws,
-        schedule.thinning,
-        n_threads,
-    );
-    let (mut fitted, values) = Fitted::pool_samplers(samplers, x, y)?;
-    fitted.set_threads(n_threads);
-    Ok((fitted, values))
+    let samplers = chain_samplers(n_chains, |k| {
+        Sampler::new(config, x, y, chain_seed(seed, k))
+    })?;
+    fit_samplers_with_threads(samplers, config, x, y, n_threads)
 }
 
 /// Fit the AFT model: as [`fit`], with the times and the event
@@ -151,7 +135,6 @@ pub fn fit_chains_with_threads(
 ///
 /// `RequiresFeature` in a build without the feature; otherwise
 /// [`Sampler::aft`].
-#[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
 pub fn fit_aft(
     config: &Config,
     x: &Data,
@@ -159,19 +142,44 @@ pub fn fit_aft(
     events: &[bool],
     seed: u64,
 ) -> Result<Fitted> {
+    fit_aft_chains_with_threads(config, x, times, events, seed, 1, 1).map(|(fitted, _)| fitted)
+}
+
+/// Fit the AFT model as [`fit_chains_with_threads`]: `n_chains` chains
+/// seeded by [`chain_seed`]`(seed, k)`, spread over at most `n_threads`
+/// threads, their draws pooled in chain order; the second value is the
+/// posterior mean at the rows of `x`. Experimental
+/// (`docs/experimental.md`): present in every build, served only with
+/// the `experimental` feature.
+///
+/// # Errors
+///
+/// `RequiresFeature` in a build without the feature; otherwise
+/// [`Sampler::aft`] and [`fit_chains`].
+#[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
+pub fn fit_aft_chains_with_threads(
+    config: &Config,
+    x: &Data,
+    times: &[f64],
+    events: &[bool],
+    seed: u64,
+    n_chains: usize,
+    n_threads: usize,
+) -> Result<(Fitted, Vec<f64>)> {
     #[cfg(not(feature = "experimental"))]
     return Err(crate::config::Gated::AFT.requires_feature());
     #[cfg(feature = "experimental")]
-    run_schedule(
-        Sampler::aft(config, x, times, events, seed)?,
-        config,
-        &mut |_, _| {},
-    )
+    {
+        let samplers = chain_samplers(n_chains, |k| {
+            Sampler::aft(config, x, times, events, chain_seed(seed, k))
+        })?;
+        let y = samplers[0].training_response();
+        fit_samplers_with_threads(samplers, config, x, &y, n_threads)
+    }
 }
 
 /// Fit the interval-censored model: as [`fit`], with one pair of bounds
-/// per row in place of a plain response
-/// (`Outcome::IntervalCensored`).
+/// per row in place of a plain response (`Outcome::IntervalCensored`).
 /// Experimental (`docs/experimental.md`): present in every build, served
 /// only with the `experimental` feature.
 ///
@@ -185,7 +193,6 @@ pub fn fit_aft(
 ///
 /// `RequiresFeature` in a build without the feature; otherwise
 /// [`Sampler::interval_censored`].
-#[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
 pub fn fit_interval_censored(
     config: &Config,
     x: &Data,
@@ -193,14 +200,79 @@ pub fn fit_interval_censored(
     upper: &[f64],
     seed: u64,
 ) -> Result<Fitted> {
+    fit_interval_censored_chains_with_threads(config, x, lower, upper, seed, 1, 1)
+        .map(|(fitted, _)| fitted)
+}
+
+/// Fit the interval-censored model as [`fit_chains_with_threads`]:
+/// `n_chains` chains seeded by [`chain_seed`]`(seed, k)`, spread over at
+/// most `n_threads` threads, their draws pooled in chain order; the
+/// second value is the posterior mean at the rows of `x`. Experimental
+/// (`docs/experimental.md`): present in every build, served only with
+/// the `experimental` feature.
+///
+/// # Errors
+///
+/// `RequiresFeature` in a build without the feature; otherwise
+/// [`Sampler::interval_censored`] and [`fit_chains`].
+#[cfg_attr(not(feature = "experimental"), allow(unused_variables))]
+pub fn fit_interval_censored_chains_with_threads(
+    config: &Config,
+    x: &Data,
+    lower: &[f64],
+    upper: &[f64],
+    seed: u64,
+    n_chains: usize,
+    n_threads: usize,
+) -> Result<(Fitted, Vec<f64>)> {
     #[cfg(not(feature = "experimental"))]
     return Err(crate::config::Gated::INTERVAL_CENSORED.requires_feature());
     #[cfg(feature = "experimental")]
-    run_schedule(
-        Sampler::interval_censored(config, x, lower, upper, seed)?,
-        config,
-        &mut |_, _| {},
-    )
+    {
+        let samplers = chain_samplers(n_chains, |k| {
+            Sampler::interval_censored(config, x, lower, upper, chain_seed(seed, k))
+        })?;
+        let y = samplers[0].training_response();
+        fit_samplers_with_threads(samplers, config, x, &y, n_threads)
+    }
+}
+
+/// One sampler per chain, chain k on [`chain_seed`]`(seed, k)`.
+fn chain_samplers(
+    n_chains: usize,
+    sampler: impl Fn(usize) -> Result<Sampler>,
+) -> Result<Vec<Sampler>> {
+    if n_chains == 0 {
+        return Err(crate::error::invalid(
+            "n_chains",
+            "a fit needs at least one chain",
+        ));
+    }
+    (0..n_chains).map(sampler).collect()
+}
+
+/// Run the configured schedule over `samplers`, one chain each, over at
+/// most `n_threads` threads, and pool their draws; the in-sample RMSE is
+/// measured against `y`.
+fn fit_samplers_with_threads(
+    mut samplers: Vec<Sampler>,
+    config: &Config,
+    x: &Data,
+    y: &[f64],
+    n_threads: usize,
+) -> Result<(Fitted, Vec<f64>)> {
+    let schedule = &config.general_params;
+    let mut chains: Vec<&mut Sampler> = samplers.iter_mut().collect();
+    Sampler::advance_all(
+        &mut chains,
+        schedule.burn_in,
+        schedule.draws,
+        schedule.thinning,
+        n_threads,
+    );
+    let (mut fitted, values) = Fitted::pool_samplers(samplers, x, y)?;
+    fitted.set_threads(n_threads);
+    Ok((fitted, values))
 }
 
 /// The sweep schedule shared by every model.

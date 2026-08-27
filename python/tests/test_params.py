@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pickle
 
+import numpy as np
 import pytest
 from thiessen import (
     CellParams,
@@ -56,6 +57,16 @@ def test_equality_compares_the_parameters():
     assert TermParams(geometry=GeometryParams()) == TermParams(
         geometry=GeometryParams()
     )
+
+
+def test_equality_compares_an_array_parameter_element_wise():
+    assert GeometryParams(precision=np.eye(2)) == GeometryParams(precision=np.eye(2))
+    assert GeometryParams(precision=np.eye(2)) != GeometryParams(
+        precision=2.0 * np.eye(2)
+    )
+    assert GeometryParams(precision=np.eye(2)) != GeometryParams(precision=np.eye(3))
+    assert weighted_inclusion([1.0, 2.0]) == weighted_inclusion([1.0, 2.0])
+    assert weighted_inclusion([1.0, 2.0]) != weighted_inclusion([2.0, 1.0])
 
 
 def test_get_params_routes_nested_objects():

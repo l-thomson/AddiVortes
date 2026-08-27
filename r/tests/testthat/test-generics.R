@@ -88,12 +88,20 @@ test_that("posterior_epred is the per-draw mean", {
 
 test_that("posterior_predict is the mean plus a residual", {
   fit <- gaussian_fit()
+  state <- fit_state(fit)
+  draws <- core_predict_draws(state, fit$x, "draws")
+  variance <- core_predict_draws(state, fit$x, "variance")
+  set.seed(2)
+  expected <- draws + matrix(
+    stats::rnorm(length(draws), 0, sqrt(as.vector(variance))),
+    nrow = nrow(draws)
+  )
 
   set.seed(2)
   replicates <- posterior_predict(fit)
 
   expect_identical(dim(replicates), c(20L, 40L))
-  expect_false(identical(replicates, posterior_epred(fit)))
+  expect_identical(replicates, expected)
 })
 
 test_that("posterior_predict is governed by set.seed", {
@@ -109,11 +117,18 @@ test_that("posterior_predict is governed by set.seed", {
 
 test_that("the probit replicates are labels", {
   fit <- probit_fit()
+  draws <- core_predict_draws(fit_state(fit), fit$x, "draws")
+  set.seed(4)
+  expected <- matrix(
+    as.double(stats::rbinom(length(draws), 1L, pmin(pmax(draws, 0), 1))),
+    nrow = nrow(draws)
+  )
 
   set.seed(4)
   replicates <- posterior_predict(fit)
 
   expect_true(all(replicates %in% c(0, 1)))
+  expect_identical(replicates, expected)
 })
 
 test_that("posterior_predict takes new rows", {

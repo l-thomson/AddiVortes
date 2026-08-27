@@ -33,6 +33,39 @@ small_control <- function(...) {
   )
 }
 
+# The response shapes of the experimental families over a numeric
+# response `y`: a right-censored `Surv` with a third of the rows censored
+# at their own times, an `interval2` `Surv` with one-sided censoring on
+# every sixth and seventh row, and a three-level ordered factor.
+right_censored_fixture <- function(y) {
+  survival::Surv(exp(y), rep(c(TRUE, TRUE, FALSE), length.out = length(y)))
+}
+
+interval_fixture <- function(y) {
+  n <- length(y)
+  lower <- ifelse(seq_len(n) %% 7 == 0, NA, y - 0.1)
+  upper <- ifelse(seq_len(n) %% 6 == 0, NA, y + 0.1)
+  survival::Surv(lower, upper, type = "interval2")
+}
+
+ordered_fixture <- function(n) {
+  factor(
+    c("lo", "mid", "hi")[(seq_len(n) %% 3) + 1],
+    levels = c("lo", "mid", "hi"), ordered = TRUE
+  )
+}
+
+# The outcome families the core in use carries, at their defaults, as the
+# core reports them.
+core_catalogue <- function() {
+  jsonlite::fromJSON(core_outcome_defaults(), simplifyVector = FALSE)
+}
+
+# The families of `core_catalogue()` by their stored names.
+core_families <- function() {
+  vapply(core_catalogue(), function(family) names(family)[[1L]], character(1))
+}
+
 # Replace the first occurrence of the name `from` in a raw MessagePack
 # payload with `to`. A name of fewer than 32 bytes is a fixstr: one byte
 # holding 0xa0 plus the length, then the bytes, so the prefix is rewritten

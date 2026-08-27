@@ -229,24 +229,44 @@ resolve_outcome <- function(control, response, call = rlang::caller_env()) {
     control$outcome <- family_of(response)
     return(control)
   }
-  kind <- attr(outcome, "kind")
-  check_outcome_response(kind, response, call = call)
-  if (kind == "ordinal") {
-    categories <- length(response$levels)
-    if (is.null(outcome$categories)) {
-      outcome$categories <- categories
-    } else if (outcome$categories != categories) {
-      thiessen_abort(
-        sprintf(
-          "`outcome` names %d categories but the response has %d levels.",
-          outcome$categories, categories
-        ),
-        call = call
-      )
-    }
-    control$outcome <- outcome
-  }
+  check_outcome_response(attr(outcome, "kind"), response, call = call)
+  control$outcome <- resolve_family(outcome, response, call = call)
   control
+}
+
+#' A named outcome family with the fields the response supplies
+#'
+#' @param outcome An object of class `"thiessen_outcome"`.
+#' @param response An object of class `"thiessen_response"`.
+#' @param call The calling environment to report.
+#' @return The family, its unset fields taken from the response.
+#' @noRd
+resolve_family <- function(outcome, response, call = rlang::caller_env()) {
+  UseMethod("resolve_family")
+}
+
+#' @export
+resolve_family.default <- function(outcome, response,
+                                   call = rlang::caller_env()) {
+  outcome
+}
+
+#' @export
+resolve_family.thiessen_ordinal <- function(outcome, response,
+                                            call = rlang::caller_env()) {
+  categories <- length(response$levels)
+  if (is.null(outcome$categories)) {
+    outcome$categories <- categories
+  } else if (outcome$categories != categories) {
+    thiessen_abort(
+      sprintf(
+        "`outcome` names %d categories but the response has %d levels.",
+        outcome$categories, categories
+      ),
+      call = call
+    )
+  }
+  outcome
 }
 
 #' The outcome family a response selects, at its defaults

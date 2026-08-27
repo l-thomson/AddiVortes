@@ -29,6 +29,12 @@ def sweep(tessellations: int, burn_in: int, draws: int) -> dict[str, Any]:
 #: Short enough to keep the suite quick, long enough to fit.
 SMALL = sweep(8, 10, 20)
 
+
+def survival(events: Any, times: Any) -> npt.NDArray[Any]:
+    """Return a structured survival array in the scikit-survival layout."""
+    return np.array(list(zip(events, times)), dtype=[("event", bool), ("time", float)])
+
+
 Fixture = tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
 
 

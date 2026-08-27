@@ -537,10 +537,8 @@ impl Geometry {
                     }
                 }
                 Metric::Spherical { .. } => {}
-                // `Config::validate` rejects a gated metric before any
-                // geometry is built, so this arm is never taken.
                 #[cfg(not(feature = "experimental"))]
-                Metric::Gated(_) => {}
+                Metric::Gated(gated) => gated.unreachable(),
                 #[cfg(feature = "experimental")]
                 Metric::Minkowski { .. }
                 | Metric::Manhattan { .. }
@@ -669,12 +667,8 @@ impl Geometry {
                     mean: 0.0,
                     sd: sigma_c,
                 }),
-                // As `key`: `Config::validate` rejects a gated metric first.
                 #[cfg(not(feature = "experimental"))]
-                Metric::Gated(_) => Ok(CoordinateLaw::Normal {
-                    mean: 0.0,
-                    sd: sigma_c,
-                }),
+                Metric::Gated(gated) => gated.unreachable(),
                 #[cfg(feature = "experimental")]
                 Metric::Minkowski { .. } | Metric::Manhattan { .. } | Metric::Cosine { .. } => {
                     Ok(CoordinateLaw::Normal {

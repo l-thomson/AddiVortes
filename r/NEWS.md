@@ -138,3 +138,14 @@
   not carry: fits about 7 per cent and predictions 10 to 15 per cent
   faster on one machine, the shared library half the size, sampled values
   unchanged.
+* `posterior_predict()` draws from each family's own observation model:
+  category codes under the ordinal family, times under the AFT family,
+  values clipped to the limits under the tobit family, the working value
+  under the interval-censored family, and Student-t or Laplace errors at
+  the drawn scale under those families; the Gaussian and probit
+  replicates are unchanged. `sigma()` and the family resolution at fit
+  dispatch on the outcome's class. A fit no longer stores
+  `response_levels`; the levels are read from `response`. A saved fit
+  naming an item the build gates signals `thiessen_requires_feature`
+  through the core's typed load path, and an `NA` event flag is refused
+  at the boundary.

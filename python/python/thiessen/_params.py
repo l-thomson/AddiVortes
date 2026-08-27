@@ -9,23 +9,31 @@ import scikit-learn.
 
 from __future__ import annotations
 
-import abc
 import inspect
 from typing import Any
 
-__all__ = ["Outcome", "Params"]
+import numpy as np
+
+__all__ = ["Outcome", "Params", "Tagged"]
+
+
+def _equal(value: Any, other: Any) -> bool:
+    """Whether two parameter values are equal, an array element-wise."""
+    if value is other:
+        return True
+    if isinstance(value, np.ndarray) or isinstance(other, np.ndarray):
+        return bool(np.array_equal(value, other))
+    try:
+        return bool(value == other)
+    except (TypeError, ValueError):
+        return False
 
 
 def _is_default(value: Any, default: Any) -> bool:
     """Whether `value` equals its signature default."""
     if default is inspect.Parameter.empty:
         return False
-    if value is default:
-        return True
-    try:
-        return bool(value == default)
-    except (TypeError, ValueError):
-        return False
+    return _equal(value, default)
 
 
 def _dense(fields: dict[str, Any]) -> dict[str, Any]:
@@ -119,7 +127,7 @@ class Params:
             return False
         mine = self.get_params(deep=False)
         theirs = other.get_params(deep=False)
-        return bool(mine == theirs)
+        return all(_equal(value, theirs[name]) for name, value in mine.items())
 
     def __repr__(self) -> str:
         signature = inspect.signature(type(self).__init__)
@@ -131,14 +139,27 @@ class Params:
         return f"{self._display_name()}({shown})"
 
 
-class Outcome(Params, abc.ABC):
+class Tagged(Params):
+    """A classed value stored under one tag, the core's tagged enum form.
+
+    Subclasses name the tag; every constructor argument is stored under
+    its own name inside it, so the constructor and the stored form share
+    one set of names.
+    """
+
+    _tag: str
+
+    def _display_name(self) -> str:
+        return self._tag
+
+    def _core(self) -> dict[str, Any]:
+        return {self._tag: _dense(self.get_params(deep=False))}
+
+
+class Outcome(Tagged):
     """The base of the outcome families.
 
     A family is told from a parameter group by this type, so the group of
     an ensemble passed where a family belongs is rejected at the boundary
     rather than serialised as one.
     """
-
-    @abc.abstractmethod
-    def _core(self) -> dict[str, Any]:
-        """Return the configuration's ``outcome`` group, the tagged form."""

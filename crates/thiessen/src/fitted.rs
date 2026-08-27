@@ -5,14 +5,14 @@
 use crate::config::Config;
 use crate::config::Outcome;
 #[cfg(feature = "experimental")]
-use crate::config::StudentTParams;
+use crate::config::{Inclusion, Membership, StudentTParams};
 use crate::data::{self, Data, Warning};
 use crate::error::{Error, Result};
 use crate::geometry::Geometry;
 use crate::maths;
 use crate::sampler::Sampler;
-use crate::scaler::Scaler;
-use crate::tessellation::Tessellation;
+use crate::scaler::{Scaler, ScalerParts};
+use crate::tessellation::{Tessellation, TessellationParts};
 use crate::threads;
 
 /// The kept posterior draws, scaled space: the m mean tessellations per
@@ -136,9 +136,9 @@ impl Posterior {
 #[derive(serde::Deserialize)]
 struct PosteriorParts {
     sigma_sq: Vec<f64>,
-    tessellations: Vec<Vec<Tessellation>>,
+    tessellations: Vec<Vec<TessellationParts>>,
     #[serde(default)]
-    variance_tessellations: Vec<Vec<Tessellation>>,
+    variance_tessellations: Vec<Vec<TessellationParts>>,
     #[serde(default)]
     cutpoints: Vec<Vec<f64>>,
     #[serde(default)]
@@ -156,43 +156,46 @@ impl TryFrom<PosteriorParts> for Posterior {
         let bad = |reason: &str| Error::InvalidSavedModel {
             reason: reason.into(),
         };
-        let n_draws = parts.tessellations.len();
+        let PosteriorParts {
+            sigma_sq,
+            tessellations,
+            variance_tessellations,
+            cutpoints,
+            dfs,
+            inclusion_weights,
+            concentration,
+        } = parts;
+        let tessellations = tessellation_draws(tessellations)?;
+        let variance_tessellations = tessellation_draws(variance_tessellations)?;
+        let n_draws = tessellations.len();
         if n_draws == 0 {
             return Err(bad("posterior needs at least one draw"));
         }
-        if !(parts.sigma_sq.is_empty() || parts.sigma_sq.len() == n_draws) {
+        if !(sigma_sq.is_empty() || sigma_sq.len() == n_draws) {
             return Err(bad("sigma^2 draws must be absent or one per draw"));
         }
-        if parts.sigma_sq.iter().any(|s| !(s.is_finite() && *s > 0.0)) {
+        if sigma_sq.iter().any(|s| !(s.is_finite() && *s > 0.0)) {
             return Err(bad("sigma^2 draws must be finite and positive"));
         }
-        let m = parts.tessellations[0].len();
-        if m == 0 || parts.tessellations.iter().any(|d| d.len() != m) {
+        let m = tessellations[0].len();
+        if m == 0 || tessellations.iter().any(|d| d.len() != m) {
             return Err(bad(
                 "every draw must hold the same positive number of tessellations",
             ));
         }
-        if !(parts.variance_tessellations.is_empty()
-            || parts.variance_tessellations.len() == n_draws)
-        {
+        if !(variance_tessellations.is_empty() || variance_tessellations.len() == n_draws) {
             return Err(bad(
                 "variance tessellations must be absent or one set per draw",
             ));
         }
-        if let Some(first) = parts.variance_tessellations.first() {
+        if let Some(first) = variance_tessellations.first() {
             let m_var = first.len();
-            if m_var == 0
-                || parts
-                    .variance_tessellations
-                    .iter()
-                    .any(|d| d.len() != m_var)
-            {
+            if m_var == 0 || variance_tessellations.iter().any(|d| d.len() != m_var) {
                 return Err(bad(
                     "every draw must hold the same positive number of variance tessellations",
                 ));
             }
-            if parts
-                .variance_tessellations
+            if variance_tessellations
                 .iter()
                 .flatten()
                 .any(|t| t.mus().iter().any(|v| *v <= 0.0))
@@ -200,17 +203,17 @@ impl TryFrom<PosteriorParts> for Posterior {
                 return Err(bad("variance cell values must be positive"));
             }
         }
-        if !(parts.cutpoints.is_empty() || parts.cutpoints.len() == n_draws) {
+        if !(cutpoints.is_empty() || cutpoints.len() == n_draws) {
             return Err(bad("cutpoints must be absent or one set per draw"));
         }
-        if let Some(first) = parts.cutpoints.first() {
+        if let Some(first) = cutpoints.first() {
             let width = first.len();
-            if width == 0 || parts.cutpoints.iter().any(|c| c.len() != width) {
+            if width == 0 || cutpoints.iter().any(|c| c.len() != width) {
                 return Err(bad(
                     "every draw must hold the same positive number of cutpoints",
                 ));
             }
-            for draw in &parts.cutpoints {
+            for draw in &cutpoints {
                 let mut previous = 0.0;
                 for &g in draw {
                     if !(g.is_finite() && g > previous) {
@@ -220,30 +223,30 @@ impl TryFrom<PosteriorParts> for Posterior {
                 }
             }
         }
-        if !(parts.dfs.is_empty() || parts.dfs.len() == n_draws) {
+        if !(dfs.is_empty() || dfs.len() == n_draws) {
             return Err(bad(
                 "degrees-of-freedom draws must be absent or one per draw",
             ));
         }
-        if parts.dfs.iter().any(|df| !(df.is_finite() && *df > 0.0)) {
+        if dfs.iter().any(|df| !(df.is_finite() && *df > 0.0)) {
             return Err(bad("degrees-of-freedom draws must be finite and positive"));
         }
-        if !(parts.inclusion_weights.is_empty() || parts.inclusion_weights.len() == n_draws) {
+        if !(inclusion_weights.is_empty() || inclusion_weights.len() == n_draws) {
             return Err(bad("inclusion weights must be absent or one set per draw"));
         }
-        if parts.concentration.len() != parts.inclusion_weights.len() {
+        if concentration.len() != inclusion_weights.len() {
             return Err(bad(
                 "inclusion weights and their concentration must be kept together",
             ));
         }
-        if let Some(first) = parts.inclusion_weights.first() {
+        if let Some(first) = inclusion_weights.first() {
             let p = first.len();
-            if p == 0 || parts.inclusion_weights.iter().any(|w| w.len() != p) {
+            if p == 0 || inclusion_weights.iter().any(|w| w.len() != p) {
                 return Err(bad(
                     "every draw must hold the same positive number of inclusion weights",
                 ));
             }
-            for draw in &parts.inclusion_weights {
+            for draw in &inclusion_weights {
                 if draw.iter().any(|w| !(w.is_finite() && *w >= 0.0)) {
                     return Err(bad("inclusion weights must be finite and non-negative"));
                 }
@@ -252,23 +255,30 @@ impl TryFrom<PosteriorParts> for Posterior {
                 }
             }
         }
-        if parts
-            .concentration
+        if concentration
             .iter()
             .any(|theta| !(theta.is_finite() && *theta > 0.0))
         {
             return Err(bad("concentration draws must be finite and positive"));
         }
         Ok(Self {
-            sigma_sq: parts.sigma_sq,
-            tessellations: parts.tessellations,
-            variance_tessellations: parts.variance_tessellations,
-            cutpoints: parts.cutpoints,
-            dfs: parts.dfs,
-            inclusion_weights: parts.inclusion_weights,
-            concentration: parts.concentration,
+            sigma_sq,
+            tessellations,
+            variance_tessellations,
+            cutpoints,
+            dfs,
+            inclusion_weights,
+            concentration,
         })
     }
+}
+
+/// Each draw's tessellations from their saved parts.
+fn tessellation_draws(draws: Vec<Vec<TessellationParts>>) -> Result<Vec<Vec<Tessellation>>> {
+    draws
+        .into_iter()
+        .map(|draw| draw.into_iter().map(Tessellation::try_from).collect())
+        .collect()
 }
 
 /// A fitted model: the configuration, the scaling, the kept draws and the
@@ -304,8 +314,8 @@ impl PartialEq for Fitted {
 #[derive(serde::Deserialize)]
 struct FittedParts {
     config: Config,
-    scaler: Scaler,
-    posterior: Posterior,
+    scaler: ScalerParts,
+    posterior: PosteriorParts,
     warnings: Vec<Warning>,
     in_sample_rmse: f64,
     #[serde(default)]
@@ -319,18 +329,28 @@ impl TryFrom<FittedParts> for Fitted {
         let bad = |reason: &str| Error::InvalidSavedModel {
             reason: reason.into(),
         };
-        parts.config.validate()?;
-        let p = parts.scaler.n_cols();
+        let FittedParts {
+            config,
+            scaler,
+            posterior,
+            warnings,
+            in_sample_rmse,
+            categories,
+        } = parts;
+        config.validate()?;
+        let scaler = Scaler::try_from(scaler)?;
+        let posterior = Posterior::try_from(posterior)?;
+        let p = scaler.n_cols();
         // A save from before categorical levels were stored carries none.
-        let categories = if parts.categories.is_empty() {
+        let categories = if categories.is_empty() {
             vec![Vec::new(); p]
         } else {
-            parts.categories
+            categories
         };
         let geometry =
-            Geometry::with_categories(&parts.config.mean_params.geometry.metric, p, &categories)?;
+            Geometry::with_categories(&config.mean_params.geometry.metric, p, &categories)?;
         #[cfg(feature = "experimental")]
-        geometry.with_precision(parts.config.mean_params.geometry.precision.as_deref())?;
+        geometry.with_precision(config.mean_params.geometry.precision.as_deref())?;
         #[cfg(not(feature = "experimental"))]
         drop(geometry);
         let uses_covariates = |draws: &[Vec<Tessellation>]| {
@@ -339,44 +359,43 @@ impl TryFrom<FittedParts> for Fitted {
                 .flatten()
                 .all(|t| t.dims().iter().all(|&d| d < p))
         };
-        for draw in parts.posterior.tessellations() {
-            if draw.len() != parts.config.mean_tessellations() {
+        for draw in posterior.tessellations() {
+            if draw.len() != config.mean_tessellations() {
                 return Err(bad("draws do not hold m tessellations"));
             }
         }
-        if !uses_covariates(parts.posterior.tessellations())
-            || !uses_covariates(parts.posterior.variance_tessellations())
+        if !uses_covariates(posterior.tessellations())
+            || !uses_covariates(posterior.variance_tessellations())
         {
             return Err(bad(
                 "a tessellation uses a covariate the scaler does not have",
             ));
         }
-        let n_draws = parts.posterior.n_draws();
-        let has_ensemble = parts.config.variance_tessellations() > 0;
+        let n_draws = posterior.n_draws();
+        let has_ensemble = config.variance_tessellations() > 0;
         let has_global_sigma_sq =
-            parts.config.outcome.sigma2_mode().samples_global_sigma_sq() && !has_ensemble;
-        if (parts.posterior.sigma_sq().len() == n_draws) != has_global_sigma_sq {
+            config.outcome.sigma2_mode().samples_global_sigma_sq() && !has_ensemble;
+        if (posterior.sigma_sq().len() == n_draws) != has_global_sigma_sq {
             return Err(bad(
                 "sigma^2 draws are present exactly where the scale is sampled globally",
             ));
         }
         #[cfg(feature = "experimental")]
         let expects_cutpoints = matches!(
-            &parts.config.outcome,
+            &config.outcome,
             Outcome::Ordinal(params) if params.categories > 2
         );
         #[cfg(not(feature = "experimental"))]
         let expects_cutpoints = false;
-        if (parts.posterior.cutpoints().len() == n_draws) != expects_cutpoints {
+        if (posterior.cutpoints().len() == n_draws) != expects_cutpoints {
             return Err(bad(
                 "cutpoint draws are present exactly under the ordinal model above two categories",
             ));
         }
         #[cfg(feature = "experimental")]
-        if let Outcome::Ordinal(params) = &parts.config.outcome {
+        if let Outcome::Ordinal(params) = &config.outcome {
             if params.categories > 2
-                && parts
-                    .posterior
+                && posterior
                     .cutpoints()
                     .iter()
                     .any(|draw| draw.len() != params.categories - 2)
@@ -386,48 +405,83 @@ impl TryFrom<FittedParts> for Fitted {
         }
         #[cfg(feature = "experimental")]
         let expects_dfs = matches!(
-            &parts.config.outcome,
+            &config.outcome,
             Outcome::StudentT(params) if !params.df.grid().is_empty()
         );
         #[cfg(not(feature = "experimental"))]
         let expects_dfs = false;
-        if (parts.posterior.dfs().len() == n_draws) != expects_dfs {
+        if (posterior.dfs().len() == n_draws) != expects_dfs {
             return Err(bad(
                 "degrees-of-freedom draws are present exactly under the student_t \
                  model with a grid",
             ));
         }
-        if (parts.posterior.variance_tessellations().len() == n_draws) != has_ensemble {
+        #[cfg(feature = "experimental")]
+        let expects_inclusion = matches!(
+            config.mean_params.structure.inclusion,
+            Inclusion::Dart { .. }
+        );
+        #[cfg(not(feature = "experimental"))]
+        let expects_inclusion = false;
+        if (posterior.inclusion_weights().len() == n_draws) != expects_inclusion {
+            return Err(bad(
+                "inclusion-weight draws are present exactly under the dart inclusion prior",
+            ));
+        }
+        if posterior
+            .inclusion_weights()
+            .iter()
+            .any(|draw| draw.len() != p)
+        {
+            return Err(bad("each draw holds one inclusion weight per covariate"));
+        }
+        #[cfg(feature = "experimental")]
+        let expects_bandwidth = matches!(
+            config.mean_params.geometry.membership,
+            Membership::Soft { .. }
+        );
+        #[cfg(not(feature = "experimental"))]
+        let expects_bandwidth = false;
+        if posterior
+            .tessellations()
+            .iter()
+            .flatten()
+            .any(|t| t.bandwidth().is_some() != expects_bandwidth)
+        {
+            return Err(bad(
+                "a bandwidth is kept on every tessellation exactly under soft membership",
+            ));
+        }
+        if (posterior.variance_tessellations().len() == n_draws) != has_ensemble {
             return Err(bad(
                 "variance tessellations are present exactly under a variance ensemble",
             ));
         }
         if has_ensemble
-            && parts.posterior.variance_tessellations()[0].len()
-                != parts.config.variance_tessellations()
+            && posterior.variance_tessellations()[0].len() != config.variance_tessellations()
         {
             return Err(bad(
                 "draws do not hold the variance-ensemble tessellation count",
             ));
         }
-        if matches!(parts.config.outcome, Outcome::Probit(_)) {
-            match parts.config.offset() {
+        if matches!(config.outcome, Outcome::Probit(_)) {
+            match config.offset() {
                 Some(c) if c.is_finite() => {}
                 _ => return Err(bad("a probit fit carries a finite offset")),
             }
-            if parts.scaler.y_range() != 1.0 || parts.scaler.y_min() != -0.5 {
+            if scaler.y_range() != 1.0 || scaler.y_min() != -0.5 {
                 return Err(bad("a probit fit leaves the response unscaled"));
             }
         }
-        if !parts.in_sample_rmse.is_finite() {
+        if !in_sample_rmse.is_finite() {
             return Err(bad("in-sample RMSE must be finite"));
         }
         Ok(Self {
-            config: parts.config,
-            scaler: parts.scaler,
-            posterior: parts.posterior,
-            warnings: parts.warnings,
-            in_sample_rmse: parts.in_sample_rmse,
+            config,
+            scaler,
+            posterior,
+            warnings,
+            in_sample_rmse,
             categories,
             threads: 1,
         })
@@ -473,6 +527,29 @@ impl Fitted {
             categories,
             threads: 1,
         }
+    }
+
+    /// The model of a saved payload, read through `deserializer` in
+    /// whatever format it speaks. The [`Deserialize`](serde::Deserialize)
+    /// impl runs the same checks but reports every failure through the
+    /// format's error type, as text; here the payload's shape is the
+    /// format's to report and each invariant of a saved model keeps its
+    /// own error.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidSavedModel` for a payload that does not parse or breaks an
+    /// invariant; [`Config::validate`]'s errors for its configuration,
+    /// `RequiresFeature` among them in a build without the feature the
+    /// fit used.
+    pub fn load<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self> {
+        let parts =
+            <FittedParts as serde::Deserialize>::deserialize(deserializer).map_err(|error| {
+                Error::InvalidSavedModel {
+                    reason: error.to_string(),
+                }
+            })?;
+        Self::try_from(parts)
     }
 
     /// The number of threads the predictions run on: the rows of a design
@@ -1482,17 +1559,12 @@ impl Fitted {
     /// on; empty under hard membership, and in a build without the
     /// feature. Experimental (`docs/experimental.md`).
     pub fn bandwidth_draws(&self) -> Vec<Vec<f64>> {
-        #[cfg(not(feature = "experimental"))]
-        return Vec::new();
-        #[cfg(feature = "experimental")]
-        {
-            self.posterior
-                .tessellations()
-                .iter()
-                .map(|draw| draw.iter().filter_map(Tessellation::bandwidth).collect())
-                .filter(|draw: &Vec<f64>| !draw.is_empty())
-                .collect()
-        }
+        self.posterior
+            .tessellations()
+            .iter()
+            .map(|draw| draw.iter().filter_map(Tessellation::bandwidth).collect())
+            .filter(|draw: &Vec<f64>| !draw.is_empty())
+            .collect()
     }
 
     /// sigma per kept draw under a model with a global sampled sigma^2
