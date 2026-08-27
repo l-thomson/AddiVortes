@@ -467,21 +467,59 @@ progress_updates <- function(control, chains = 1L) {
   as.integer(min(sweeps, 100L))
 }
 
-# Pooling the draws predicts at every training row for every kept draw, so
-# it costs about twice what the sweeps cost, in multiples of them. A step
-# apiece would leave the bar all but complete over the longer phase.
-POOLING_WEIGHT <- 2L
+# One kept draw's share of the phases after the sweeps (pooling the chains,
+# encoding the state, the convergence summary) costs about as many
+# row-sweeps as this, measured on one machine at 200 tessellations with the
+# chains on their own threads and the phases after them on one. The
+# tessellation count cancels: both sides scale with it.
+TAIL_ROW_SWEEPS_PER_DRAW <- 125
+
+# The relative cost of the phases after the sweeps: pooling the chains,
+# encoding the state and the convergence summary, which only a fit of two
+# or more chains computes.
+tail_shares <- function(chains) {
+  c(pooling = 1, saving = 2, summarising = if (chains > 1L) 1 else 0)
+}
+
+#' The steps each phase after the sweeps takes
+#'
+#' The sweeps cost about `chains * sweeps * n / min(chains, threads)`
+#' row-sweeps and the phases after them `TAIL_ROW_SWEEPS_PER_DRAW *
+#' chains * draws`, so the phases' share of the bar is the ratio, in
+#' multiples of the sweep reports and bounded to three times them. Each
+#' phase takes at least one step, so the bar cannot complete before the
+#' last phase does.
+#'
+#' @param control An object of class `"thiessen_control"`.
+#' @param n The number of training rows.
+#' @param chains The number of chains the fit runs.
+#' @param threads The number of threads the chains run on.
+#' @return A named integer vector: `pooling`, `saving`, `summarising`.
+#' @noRd
+progress_phase_steps <- function(control, n, chains = 1L, threads = 1L) {
+  schedule <- control$general_params
+  sweeps <- schedule$burn_in + schedule$draws * schedule$thinning
+  updates <- progress_updates(control, chains)
+  ratio <- TAIL_ROW_SWEEPS_PER_DRAW * schedule$draws * min(chains, threads) /
+    (sweeps * max(n, 1L))
+  total <- as.integer(min(ceiling(updates * ratio), 3 * updates))
+  shares <- tail_shares(chains)
+  steps <- stats::setNames(
+    pmax(1L, as.integer(floor(total * shares / sum(shares)))), names(shares)
+  )
+  steps[["saving"]] <- steps[["saving"]] + max(0L, total - sum(steps))
+  steps
+}
 
 #' The number of steps a fit's progressor takes
 #'
-#' @param control An object of class `"thiessen_control"`.
-#' @param chains The number of chains the fit runs.
-#' @return An integer: the sweep reports, pooling at its weight, and one
-#'   step for the convergence summary.
+#' @inheritParams progress_phase_steps
+#' @return An integer: the sweep reports and the steps of the phases after
+#'   them.
 #' @noRd
-progress_steps <- function(control, chains = 1L) {
-  updates <- progress_updates(control, chains)
-  updates + POOLING_WEIGHT * updates + 1L
+progress_steps <- function(control, n, chains = 1L, threads = 1L) {
+  progress_updates(control, chains) +
+    sum(progress_phase_steps(control, n, chains, threads))
 }
 
 #' The message the sweeps report

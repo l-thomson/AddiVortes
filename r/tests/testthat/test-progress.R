@@ -55,7 +55,9 @@ test_that("a fit signals every progression it requests", {
   seen <- progressions(thiessen(fixture$x, fixture$y, control, seed = 1,
                                 chains = 1))
   expect_identical(sweep_updates(seen), 100L)
-  expect_identical(total_advance(seen), progress_steps(control))
+  expect_identical(
+    total_advance(seen), progress_steps(control, nrow(fixture$x))
+  )
 })
 
 test_that("a fit shorter than a hundred sweeps signals one per sweep", {
@@ -76,12 +78,15 @@ test_that("the sweeps of every chain are reported", {
   ))
 
   expect_identical(sweep_updates(seen), progress_updates(small_control(), 2L))
-  expect_identical(total_advance(seen), progress_steps(small_control(), 2L))
+  expect_identical(
+    total_advance(seen),
+    progress_steps(small_control(), nrow(fixture$x), 2L)
+  )
 })
 
 # The sweeps once took every step of the progressor, which finished the
-# report at the last sweep and left pooling, the longest phase of a long
-# fit, and the convergence summary running under a closed handler.
+# report at the last sweep and left pooling and the convergence summary
+# running under a closed handler.
 test_that("the sweeps leave the budget the phases after them need", {
   fixture <- small_fixture()
   sweeps <- progress_updates(small_control())
@@ -93,24 +98,61 @@ test_that("the sweeps leave the budget the phases after them need", {
   expect_identical(sweep_updates(seen), sweeps)
   expect_identical(
     total_advance(seen) - sweeps,
-    POOLING_WEIGHT * sweeps + 1L
+    sum(progress_phase_steps(small_control(), nrow(fixture$x)))
   )
   expect_identical(
     phase_messages(seen),
-    c("sampling", "pooling the draws", "summarising the draws")
+    c(
+      "sampling", "pooling the draws", "saving the state",
+      "summarising the draws"
+    )
   )
 })
 
-# Pooling is one call into the core, so the bar rests where the sweeps
-# leave it for as long as pooling runs. A bar that rests all but complete
-# reads as a fit that has hung rather than one still working.
-test_that("the sweeps leave the bar around a third along, not all but complete", {
-  for (chains in 1:2) {
-    fraction <- progress_updates(small_control(), chains) /
-      progress_steps(small_control(), chains)
-    expect_gt(fraction, 0.25)
-    expect_lt(fraction, 0.45)
+# The phases after the sweeps are each one call into the core or into
+# posterior, so the bar rests where the sweeps leave it for as long as each
+# runs. Their share of the bar follows their cost: they scale with the kept
+# draws on one thread, the sweeps with the training rows on the threads.
+test_that("the sweeps take most of the bar on a one-chain default fit", {
+  control <- thiessen_control()
+
+  fraction <- progress_updates(control) / progress_steps(control, n = 200L)
+
+  expect_gt(fraction, 0.6)
+})
+
+test_that("the phases after the sweeps take more of the bar as they cost more", {
+  tail_steps <- function(n, chains = 1L, threads = 1L, ...) {
+    sum(progress_phase_steps(thiessen_control(...), n, chains, threads))
   }
+  longer <- general_params(burn_in = 200, draws = 2000)
+
+  expect_lt(tail_steps(1000L), tail_steps(200L))
+  expect_gt(tail_steps(200L, general_params = longer), tail_steps(200L))
+  expect_gt(tail_steps(200L, 4L, 4L), tail_steps(200L, 4L, 1L))
+  expect_identical(tail_steps(200L, 4L, 4L), tail_steps(200L, 4L, 8L))
+})
+
+test_that("every phase after the sweeps takes at least one step", {
+  steps <- progress_phase_steps(small_control(), 40L)
+  expect_named(steps, c("pooling", "saving", "summarising"))
+  expect_true(all(steps >= 1L))
+
+  steps <- progress_phase_steps(thiessen_control(), 100000L, 4L, 4L)
+  expect_true(all(steps >= 1L))
+})
+
+test_that("the bar completes at the last phase and not before", {
+  fixture <- small_fixture()
+
+  seen <- progressions(
+    thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
+  )
+  updates <- updates_of(seen)
+  total <- progress_steps(small_control(), nrow(fixture$x))
+
+  expect_lt(sum(updates$amount[-nrow(updates)]), total)
+  expect_identical(as.integer(sum(updates$amount)), total)
 })
 
 # Under a terminal handler a plain message is overwritten by the next bar
@@ -125,7 +167,10 @@ test_that("every phase names itself in a sticky progression", {
 
   expect_identical(
     named$message,
-    c("sampling", "pooling the draws", "summarising the draws")
+    c(
+      "sampling", "pooling the draws", "saving the state",
+      "summarising the draws"
+    )
   )
   expect_true(all(named$sticky))
 })
@@ -139,7 +184,10 @@ test_that("the chains of a fit are named as they are sampled", {
 
   expect_identical(
     phase_messages(seen),
-    c("sampling 2 chains", "pooling the draws", "summarising the draws")
+    c(
+      "sampling 2 chains", "pooling the draws", "saving the state",
+      "summarising the draws"
+    )
   )
 
   seen <- progressions(suppressWarnings(
@@ -151,7 +199,7 @@ test_that("the chains of a fit are named as they are sampled", {
     phase_messages(seen),
     c(
       "sampling 2 chains on 2 threads", "pooling the draws",
-      "summarising the draws"
+      "saving the state", "summarising the draws"
     )
   )
 })
@@ -165,7 +213,10 @@ test_that("the sweeps of threaded chains are reported", {
   ))
 
   expect_identical(sweep_updates(seen), progress_updates(small_control(), 3L))
-  expect_identical(total_advance(seen), progress_steps(small_control(), 3L))
+  expect_identical(
+    total_advance(seen),
+    progress_steps(small_control(), nrow(fixture$x), 3L, 2L)
+  )
 })
 
 test_that("the number of updates does not exceed the sweeps", {
