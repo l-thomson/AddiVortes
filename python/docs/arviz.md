@@ -48,7 +48,8 @@ print(az.summary(data, var_names=["sigma"], kind="diagnostics"))
 ```
 
 `fit(n_chains=k)` runs k chains, each with a seed the core derives from the
-resolved seed, and pools their draws. A fit of two or more chains checks
+resolved seed, and pools their draws; the default is four, the number
+Vehtari and others (2021) recommend. A fit of two or more chains checks
 R-hat and the bulk and tail effective sample sizes of `sigma` and of the mean
 function at up to twenty training rows, and warns where R-hat exceeds 1.01 or
 an effective sample size falls below 400 (Vehtari, Gelman, Simpson, Carpenter

@@ -148,8 +148,36 @@ test_that("threads must be a whole number of at least one", {
   for (threads in list(0, -1, 1.5, "two", NA)) {
     expect_error(
       thiessen(fixture$x, fixture$y, small_control(), seed = 1,
-               threads = threads),
+               threads = threads, chains = 1),
       class = "thiessen_error"
     )
   }
+})
+
+test_that("a fit defaults to four chains on one thread", {
+  fixture <- small_fixture()
+  withr::local_options(mc.cores = NULL)
+
+  fit <- suppressWarnings(
+    thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  )
+
+  expect_identical(fit$n_chains, 4L)
+  expect_identical(fit$threads, 1L)
+  expect_identical(fit$convergence$n_chains, 4L)
+})
+
+test_that("mc.cores sets the default threads and leaves the draws alone", {
+  fixture <- small_fixture()
+  serial <- chain_fit(seed = 5, chains = 4)
+  withr::local_options(mc.cores = 2)
+
+  threaded <- suppressWarnings(
+    thiessen(fixture$x, fixture$y, small_control(), seed = 5)
+  )
+
+  expect_identical(threaded$threads, 2L)
+  expect_identical(threaded$state$payload, serial$state$payload)
+  expect_identical(fitted(threaded), fitted(serial))
+  expect_identical(thiessen_diagnostics(threaded), thiessen_diagnostics(serial))
 })

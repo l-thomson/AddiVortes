@@ -80,7 +80,7 @@ for (draw in seq_len(100)) {
 }
 driven <- sampler$finish()
 
-fit <- thiessen(x, y, control, seed = 1)
+fit <- thiessen(x, y, control, seed = 1, chains = 1)
 identical(predict(driven, x), predict(fit, x))
 ```
 

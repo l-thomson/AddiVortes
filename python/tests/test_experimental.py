@@ -124,7 +124,9 @@ def test_an_unknown_field_is_a_deserialisation_error():
 @pytest.mark.skipif(_native.EXPERIMENTAL, reason="built with the feature")
 def test_a_saved_model_naming_a_gated_family_reports_the_feature(gaussian_fixture):
     x, y = gaussian_fixture
-    payload = json.loads(Model(**SMALL).fit(x, y, random_state=1)._fitted.to_json())
+    payload = json.loads(
+        Model(**SMALL).fit(x, y, random_state=1, n_chains=1)._fitted.to_json()
+    )
     payload["config"]["outcome"] = {"laplace": {}}
 
     with pytest.raises(RequiresFeatureError):
@@ -133,7 +135,9 @@ def test_a_saved_model_naming_a_gated_family_reports_the_feature(gaussian_fixtur
 
 def test_a_saved_model_naming_an_unknown_family_fails_to_load(gaussian_fixture):
     x, y = gaussian_fixture
-    payload = json.loads(Model(**SMALL).fit(x, y, random_state=1)._fitted.to_json())
+    payload = json.loads(
+        Model(**SMALL).fit(x, y, random_state=1, n_chains=1)._fitted.to_json()
+    )
     payload["config"]["outcome"] = {"robust": {}}
 
     with pytest.raises(ThiessenError):
@@ -164,4 +168,4 @@ def test_the_tagged_entries_are_the_struct_variants_without_required_fields():
 
 
 def test_the_classifier_is_always_probit():
-    assert isinstance(AddiVortesClassifier()._outcome(), Probit)
+    assert isinstance(AddiVortesClassifier(n_chains=1)._outcome(), Probit)

@@ -100,7 +100,7 @@ test_that("an invalid configuration keeps the plain condition class", {
 test_that("a saved fit naming a gated model reports the feature", {
   skip_if(core_experimental())
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
   fit$state$payload <- swap_payload_name(
     fit$state$payload, "gaussian", "laplace"
   )
@@ -111,7 +111,7 @@ test_that("a saved fit naming a gated model reports the feature", {
 
 test_that("a saved fit naming an unknown model fails to load", {
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
   fit$state$payload <- swap_payload_name(
     fit$state$payload, "gaussian", "robust"
   )

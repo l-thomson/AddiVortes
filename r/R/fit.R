@@ -45,6 +45,18 @@
 #' sample size falls below 400 (Vehtari and others, 2021). A fit of one
 #' chain says so instead.
 #'
+#' A default fit runs four chains of 200 burn-in and 1000 draws each, on
+#' `getOption("mc.cores", 1L)` threads, so on one thread it costs four
+#' chains; `options(mc.cores = 4)` runs the chains on four cores for the
+#' same draws, and the fit then takes less than half the one-thread time
+#' (about 45 per cent at n = 200 on four cores of a 2025 laptop; pooling
+#' the draws and the diagnostics run on one thread), so it costs under
+#' two chains rather than four. On Friedman #1 with n = 200 and p = 10 the
+#' smallest effective sample size over the monitored points is about 100
+#' (threshold 400) and the largest R-hat about 1.05 (threshold 1.01), so
+#' the default fit warns. More draws per chain, `general_params(draws = )`,
+#' is the answer; `thinning` is not.
+#'
 #' @section Progress:
 #'
 #' Progress over the whole fit is signalled with progressr, so a session
@@ -83,7 +95,7 @@
 #'
 #' ```
 #' withCallingHandlers(
-#'   fit <- thiessen(x, y, control, chains = 2),
+#'   fit <- thiessen(x, y, control),
 #'   thiessen_warning = function(condition) {
 #'     invokeRestart("muffleWarning")
 #'   }
@@ -104,11 +116,16 @@
 #' @param chains The number of chains to run, a whole number. Each chain
 #'   has its own seed, derived from `seed` in the core, and the draws of the
 #'   chains are pooled. Two or more chains give the convergence
-#'   diagnostics; one chain does not.
+#'   diagnostics; one chain does not. Default 4, the number Vehtari and
+#'   others (2021) recommend and the Stan default.
 #' @param threads The number of threads, a whole number. The chains are
 #'   spread over at most this many threads, each chain on one thread with
 #'   its own generator, so the draws do not depend on it; `predict()` on
-#'   the fit splits the rows over the same number. Default 1.
+#'   the fit splits the rows over the same number. The default reads
+#'   `getOption("mc.cores", 1L)` when the fit is called, as Stan's
+#'   interfaces do, so `options(mc.cores = 4)` is the one-line opt-in and
+#'   a session that sets nothing runs on one thread, where a default fit
+#'   is four chains long.
 #' @param seed The seed of the chain. `NULL`, the default, draws one from
 #'   R's stream, so [set.seed()] governs; a whole number in `[0, 2^53]`
 #'   passes to the core unchanged, so the same value reproduces the same
@@ -150,8 +167,9 @@
 #' fit <- thiessen(x, y, control, seed = 1)
 #' fit
 #'
-#' # Two chains add the convergence diagnostics; one chain reports none.
-#' thiessen(x, y, control, seed = 1, chains = 2)
+#' # The default four chains carry the convergence diagnostics, and warn on
+#' # a schedule this short; one chain reports none.
+#' thiessen(x, y, control, seed = 1, chains = 1)
 #'
 #' frame <- data.frame(y = y, a = x[, 1], b = factor(x[, 2] > 0))
 #' thiessen(y ~ a + b, frame, control, seed = 1)
@@ -163,7 +181,8 @@ thiessen <- function(x, ...) {
 #' @rdname thiessen
 #' @export
 thiessen.default <- function(x, y, control = thiessen_control(), seed = NULL,
-                             chains = 1, threads = 1, ...) {
+                             chains = 4,
+                             threads = getOption("mc.cores", 1L), ...) {
   rlang::check_dots_empty()
   design <- as_design(x)
   response <- as_response(y)
@@ -174,7 +193,8 @@ thiessen.default <- function(x, y, control = thiessen_control(), seed = NULL,
 #' @rdname thiessen
 #' @export
 thiessen.data.frame <- function(x, y, control = thiessen_control(),
-                                seed = NULL, chains = 1, threads = 1, ...) {
+                                seed = NULL, chains = 4,
+                                threads = getOption("mc.cores", 1L), ...) {
   rlang::check_dots_empty()
   molded <- core_call(
     hardhat::mold(~ ., data = x, blueprint = blueprint_for(control))
@@ -191,7 +211,8 @@ thiessen.data.frame <- function(x, y, control = thiessen_control(),
 #' @rdname thiessen
 #' @export
 thiessen.formula <- function(formula, data, control = thiessen_control(),
-                             seed = NULL, chains = 1, threads = 1, ...) {
+                             seed = NULL, chains = 4,
+                             threads = getOption("mc.cores", 1L), ...) {
   rlang::check_dots_empty()
   molded <- core_call(
     hardhat::mold(formula, data, blueprint = blueprint_for(control))

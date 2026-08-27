@@ -44,6 +44,7 @@ Suggests:
     srr,
     survival,
     testthat (>= 3.1.5),
+    withr,
     tidybayes
 VignetteBuilder: knitr
 Roxygen: list(markdown = TRUE, load = "source",

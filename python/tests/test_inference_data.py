@@ -13,7 +13,7 @@ pytest.importorskip("arviz")
 
 def test_the_groups_follow_the_convention(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     data = fitted.to_inference_data(x, y)
 
@@ -27,7 +27,7 @@ def test_the_groups_follow_the_convention(gaussian_fixture):
 
 def test_the_posterior_carries_the_mean_function_and_sigma(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     posterior = fitted.to_inference_data(x, y)["posterior"].dataset
 
@@ -41,7 +41,7 @@ def test_the_posterior_carries_the_mean_function_and_sigma(gaussian_fixture):
 
 def test_the_observation_dimension_is_labelled(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     data = fitted.to_inference_data(x, y)
 
@@ -53,7 +53,7 @@ def test_the_observation_dimension_is_labelled(gaussian_fixture):
 
 def test_the_observed_data_is_the_response(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     observed = fitted.to_inference_data(x, y)["observed_data"].dataset["y"]
 
@@ -62,7 +62,7 @@ def test_the_observed_data_is_the_response(gaussian_fixture):
 
 def test_the_log_likelihood_matches_the_accessor(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     group = fitted.to_inference_data(x, y)["log_likelihood"].dataset["y"]
 
@@ -72,7 +72,7 @@ def test_the_log_likelihood_matches_the_accessor(gaussian_fixture):
 
 def test_the_predictive_replicates_are_reproducible(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     first = fitted.to_inference_data(x, y)["posterior_predictive"].dataset["y"]
     second = fitted.to_inference_data(x, y)["posterior_predictive"].dataset["y"]
@@ -83,7 +83,7 @@ def test_the_predictive_replicates_are_reproducible(gaussian_fixture):
 
 def test_the_probit_model_carries_no_sigma(probit_fixture):
     x, y = probit_fixture
-    fitted = Model(outcome=probit(), **SMALL).fit(x, y, random_state=1)
+    fitted = Model(outcome=probit(), **SMALL).fit(x, y, random_state=1, n_chains=1)
 
     posterior = fitted.to_inference_data(x, y)["posterior"].dataset
 
@@ -93,7 +93,7 @@ def test_the_probit_model_carries_no_sigma(probit_fixture):
 
 def test_the_probit_replicates_are_labels(probit_fixture):
     x, y = probit_fixture
-    fitted = Model(outcome=probit(), **SMALL).fit(x, y, random_state=1)
+    fitted = Model(outcome=probit(), **SMALL).fit(x, y, random_state=1, n_chains=1)
 
     replicates = fitted.to_inference_data(x, y)["posterior_predictive"].dataset["y"]
 
@@ -103,7 +103,7 @@ def test_the_probit_replicates_are_labels(probit_fixture):
 def test_the_heteroscedastic_model_carries_no_sigma(gaussian_fixture):
     x, y = gaussian_fixture
     fitted = Model(variance_params=TermParams(tessellations=5), **SMALL).fit(
-        x, y, random_state=1
+        x, y, random_state=1, n_chains=1
     )
 
     posterior = fitted.to_inference_data(x, y)["posterior"].dataset
@@ -113,7 +113,7 @@ def test_the_heteroscedastic_model_carries_no_sigma(gaussian_fixture):
 
 def test_a_row_count_mismatch_fails_loudly(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     with pytest.raises(ValueError, match="one label per row"):
         fitted.to_inference_data(x, y[:-1])
@@ -122,7 +122,7 @@ def test_a_row_count_mismatch_fails_loudly(gaussian_fixture):
 def test_arviz_reads_the_result(gaussian_fixture):
     az = pytest.importorskip("arviz")
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     data = fitted.to_inference_data(x, y)
     summary = az.summary(data, var_names=["sigma"])

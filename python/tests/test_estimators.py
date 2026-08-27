@@ -35,12 +35,15 @@ PARAMETERS = {
 
 
 def test_the_parameters_are_the_groups_and_the_run_length_settings():
-    for estimator in (AddiVortesRegressor(), AddiVortesClassifier()):
+    for estimator in (
+        AddiVortesRegressor(n_chains=1),
+        AddiVortesClassifier(n_chains=1),
+    ):
         assert set(estimator.get_params(deep=False)) == PARAMETERS
 
 
 def test_deep_params_route_into_the_groups():
-    estimator = AddiVortesRegressor(mean_params=TermParams(tessellations=8))
+    estimator = AddiVortesRegressor(mean_params=TermParams(tessellations=8), n_chains=1)
     deep = estimator.get_params(deep=True)
     assert deep["mean_params__tessellations"] == 8
 
@@ -51,7 +54,7 @@ def test_deep_params_route_into_the_groups():
 
 def test_regressor_fits_and_predicts(gaussian_fixture):
     x, y = gaussian_fixture
-    model = AddiVortesRegressor(random_state=1, **SMALL).fit(x, y)
+    model = AddiVortesRegressor(random_state=1, **SMALL, n_chains=1).fit(x, y)
 
     check_is_fitted(model)
     assert model.n_features_in_ == 2
@@ -62,7 +65,7 @@ def test_regressor_fits_and_predicts(gaussian_fixture):
 
 def test_regressor_return_std(gaussian_fixture):
     x, y = gaussian_fixture
-    model = AddiVortesRegressor(random_state=1, **SMALL).fit(x, y)
+    model = AddiVortesRegressor(random_state=1, **SMALL, n_chains=1).fit(x, y)
 
     mean, std = model.predict(x, return_std=True)
     np.testing.assert_allclose(mean, model.predict(x))
@@ -72,7 +75,7 @@ def test_regressor_return_std(gaussian_fixture):
 
 def test_regressor_prediction_interval_brackets_the_mean(gaussian_fixture):
     x, y = gaussian_fixture
-    model = AddiVortesRegressor(random_state=1, **SMALL).fit(x, y)
+    model = AddiVortesRegressor(random_state=1, **SMALL, n_chains=1).fit(x, y)
 
     interval = model.predict_interval(x, level=0.9)
     mean = model.predict(x)
@@ -83,7 +86,7 @@ def test_regressor_prediction_interval_brackets_the_mean(gaussian_fixture):
 def test_heteroscedastic_model(gaussian_fixture):
     x, y = gaussian_fixture
     model = AddiVortesRegressor(
-        variance_params=TermParams(tessellations=5), random_state=1, **SMALL
+        variance_params=TermParams(tessellations=5), random_state=1, **SMALL, n_chains=1
     ).fit(x, y)
 
     assert model.predict(x).shape == (48,)
@@ -92,18 +95,18 @@ def test_heteroscedastic_model(gaussian_fixture):
 def test_probit_is_rejected_by_the_regressor(gaussian_fixture):
     x, y = gaussian_fixture
     with pytest.raises(ValueError, match="AddiVortesClassifier"):
-        AddiVortesRegressor(outcome=probit(), **SMALL).fit(x, y)  # type: ignore[arg-type]
+        AddiVortesRegressor(outcome=probit(), **SMALL, n_chains=1).fit(x, y)  # type: ignore[arg-type]
 
 
 def test_the_classifier_rejects_a_regression_family(probit_fixture):
     x, y = probit_fixture
     with pytest.raises(ValueError, match="AddiVortesRegressor"):
-        AddiVortesClassifier(outcome=gaussian(), **SMALL).fit(x, y)  # type: ignore[arg-type]
+        AddiVortesClassifier(outcome=gaussian(), **SMALL, n_chains=1).fit(x, y)  # type: ignore[arg-type]
 
 
 def test_classifier_predicts_labels_and_probabilities(probit_fixture):
     x, y = probit_fixture
-    model = AddiVortesClassifier(random_state=1, **SMALL).fit(x, y)
+    model = AddiVortesClassifier(random_state=1, **SMALL, n_chains=1).fit(x, y)
 
     np.testing.assert_array_equal(model.classes_, [0.0, 1.0])
     probabilities = model.predict_proba(x)
@@ -117,7 +120,7 @@ def test_classifier_keeps_the_caller_labels(probit_fixture):
     x, y = probit_fixture
     labels = np.where(y > 0.5, "high", "low")
 
-    model = AddiVortesClassifier(random_state=1, **SMALL).fit(x, labels)
+    model = AddiVortesClassifier(random_state=1, **SMALL, n_chains=1).fit(x, labels)
 
     np.testing.assert_array_equal(model.classes_, ["high", "low"])
     assert set(np.unique(model.predict(x))) <= {"high", "low"}
@@ -127,20 +130,22 @@ def test_classifier_rejects_more_than_two_classes(gaussian_fixture):
     x, _ = gaussian_fixture
     three = np.array([i % 3 for i in range(48)])
     with pytest.raises(ValueError, match="Only binary classification"):
-        AddiVortesClassifier(**SMALL).fit(x, three)
+        AddiVortesClassifier(**SMALL, n_chains=1).fit(x, three)
 
 
 def test_the_estimator_and_model_agree_for_one_seed(gaussian_fixture):
     x, y = gaussian_fixture
 
-    estimator = AddiVortesRegressor(random_state=1, **SMALL).fit(x, y)
-    direct = Model(**SMALL).fit(x, y, random_state=1)
+    estimator = AddiVortesRegressor(random_state=1, **SMALL, n_chains=1).fit(x, y)
+    direct = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     np.testing.assert_array_equal(estimator.predict(x), direct.predict(x))
 
 
 def test_clone_and_get_params_round_trip():
-    model = AddiVortesRegressor(mean_params=TermParams(tessellations=10, lambda_c=25.0))
+    model = AddiVortesRegressor(
+        mean_params=TermParams(tessellations=10, lambda_c=25.0), n_chains=1
+    )
     copy = clone(model)
 
     assert copy.get_params() == model.get_params()
@@ -152,7 +157,7 @@ def test_clone_and_get_params_round_trip():
 
 def test_pickle_round_trip_preserves_predictions(gaussian_fixture):
     x, y = gaussian_fixture
-    model = AddiVortesRegressor(random_state=1, **SMALL).fit(x, y)
+    model = AddiVortesRegressor(random_state=1, **SMALL, n_chains=1).fit(x, y)
 
     restored = pickle.loads(pickle.dumps(model))
 
@@ -161,7 +166,7 @@ def test_pickle_round_trip_preserves_predictions(gaussian_fixture):
 
 
 def test_pickle_of_an_unfitted_estimator(gaussian_fixture):
-    model = AddiVortesRegressor(mean_params=TermParams(tessellations=10))
+    model = AddiVortesRegressor(mean_params=TermParams(tessellations=10), n_chains=1)
     restored = pickle.loads(pickle.dumps(model))
     assert restored.get_params() == model.get_params()
 
@@ -171,12 +176,12 @@ def test_predict_before_fit_is_rejected(gaussian_fixture):
     from sklearn.exceptions import NotFittedError
 
     with pytest.raises(NotFittedError):
-        AddiVortesRegressor().predict(x)
+        AddiVortesRegressor(n_chains=1).predict(x)
 
 
 def test_predict_with_the_wrong_column_count(gaussian_fixture):
     x, y = gaussian_fixture
-    model = AddiVortesRegressor(random_state=1, **SMALL).fit(x, y)
+    model = AddiVortesRegressor(random_state=1, **SMALL, n_chains=1).fit(x, y)
     with pytest.raises(ValueError, match="features"):
         model.predict(x[:, :1])
 
@@ -186,7 +191,7 @@ def test_core_errors_surface_as_value_errors(gaussian_fixture):
     x = x.copy()
     x[:, 1] = 1.0
     with pytest.raises(ThiessenError):
-        AddiVortesRegressor(**SMALL).fit(x, y)
+        AddiVortesRegressor(**SMALL, n_chains=1).fit(x, y)
 
 
 def test_feature_names_are_stored():
@@ -196,7 +201,7 @@ def test_feature_names_are_stored():
     )
     y = frame["a"].to_numpy() + frame["b"].to_numpy() * 0.5
 
-    model = AddiVortesRegressor(random_state=1, **SMALL).fit(frame, y)
+    model = AddiVortesRegressor(random_state=1, **SMALL, n_chains=1).fit(frame, y)
 
     np.testing.assert_array_equal(model.feature_names_in_, ["a", "b"])
 
@@ -206,7 +211,7 @@ def test_pipeline_and_cross_validation(gaussian_fixture):
     pipeline = Pipeline(
         [
             ("scale", StandardScaler()),
-            ("fit", AddiVortesRegressor(random_state=1, **SMALL)),
+            ("fit", AddiVortesRegressor(random_state=1, **SMALL, n_chains=1)),
         ]
     )
 
@@ -218,7 +223,7 @@ def test_pipeline_and_cross_validation(gaussian_fixture):
 def test_grid_search_routes_into_the_groups(gaussian_fixture):
     x, y = gaussian_fixture
     search = GridSearchCV(
-        AddiVortesRegressor(random_state=1, **SMALL),
+        AddiVortesRegressor(random_state=1, **SMALL, n_chains=1),
         {
             "mean_params__lambda_c": [5.0, 25.0],
             "outcome": [gaussian(nu=3.0), gaussian(nu=6.0)],
@@ -236,7 +241,7 @@ def test_partial_dependence_works_through_sklearn(gaussian_fixture):
     from sklearn.inspection import partial_dependence
 
     x, y = gaussian_fixture
-    model = AddiVortesRegressor(random_state=1, **SMALL).fit(x, y)
+    model = AddiVortesRegressor(random_state=1, **SMALL, n_chains=1).fit(x, y)
 
     result = partial_dependence(model, x, features=[0], grid_resolution=5)
 
@@ -258,7 +263,7 @@ class TestCategorical:
     def test_indices_expand_to_treatment_contrasts(self):
         x, y = self._data()
         model = AddiVortesRegressor(
-            categorical_features=[1], random_state=1, **SMALL
+            categorical_features=[1], random_state=1, **SMALL, n_chains=1
         ).fit(x, y)
 
         # Three levels become two indicator columns, the first as reference.
@@ -269,7 +274,7 @@ class TestCategorical:
     def test_boolean_mask_is_accepted(self):
         x, y = self._data()
         model = AddiVortesRegressor(
-            categorical_features=[False, True], random_state=1, **SMALL
+            categorical_features=[False, True], random_state=1, **SMALL, n_chains=1
         ).fit(x, y)
 
         assert model.predict(x).shape == (60,)
@@ -285,6 +290,7 @@ class TestCategorical:
             burn_in=10,
             draws=20,
             random_state=1,
+            n_chains=1,
         ).fit(x, y)
 
         assert model._encoding.core_metric == ["euclidean", "categorical"]
@@ -292,7 +298,7 @@ class TestCategorical:
 
     def test_no_encoding_happens_without_the_parameter(self):
         x, y = self._data()
-        model = AddiVortesRegressor(random_state=1, **SMALL).fit(x, y)
+        model = AddiVortesRegressor(random_state=1, **SMALL, n_chains=1).fit(x, y)
 
         assert model._encoding.core_metric == ["euclidean", "euclidean"]
 
@@ -306,7 +312,7 @@ class TestCategorical:
         y = continuous + 0.5 * (letters == "b")
 
         model = AddiVortesRegressor(
-            categorical_features=[1], random_state=1, **SMALL
+            categorical_features=[1], random_state=1, **SMALL, n_chains=1
         ).fit(x, y)
 
         assert model.predict(x).shape == (60,)
@@ -314,7 +320,7 @@ class TestCategorical:
     def test_an_unseen_level_is_rejected(self):
         x, y = self._data()
         model = AddiVortesRegressor(
-            categorical_features=[1], random_state=1, **SMALL
+            categorical_features=[1], random_state=1, **SMALL, n_chains=1
         ).fit(x, y)
 
         unseen = x.copy()
@@ -327,17 +333,21 @@ class TestCategorical:
         constant = x.copy()
         constant[:, 1] = 0.0
         with pytest.raises(ValueError, match="at least two"):
-            AddiVortesRegressor(categorical_features=[1], **SMALL).fit(constant, y)
+            AddiVortesRegressor(categorical_features=[1], **SMALL, n_chains=1).fit(
+                constant, y
+            )
 
     def test_an_out_of_range_index_is_rejected(self):
         x, y = self._data()
         with pytest.raises(ValueError, match="outside"):
-            AddiVortesRegressor(categorical_features=[5], **SMALL).fit(x, y)
+            AddiVortesRegressor(categorical_features=[5], **SMALL, n_chains=1).fit(x, y)
 
     def test_an_unknown_string_is_rejected(self):
         x, y = self._data()
         with pytest.raises(ValueError, match="from_dtype"):
-            AddiVortesRegressor(categorical_features="auto", **SMALL).fit(x, y)
+            AddiVortesRegressor(categorical_features="auto", **SMALL, n_chains=1).fit(
+                x, y
+            )
 
     def test_from_dtype_reads_the_pandas_dtypes(self):
         pandas = pytest.importorskip("pandas")
@@ -351,7 +361,7 @@ class TestCategorical:
         y = frame["x"].to_numpy() + 0.5 * (frame["g"] == "b")
 
         model = AddiVortesRegressor(
-            categorical_features="from_dtype", random_state=1, **SMALL
+            categorical_features="from_dtype", random_state=1, **SMALL, n_chains=1
         ).fit(frame, y)
 
         assert model._encoding.core_metric == ["euclidean"] * 3
@@ -361,7 +371,9 @@ class TestCategorical:
     def test_from_dtype_needs_a_data_frame(self):
         x, y = self._data()
         with pytest.raises(ValueError, match="data frame"):
-            AddiVortesRegressor(categorical_features="from_dtype", **SMALL).fit(x, y)
+            AddiVortesRegressor(
+                categorical_features="from_dtype", **SMALL, n_chains=1
+            ).fit(x, y)
 
 
 def test_n_jobs_spreads_the_chains_without_changing_the_draws(gaussian_fixture):
@@ -389,10 +401,21 @@ def test_n_jobs_spreads_the_chains_without_changing_the_draws(gaussian_fixture):
 
 def test_n_jobs_is_read_at_each_prediction(gaussian_fixture):
     x, y = gaussian_fixture
-    model = AddiVortesRegressor(random_state=1, **SMALL).fit(x, y)
+    model = AddiVortesRegressor(random_state=1, **SMALL, n_chains=1).fit(x, y)
     mean = model.predict(x)
 
     model.set_params(n_jobs=2)
 
     np.testing.assert_array_equal(model.predict(x), mean)
     assert model._fitted.threads == 2
+
+
+def test_the_estimators_default_to_four_chains_on_one_thread(gaussian_fixture):
+    x, y = gaussian_fixture
+
+    assert AddiVortesRegressor().n_chains == 4
+    assert AddiVortesClassifier().n_chains == 4
+    assert AddiVortesRegressor().n_jobs is None
+    with pytest.warns(UserWarning):
+        model = AddiVortesRegressor(random_state=1, **SMALL).fit(x, y)
+    assert model._fitted.n_draws == 4 * SMALL["draws"]

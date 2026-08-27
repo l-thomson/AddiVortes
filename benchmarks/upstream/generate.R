@@ -1,7 +1,7 @@
 # Regenerates the upstream comparison fixtures under
-# crates/thiessen/tests/fixtures/upstream from CRAN AddiVortes, pinned by
-# renv.lock. Fixtures change only through this script; the pull request
-# that regenerates them states why.
+# crates/thiessen/tests/fixtures/upstream from upstream AddiVortes at the
+# GitHub commit renv.lock pins. Fixtures change only through this script;
+# the pull request that regenerates them states why.
 #
 # Usage, from benchmarks/upstream: Rscript generate.R
 #

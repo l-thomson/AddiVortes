@@ -8,10 +8,11 @@ drive_small <- function(x, y, seed) {
   sampler
 }
 
-test_that("a driven fit matches thiessen() bit for bit", {
+test_that("a driven fit matches thiessen(chains = 1) bit for bit", {
   fixture <- core_fixture()
 
-  through_fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  through_fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1,
+                          chains = 1)
   through_sampler <- drive_small(fixture$x, fixture$y, seed = 1)$finish()
 
   expect_identical(
@@ -27,7 +28,7 @@ test_that("thinning is the caller's loop", {
     tessellations = 8,
     general_params = general_params(burn_in = 10, draws = 20, thinning = 3)
   )
-  thinned <- thiessen(fixture$x, fixture$y, control, seed = 1)
+  thinned <- thiessen(fixture$x, fixture$y, control, seed = 1, chains = 1)
 
   sampler <- thiessen_sampler(fixture$x, fixture$y, small_control(), seed = 1)
   sampler$step(10)

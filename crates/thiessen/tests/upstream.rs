@@ -1,4 +1,5 @@
-//! Comparison against the upstream R package (CRAN AddiVortes 0.6.9,
+//! Comparison against the upstream R package (AddiVortes 0.7.1, GitHub
+//! johnpaulgosling/AddiVortes at 5455cc2aa45693872932022b5a8f0c793da4ab34,
 //! pinned in benchmarks/upstream/renv.lock): posterior summaries on fixed
 //! datasets agree within k = 4 combined Monte Carlo standard errors.
 //! Fixtures under tests/fixtures/upstream are written only by

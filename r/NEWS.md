@@ -37,6 +37,15 @@
   repeat the warning, where R-hat exceeds 1.01 or an effective sample size
   falls below 400 (Vehtari and others, 2021); a fit of one chain says so
   instead.
+* The defaults are `chains = 4` and `threads = getOption("mc.cores", 1L)`,
+  read when the fit is called, as Stan's interfaces do: a session that
+  sets nothing runs the four chains on one thread and pays four chains,
+  and `options(mc.cores = 4)` runs them on four cores for the same draws,
+  in less than half the one-thread time (about 45 per cent at n = 200 on
+  four cores of a 2025 laptop). On Friedman #1 with n = 200 and p = 10
+  the default schedule reaches a smallest effective sample size of about
+  100 and a largest R-hat of about 1.05, so a default fit warns; more
+  draws per chain is the remedy.
 * Five vignettes, executed at build: getting started, H-AddiVortes and
   Binary AddiVortes by their paper names, the control surface, and the
   sampler API with a worked censored-response imputation. A pkgdown site
@@ -126,6 +135,11 @@
   the current tessellation's cell statistics in the pass that forms
   them, with each cell's statistics in one record; sampled values are
   unchanged and a sweep executes about a fifth fewer instructions.
+* The reassignment of the training rows after a dimension move takes
+  the nearest centre of every row in one branch-free pass per centre,
+  and the rows that lose their centre under a change or removal take a
+  plain Euclidean search; sampled values are unchanged and a sweep runs
+  about a fifth faster on one machine.
 * `thiessen(threads = )` runs the chains of a fit on up to that many
   threads, each chain on one thread with its own generator, and
   `predict()` on the fit, intervals included, splits its rows over the

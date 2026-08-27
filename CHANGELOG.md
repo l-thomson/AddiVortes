@@ -275,7 +275,7 @@ says "Sampled values changed" with the reason.
   SBC configuration.
 - `Config::paper()`: the paper's settings, lambda_c = 25. The default
   lambda_c is 5 for every model, following CRAN AddiVortes >= 0.6.8.
-- Upstream comparison: posterior summaries against CRAN AddiVortes 0.6.9
+- Upstream comparison: posterior summaries against upstream AddiVortes 0.7.1
   on fixed datasets, within 4 combined Monte Carlo standard errors.
 
 ### Changed
@@ -369,6 +369,15 @@ says "Sampled values changed" with the reason.
   record. The per-row operations and their order are unchanged, so
   sampled values are the same for a fixed seed. A sweep at n = 500
   executes 21 per cent fewer instructions.
+- The full reassignment of a dimension move writes the first active
+  column's term in place of adding it to a zeroed buffer, takes the
+  nearest centre of every row in one branch-free pass per centre over
+  the column-major keys in place of a loop per row, and the rows that
+  lose their centre under a change or removal take the all-Euclidean
+  nearest-centre search without the per-column metric dispatch. Every
+  key is the same sum in the same order and the winner the same strict
+  comparison, so sampled values are the same for a fixed seed. The
+  sweep benches run 1.16 to 1.23 times faster on one machine.
 - Prediction evaluates each kept tessellation over every row at once,
   through the same streaming assignment the sampler uses under an
   all-Euclidean geometry, in place of a nearest-centre search per row per

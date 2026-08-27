@@ -41,6 +41,10 @@ SUMMARIES = ("rmse", "lpd", "coverage_95", "width_95")
 def failures(table: pd.DataFrame) -> list[str]:
     """Return the parity failures, empty when the gate passes."""
     out: list[str] = []
+    # The gate reads the one-core rows: the same model on any core count,
+    # but the timing it licenses is the one-core table's.
+    if "cores" in table:
+        table = table[table["cores"] == 1]
     ours = table[table["method"] == "thiessen"]
     theirs = table[table["method"] == "addivortes"]
     if ours.empty or theirs.empty:

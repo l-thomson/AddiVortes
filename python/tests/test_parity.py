@@ -123,6 +123,7 @@ def test_the_factor_encoding_is_the_shared_fixture():
         burn_in=2,
         draws=2,
         random_state=1,
+        n_chains=1,
     ).fit(x, y)
 
     encoded = model._encoding.transform([x[:, 0], x[:, 1]])

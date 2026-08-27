@@ -57,7 +57,7 @@ and are not evidence of correctness.
 
 In `tests/upstream.rs`. Posterior summaries on
 the Friedman benchmark (n = 200, p = 10) and the `attitude` dataset
-against CRAN AddiVortes 0.6.9, every summary within
+against upstream AddiVortes 0.7.1 (GitHub, pinned by commit), every summary within
 4 sqrt(mcse_upstream^2 + mcse_ours^2); fixtures regenerate only through
 the renv-pinned script in `benchmarks/upstream/`. It detects divergence
 from the published implementation; it cannot detect a defect shared with

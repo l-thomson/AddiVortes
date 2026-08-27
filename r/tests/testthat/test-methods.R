@@ -1,14 +1,14 @@
 test_that("predict at the training rows is the fitted values", {
   fixture <- small_fixture()
 
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
 
   expect_identical(predict(fit), fitted(fit))
 })
 
 test_that("each draw type has one row per draw and one column per row", {
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
   rows <- fixture$x[1:5, ]
 
   for (type in c("draws", "latent", "variance")) {
@@ -18,7 +18,7 @@ test_that("each draw type has one row per draw and one column per row", {
 
 test_that("an interval carries the fit and its bounds", {
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
   rows <- fixture$x[1:5, ]
 
   interval <- predict(fit, rows, interval = "credible")
@@ -31,7 +31,7 @@ test_that("an interval carries the fit and its bounds", {
 
 test_that("a prediction interval is at least as wide as a credible one", {
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
   rows <- fixture$x[1:5, ]
 
   credible <- predict(fit, rows, interval = "credible")
@@ -45,7 +45,7 @@ test_that("a prediction interval is at least as wide as a credible one", {
 
 test_that("an interval is refused for a per-draw type", {
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
 
   expect_error(
     predict(fit, fixture$x, type = "draws", interval = "credible"),
@@ -55,7 +55,7 @@ test_that("an interval is refused for a per-draw type", {
 
 test_that("the level must be a probability", {
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
 
   expect_error(
     predict(fit, fixture$x, interval = "credible", level = 1),
@@ -73,7 +73,7 @@ test_that("the level must be a probability", {
 
 test_that("a column count the fit does not have is refused by the core", {
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
 
   expect_error(
     predict(fit, fixture$x[, 1, drop = FALSE]),
@@ -83,7 +83,7 @@ test_that("a column count the fit does not have is refused by the core", {
 
 test_that("sigma is the posterior mean under the Gaussian model", {
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
 
   expect_identical(sigma(fit), mean(core_sigma(fit_state(fit))))
   expect_true(sigma(fit) > 0)
@@ -94,7 +94,8 @@ test_that("sigma is one under the probit model", {
   labels <- as.double(fixture$y >= stats::median(fixture$y))
 
   fit <- thiessen(
-    fixture$x, labels, small_control(outcome = probit_outcome()), seed = 1
+    fixture$x, labels, small_control(outcome = probit_outcome()), seed = 1,
+    chains = 1
   )
 
   expect_identical(sigma(fit), 1)
@@ -106,7 +107,7 @@ test_that("the heteroscedastic model has no single residual scale", {
   fit <- thiessen(
     fixture$x, fixture$y,
     small_control(variance_params = term_params(tessellations = 4)),
-    seed = 1
+    seed = 1, chains = 1
   )
 
   expect_error(sigma(fit), class = "thiessen_error")
@@ -114,7 +115,7 @@ test_that("the heteroscedastic model has no single residual scale", {
 
 test_that("printing reports the model and the schedule", {
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
 
   expect_output(print(fit), "gaussian model, 40 observations, 2 covariates")
   expect_output(print(fit), "8 tessellations, 20 draws kept after 10 burn-in")
@@ -122,7 +123,7 @@ test_that("printing reports the model and the schedule", {
 
 test_that("summary carries the residual and sigma quantiles", {
   fixture <- small_fixture()
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
 
   summary <- summary(fit)
 
@@ -138,7 +139,7 @@ test_that("summary reports no sigma where the model has none", {
   fit <- thiessen(
     fixture$x, fixture$y,
     small_control(variance_params = term_params(tessellations = 4)),
-    seed = 1
+    seed = 1, chains = 1
   )
 
   expect_null(summary(fit)$sigma)
@@ -163,7 +164,7 @@ test_that("plot covers a model with no sigma", {
   fit <- thiessen(
     fixture$x, fixture$y,
     small_control(variance_params = term_params(tessellations = 4)),
-    seed = 1
+    seed = 1, chains = 1
   )
 
   grDevices::pdf(NULL)

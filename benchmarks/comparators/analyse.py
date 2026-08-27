@@ -83,6 +83,18 @@ def enrich(table: pd.DataFrame, directory: Path) -> pd.DataFrame:
     return table
 
 
+def group_keys(table: pd.DataFrame) -> list[str]:
+    """The columns that identify a cell group: the data, and the thread
+    count where the CSV carries one, so no summary or ratio ever spans
+    two core counts."""
+    keys = ["dataset", "n", "p"]
+    if "m" in table:
+        keys.append("m")
+    if "cores" in table:
+        keys.append("cores")
+    return keys
+
+
 def standard_error(values: pd.Series) -> float:
     """Return the standard error of the mean, zero for a single value."""
     if len(values) < 2:
@@ -107,7 +119,7 @@ def summarise(table: pd.DataFrame) -> pd.DataFrame:
         "peak_rss_bytes",
     ]
     present = [c for c in columns if c in table]
-    keys = ["dataset", "n", "p"] + (["m"] if "m" in table else []) + ["method"]
+    keys = group_keys(table) + ["method"]
     grouped = table.groupby(keys, as_index=False)
     out = grouped.agg(
         **{c: (c, "mean") for c in present},
@@ -168,7 +180,7 @@ def ratios(
     result. The interval is on the log ratio with Welch-Satterthwaite
     degrees of freedom, from the per-seed means and standard errors.
     """
-    keys = ["dataset", "n", "p"] + (["m"] if "m" in table else [])
+    keys = group_keys(table)
     rows = []
     for key, group in table.groupby(keys + ["method"]):
         method = key[-1]
@@ -208,20 +220,37 @@ def main() -> None:
     if args.out:
         table.to_csv(args.out, index=False)
 
+    # One table per core count, the one-core table first under the
+    # heading it has always had. `fit_seconds` is wall-clock around the
+    # fit in every adapter, so on the cores grid `ess_bulk_per_second` is
+    # ESS per wall-second and shares its unit with the one-core table;
+    # nothing is joined across core counts.
+    counts = sorted(table["cores"].unique()) if "cores" in table else [1]
     with pd.option_context("display.width", 200, "display.max_columns", None):
-        print("Per method and cell, averaged over seeds\n")
-        print(summarise(table).to_string(index=False))
-        for column in ("seconds_to_ess_400", "ess_bulk_per_second", "fit_seconds"):
-            paired = ratios(table, column)
-            if not paired.empty:
-                print(f"\nRatios over thiessen, 95 per cent intervals: {column}\n")
-                print(paired.to_string(index=False))
-        for variable in ("n", "p", "m"):
-            for column in ("seconds_per_sweep", "fit_seconds"):
-                fitted = exponents(table, column, variable)
-                if not fitted.empty:
-                    print(f"\nScaling in {variable}: {column}\n")
-                    print(fitted.to_string(index=False))
+        for cores in counts:
+            part = table[table["cores"] == cores] if "cores" in table else table
+            if cores == 1:
+                print("Per method and cell, averaged over seeds\n")
+            else:
+                print(
+                    f"\n\n{cores} cores, wall-clock: per method and cell, averaged over seeds\n"
+                )
+            print(summarise(part).to_string(index=False))
+            for column in ("seconds_to_ess_400", "ess_bulk_per_second", "fit_seconds"):
+                paired = ratios(part, column)
+                if not paired.empty:
+                    print(
+                        f"\nRatios over thiessen at {cores} cores, 95 per cent intervals: {column}\n"
+                    )
+                    print(paired.to_string(index=False))
+            if cores != 1:
+                continue
+            for variable in ("n", "p", "m"):
+                for column in ("seconds_per_sweep", "fit_seconds"):
+                    fitted = exponents(part, column, variable)
+                    if not fitted.empty:
+                        print(f"\nScaling in {variable}: {column}\n")
+                        print(fitted.to_string(index=False))
 
 
 if __name__ == "__main__":

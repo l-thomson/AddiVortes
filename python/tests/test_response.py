@@ -110,7 +110,7 @@ def test_a_named_family_the_response_does_not_fit_is_an_error(outcome, y, named)
 def test_a_boolean_response_fits_the_probit_family_unnamed(probit_fixture):
     x, y = probit_fixture
 
-    fitted = Model(**SMALL).fit(x, y.astype(bool), random_state=1)
+    fitted = Model(**SMALL).fit(x, y.astype(bool), random_state=1, n_chains=1)
 
     assert fitted.model == "probit"
     assert fitted.predict(x).shape == (48,)
@@ -122,8 +122,8 @@ def test_a_boolean_response_fits_the_probit_family_unnamed(probit_fixture):
 def test_labels_in_zero_and_one_still_fit_the_named_probit_family(probit_fixture):
     x, y = probit_fixture
 
-    named = Model(outcome=probit(), **SMALL).fit(x, y, random_state=1)
-    unnamed = Model(**SMALL).fit(x, y.astype(bool), random_state=1)
+    named = Model(outcome=probit(), **SMALL).fit(x, y, random_state=1, n_chains=1)
+    unnamed = Model(**SMALL).fit(x, y.astype(bool), random_state=1, n_chains=1)
 
     np.testing.assert_array_equal(named.predict_draws(x), unnamed.predict_draws(x))
 
@@ -132,14 +132,14 @@ def test_a_categorical_response_fits_the_probit_family(probit_fixture):
     x, y = probit_fixture
     labels = pd.Categorical(np.where(y > 0.5, "yes", "no"), ["no", "yes"])
 
-    fitted = Model(**SMALL).fit(x, labels, random_state=1)
+    fitted = Model(**SMALL).fit(x, labels, random_state=1, n_chains=1)
 
     assert fitted.model == "probit"
 
 
 def test_the_fitted_family_checks_the_response_shape(gaussian_fixture):
     x, y = gaussian_fixture
-    fitted = Model(**SMALL).fit(x, y, random_state=1)
+    fitted = Model(**SMALL).fit(x, y, random_state=1, n_chains=1)
 
     with pytest.raises(ValueError, match="selects the aft family"):
         fitted.log_likelihood(x, right_censored(48))

@@ -1,7 +1,7 @@
 test_that("a one-chain fit reports no diagnostics and says so", {
   fixture <- small_fixture()
 
-  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, fixture$y, small_control(), seed = 1, chains = 1)
 
   expect_null(fit$convergence)
   expect_output(print(fit), "1 chain")

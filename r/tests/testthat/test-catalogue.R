@@ -146,12 +146,12 @@ test_that("every row of the catalogue is reachable from thiessen()", {
     row <- rows[[name]]
     if (!core_experimental()) {
       expect_error(
-        thiessen(x, row$y, row$control(), seed = 1),
+        thiessen(x, row$y, row$control(), seed = 1, chains = 1),
         class = "thiessen_requires_feature", label = name
       )
       next
     }
-    fit <- thiessen(x, row$y, row$control(), seed = 1)
+    fit <- thiessen(x, row$y, row$control(), seed = 1, chains = 1)
     expect_s3_class(fit, "thiessen")
     expect_length(predict(fit), nrow(x))
     copy <- unserialize(serialize(fit, NULL))
@@ -168,7 +168,7 @@ test_that("a Surv response of type right reaches the AFT family", {
   fixture <- small_fixture()
   y <- right_censored_fixture(fixture$y)
 
-  fit <- thiessen(fixture$x, y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, y, small_control(), seed = 1, chains = 1)
 
   expect_identical(attr(fit$control$outcome, "kind"), "aft")
   expect_identical(fit$model, "aft")
@@ -188,7 +188,8 @@ test_that("a Surv response reaches the AFT family through a formula", {
   )
 
   fit <- thiessen(
-    survival::Surv(time, event) ~ a + b, frame, small_control(), seed = 1
+    survival::Surv(time, event) ~ a + b, frame, small_control(), seed = 1,
+    chains = 1
   )
 
   expect_identical(fit$model, "aft")
@@ -201,7 +202,7 @@ test_that("an interval2 Surv reaches the interval-censored family", {
   fixture <- small_fixture()
   y <- interval_fixture(fixture$y)
 
-  fit <- thiessen(fixture$x, y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, y, small_control(), seed = 1, chains = 1)
 
   expect_identical(fit$model, "interval_censored")
   expect_identical(fit$response$lower[7], -Inf)
@@ -215,7 +216,7 @@ test_that("an ordered factor reaches the ordinal family", {
   n <- nrow(fixture$x)
   y <- ordered_fixture(n)
 
-  fit <- thiessen(fixture$x, y, small_control(), seed = 1)
+  fit <- thiessen(fixture$x, y, small_control(), seed = 1, chains = 1)
   probs <- predict(fit, type = "probs")
 
   expect_identical(fit$control$outcome$categories, 3L)
@@ -229,7 +230,7 @@ test_that("an ordered factor reaches the ordinal family", {
   expect_error(
     thiessen(
       fixture$x, y, small_control(outcome = ordinal_outcome(categories = 4)),
-      seed = 1
+      seed = 1, chains = 1
     ),
     "levels",
     class = "thiessen_error"
@@ -241,7 +242,7 @@ test_that("the draws carry the quantities the experimental models sample", {
   fixture <- small_fixture()
   variables <- function(control) {
     posterior::variables(posterior::as_draws_df(
-      thiessen(fixture$x, fixture$y, control, seed = 1)
+      thiessen(fixture$x, fixture$y, control, seed = 1, chains = 1)
     ))
   }
 
@@ -267,7 +268,7 @@ test_that("the sampler takes a Surv and reproduces an AFT fit bit for bit", {
   fixture <- core_fixture()
   y <- right_censored_fixture(fixture$y)
 
-  through_fit <- thiessen(fixture$x, y, small_control(), seed = 1)
+  through_fit <- thiessen(fixture$x, y, small_control(), seed = 1, chains = 1)
   sampler <- thiessen_sampler(fixture$x, y, small_control(), seed = 1)
   sampler$step(10)
   for (draw in seq_len(20)) {
