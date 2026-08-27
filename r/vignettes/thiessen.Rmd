@@ -8,26 +8,37 @@ vignette: >
 ---
 
 ```{r, include = FALSE}
-knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+knitr::opts_chunk$set(
+  collapse = TRUE, comment = "#>",
+  fig.width = 7, fig.height = 4, dpi = 96, out.width = "100%"
+)
+ggplot2::theme_set(ggplot2::theme_minimal())
 ```
 
 AddiVortes is Bayesian regression on a sum of Voronoi tessellations
-(Stone and Gosling, 2025, *Journal of Computational and Graphical
-Statistics* 34(3), 859-871). It stands to BART as a tessellation stands
-to a tree: a cell is a region of the covariate space rather than a box,
-so a boundary oblique to the axes costs one cell rather than many
-splits. This vignette fits the Gaussian model with the defaults; the
-other published variants have their own vignettes, by their paper names.
+(Stone and Gosling, 2025). It stands to BART (Chipman, George and
+McCulloch, 2010) as a tessellation stands to a tree: a cell is a region
+of the covariate space rather than a box, so a boundary oblique to the
+axes costs one cell rather than many splits. The priors, the Gibbs
+sampler and the posterior summaries are those of BART, so a reader who
+has fitted BART, dbarts or bartMachine will recognise every argument.
+
+This page fits one data set end to end with the defaults: the fit, its
+predictions and intervals, the convergence diagnostics, and saving the
+result. It assumes you are comfortable with regression and have met
+MCMC; the two papers above are the only background it draws on.
 
 ## A first fit
 
 `thiessen()` takes a formula and a data frame, a data frame and a
-response, or a numeric matrix and a response. The sweep schedule here is
-short so the vignette builds quickly; the defaults are 200 burn-in
-sweeps and 1000 kept draws.
+response, or a numeric matrix and a response. The data below have two
+numeric covariates and a factor, and a response that is smooth in `a`,
+linear in `b`, shifted for one level of `g`, with noise of standard
+deviation 0.1.
 
-```{r}
+```{r fit}
 library(thiessen)
+library(ggplot2)
 
 set.seed(1)
 n <- 200
@@ -39,61 +50,98 @@ d <- data.frame(
 d$y <- 3 * (d$a - 0.4)^2 + 0.5 * d$b + 0.3 * (d$g == "high") +
   rnorm(n, sd = 0.1)
 
-control <- thiessen_control(
-  tessellations = 25,
-  general_params = general_params(burn_in = 100, draws = 200)
-)
-fit <- thiessen(y ~ ., d, control, seed = 1)
+fit <- thiessen(y ~ ., d, seed = 1)
 fit
 ```
 
-A factor covariate becomes d - 1 treatment-contrast indicators, the
-first level as reference, as `model.matrix` encodes one. `predict()`
-returns the posterior mean and matches new data by column name and type:
+The defaults are the published configuration: 200 tessellations, 200
+burn-in sweeps and 1000 kept draws, run as four chains whose draws are
+pooled. The last line of the print is the convergence check over the
+four chains, R-hat and the smallest effective sample size; the
+[chains and convergence](convergence.html) page says what it monitors
+and what to do when it warns.
 
-```{r}
-head(predict(fit, d))
-head(predict(fit, d, interval = "credible", level = 0.9))
+A factor covariate becomes d - 1 treatment-contrast indicators, the
+first level as reference, as `model.matrix()` encodes one; the
+[covariates](covariates.html) page covers the encoding and the
+alternatives.
+
+## Predictions and intervals
+
+`predict()` returns the posterior mean of the response and matches new
+data by column name and type. `interval = "credible"` adds the interval
+of the mean function; `interval = "prediction"` covers a new
+observation, so it is wider by the noise.
+
+```{r predict}
+new <- data.frame(a = c(0.2, 0.8), b = 0.5, g = factor("low", levels(d$g)))
+predict(fit, new)
+predict(fit, new, interval = "credible", level = 0.9)
+predict(fit, new, interval = "prediction", level = 0.9)
 ```
 
-`predict(interval = "prediction")` covers a new observation rather than
-the mean, and `type = "draws"` returns the per-draw values.
+The figure follows the fit along `a` with `b` and `g` held fixed, the
+90 per cent credible band around it and the noise-free truth dashed.
 
-`fitted()`, `residuals()`, `sigma()`, `nobs()`, `print()`, `summary()`
-and `plot()` behave as they do on any model object, and
+```{r transect}
+grid <- data.frame(
+  a = seq(0, 1, length.out = 100), b = 0.5,
+  g = factor("low", levels(d$g))
+)
+band <- predict(fit, grid, interval = "credible", level = 0.9)
+grid$truth <- 3 * (grid$a - 0.4)^2 + 0.5 * grid$b
+
+ggplot(cbind(grid, band), aes(a)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = "steelblue",
+              alpha = 0.3) +
+  geom_line(aes(y = fit), colour = "steelblue") +
+  geom_line(aes(y = truth), linetype = "dashed") +
+  labs(y = "f(a, b = 0.5, g = low)")
+```
+
+`predict(type = "draws")` returns the per-draw values, one row per
+kept draw, for any summary the two intervals do not give.
+
+## The usual methods
+
+`fitted()`, `residuals()`, `sigma()`, `nobs()`, `summary()` and
+`plot()` behave as they do on any model object, and
 `update(fit, seed = 2)` refits with that one argument replaced.
 
-```{r}
+```{r methods}
 c(nobs = nobs(fit), sigma = sigma(fit),
   rmse = sqrt(mean(residuals(fit)^2)))
+summary(fit)
 ```
 
-## Covariate scaling
+`sigma()` is the posterior mean of the residual standard deviation, to
+be read against the 0.1 the data were made with. `summary()` repeats the
+convergence line and adds the quantiles of the residuals and of the
+posterior draws of sigma.
 
-Pass raw data. Inside the sampler a Euclidean column is min-max scaled
-to [-0.5, 0.5] over its training range, which is what makes one distance
-comparable across columns of different units; a categorical column and a
-spherical one are not scaled. The centre-proposal scale `sigma_c` is on
-that internal scale, so `sigma_c = 1` is the full training range of a
-Euclidean column. Nothing else about a fit depends on the units the
-covariates arrive in.
+`plot()` traces the per-draw sampler diagnostics, one panel per
+quantity and one line per chain: the residual scale, the mean cells per
+tessellation and the mean active covariates per tessellation. It is a
+convergence check rather than a display of the fit.
 
-## The configuration
-
-The configuration has four parts, named as the core stores them: an
-outcome family from `gaussian_outcome()` or `probit_outcome()`, one
-`term_params()` group per ensemble, and the sweep schedule from
-`general_params()`.
-`thiessen_control(tessellations = )` is the one shortcut, setting the
-mean ensemble's size. The control-surface vignette walks through every
-group.
-
-```{r}
-thiessen_control(
-  outcome = gaussian_outcome(nu = 6, q = 0.85),
-  mean_params = term_params(tessellations = 200, k = 3, lambda_c = 5)
-)
+```{r trace, fig.height = 6}
+plot(fit)
 ```
+
+## Which covariates the ensemble uses
+
+`variable_inclusion()` reports the share of the ensemble's active
+dimensions falling on each covariate.
+
+```{r inclusion}
+variable_inclusion(fit)
+```
+
+Read that as where the ensemble spent its dimensions, not as variable
+selection: at the default `omega` of `min(3, p)` every dimension is
+always active when p is 3 or fewer, so the proportions are then uniform
+by construction. Here p is 4 after the factor encoding, and the
+informative covariates separate from the rest only weakly.
 
 ## Reproducibility
 
@@ -101,8 +149,8 @@ thiessen_control(
 `set.seed()` governs; a whole number reproduces the same draws for a
 given package version and platform. The resolved seed is on the fit.
 
-```{r}
-again <- thiessen(y ~ ., d, control, seed = 1)
+```{r seed}
+again <- thiessen(y ~ ., d, seed = 1)
 identical(predict(fit, d), predict(again, d))
 ```
 
@@ -112,112 +160,51 @@ A fit is a plain R object holding the sampler state, so `saveRDS()`
 writes one and a later session reads it and predicts the same values
 without a refit.
 
-```{r}
+```{r save}
 path <- tempfile(fileext = ".rds")
 saveRDS(fit, path)
 identical(predict(readRDS(path), d), predict(fit, d))
 ```
 
-## Diagnostics
-
-The established generics are available: `posterior::as_draws_df()`,
-`summary()`, and the rstantools generics `posterior_predict()`,
-`posterior_epred()`, `log_lik()` and `predictive_interval()`. The
-default four `chains` carry rank-normalised split R-hat and effective
-sample sizes, and a fit warns where they cross the usual thresholds, as
-every fit in this article does at its short schedule. The chains run on
-`getOption("mc.cores", 1L)` threads, so `options(mc.cores = 4)` runs
-them on four cores for the same draws.
-
-```{r}
-summary(fit)
-```
-
-`variable_inclusion()` reports the share of the ensemble's active
-dimensions falling on each covariate.
-
-```{r}
-variable_inclusion(fit)
-```
-
-Read that as where the ensemble spent its dimensions, not as variable
-selection. At the default `omega` of `min(3, p)` every dimension is
-always active when p is 3 or fewer, so the proportions are then uniform
-by construction; p is 4 here after the factor encoding, and the
-informative covariates separate from the rest only weakly.
-
-`thiessen_diagnostics()` returns the per-draw quantities as a data
-frame, for `bayesplot::mcmc_trace()` or a plot of your own. It is not
-for printing: a bare `print()` dumps every draw.
-
 ## Progress
 
-Progress over the whole fit is signalled with progressr, and nothing is
-printed by default: the package raises the conditions and the session
-decides whether and how to report them. Choose a handler once and it
-applies to every fit afterwards.
+Nothing is printed while a fit runs. Progress is signalled with
+progressr, so the session chooses whether and how to report it; choose
+a handler once and it applies to every fit afterwards.
 
 ``` r
 progressr::handlers(global = TRUE)
 progressr::handlers("txtprogressbar")
-fit <- thiessen(y ~ ., d, control, seed = 1)
+fit <- thiessen(y ~ ., d, seed = 1)
 ```
 
-`progressr::with_progress()` scopes a handler to one expression instead.
-The chunks here are not evaluated because progressr renders nothing into
-a static document.
+The chunk is not evaluated because progressr renders nothing into a
+static document. Reporting does not change the draws.
 
-The schedule raises one progression per sweep, to a maximum of a hundred
-over the sweeps of every chain, then pooling the draws and the
-convergence summary. Both run after the last sweep, and pooling predicts
-at every training row for every kept draw, so on a long schedule over
-many rows it costs about twice what the sweeps cost. It therefore
-carries their weight in the bar rather than a step of it: the bar is
-around a third of the way along when the sweeps end, and it stands until
-the fit is complete. Pooling is one call into the core, so the bar rests
-there rather than advancing through it. Each phase names itself in a
-sticky message, which a terminal handler pushes above the bar rather
-than overwriting, so the phase that is running is named whatever handler
-is set. Reporting does not change the draws.
+## Where next
 
-## Troubleshooting
+- [Gaussian regression](gaussian.html), [Binary
+  AddiVortes](binary-addivortes.html) and
+  [H-AddiVortes](h-addivortes.html): one page per published model, with
+  the likelihood, the priors and a worked example against a known
+  truth. [Model description](model-description.html) holds the
+  notation and the symbol-to-argument table.
+- [Working with the posterior](posterior.html): the draws through
+  posterior, bayesplot, loo and tidybayes.
+- [Chains, convergence and compute](convergence.html): what the four
+  chains monitor, when the fit warns, and what a fit costs.
+- [The control surface](control-surface.html): every configuration
+  group and the defaults the core resolves.
+- [The sampler API](sampler-api.html): the Gibbs loop driven from R, so
+  a model the package does not ship is built without Rust.
+- [Troubleshooting](troubleshooting.html): symptom, then remedy.
 
-### The fit prints nothing while it runs
+## References
 
-That is the default, not a hang. See Progress above.
+Chipman, H. A., George, E. I. and McCulloch, R. E. (2010). BART:
+Bayesian additive regression trees. *The Annals of Applied Statistics*
+4(1), 266-298. doi:10.1214/09-AOAS285
 
-### R-hat or an effective sample size warns
-
-`summary()` reports both. More draws per chain,
-`general_params(draws = )`, is the first answer, then more chains;
-`thinning` reduces the stored draws without adding information, so it
-is not the remedy for a low effective sample size. The default schedule
-is itself short for the thresholds: on Friedman #1 with n = 200 and
-p = 10 a default fit reaches a smallest effective sample size of about
-100 against the threshold of 400 and a largest R-hat of about 1.05
-against 1.01, so it warns. The warning fires on any short schedule,
-this article's included, and carries the condition class
-`thiessen_warning`, so it can be silenced by class rather than by
-message:
-
-```{r}
-withCallingHandlers(
-  quiet <- thiessen(y ~ ., d, control, seed = 1),
-  thiessen_warning = function(condition) {
-    invokeRestart("muffleWarning")
-  }
-)
-quiet$n_chains
-```
-
-### A saved fit will not load
-
-A fit written by a build carrying the core's experimental feature and
-read by a build without it errors with the class `thiessen_error`,
-naming the feature. `core_version()` and `core_experimental()` report
-the core version and the feature setting of the build in use; a bug
-report should carry both.
-
-```{r}
-c(core = core_version(), experimental = core_experimental())
-```
+Stone, A. and Gosling, J. P. (2025). AddiVortes: (Bayesian) additive
+Voronoi tessellations. *Journal of Computational and Graphical
+Statistics* 34(3), 859-871. doi:10.1080/10618600.2024.2414104

@@ -38,7 +38,9 @@ The stabilisation rule is stated once, in the crate-root documentation
 (`crates/thiessen/src/lib.rs`, Stability): graduation is a pull request
 against that rule, not a ticket. This file is the status table for every
 gated item; the pull-request column is the public record of each item's
-history.
+history. The R site renders the table for R readers on its
+[experimental page](https://l-thomson.github.io/thiessen/r/articles/experimental.html),
+where each item gains a case-study article as it is written.
 
 ## Table
 

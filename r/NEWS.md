@@ -46,10 +46,17 @@
   the default schedule reaches a smallest effective sample size of about
   100 and a largest R-hat of about 1.05, so a default fit warns; more
   draws per chain is the remedy.
-* Five vignettes, executed at build: getting started, H-AddiVortes and
-  Binary AddiVortes by their paper names, the control surface, and the
-  sampler API with a worked censored-response imputation. A pkgdown site
-  configuration groups the reference by surface.
+* Thirteen vignettes, executed at build and grouped on the site: getting
+  started; one page per published model on one template (likelihood,
+  priors, posterior, example against a known truth) with a model
+  description page holding the notation; the draws through posterior,
+  bayesplot, loo and tidybayes; chains, convergence and compute; what
+  each prior does; covariates and the covariate space; the control
+  surface; the sampler API with a worked censored-response imputation;
+  troubleshooting; and related software. A precomputed article group
+  for the experimental build, knitted by `tools/articles.sh` from an
+  opt-in build, opens with the catalogue and takes one case study per
+  item. A pkgdown site configuration groups the reference by surface.
 * `thiessen_sampler()` (experimental) drives the core's Gibbs loop one
   call at a time: `$step(n)`, `$keep()`, `$set_response()`,
   `$fitted_values()`, `$noise_variances()`, `$finish()` returning the fit
