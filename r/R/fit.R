@@ -63,15 +63,17 @@
 #' reports it after `progressr::handlers()` and nothing is printed by
 #' default; `progressr::handlers(global = TRUE)` sets one for a whole
 #' session. The schedule raises one progression per sweep, to a maximum of
-#' a hundred over the sweeps of every chain, then pooling the draws and the
-#' convergence summary, so the report closes when the fit is complete
-#' rather than at the last sweep. Pooling predicts at every training row
-#' for every kept draw, so it costs about twice what the sweeps cost and
-#' carries their weight, and the bar is around a third of the way along
-#' when the sweeps end. Each phase names itself in a sticky message, which
-#' a terminal handler pushes above the bar rather than overwriting, so the
-#' phase that is running is named whatever handler is set. The draws do
-#' not depend on whether a handler is set.
+#' a hundred over the sweeps of every chain, then pooling the draws, saving
+#' the state and the convergence summary, so the report closes when the
+#' fit is complete rather than at the last sweep. The phases after the
+#' sweeps scale with the kept draws and run on one thread, while the
+#' sweeps scale with the training rows and run on `threads`, so their
+#' share of the bar is set from that ratio: the bar is most of the way
+#' along when the sweeps of a one-chain fit end, and about a third of the
+#' way for four chains on four threads at n = 200. Each phase names itself
+#' in a sticky message, which a terminal handler pushes above the bar
+#' rather than overwriting, so the phase that is running is named whatever
+#' handler is set. The draws do not depend on whether a handler is set.
 #'
 #' @section Persistence:
 #'
@@ -268,16 +270,19 @@ new_fit <- function(design, response, control, seed, chains, threads, call,
   # The progressor's life must span the whole fit, so the count never ends
   # it: `auto_finish` would close the handler on the last step, and the
   # frame this progressor belongs to exits when the fit is complete.
+  phase_steps <- progress_phase_steps(control, nrow(design), chains, threads)
   report <- progressr::progressor(
-    steps = progress_steps(control, chains), auto_finish = FALSE
+    steps = progress_updates(control, chains) + sum(phase_steps),
+    auto_finish = FALSE
   )
   fit <- core_call(
     run_schedule(control, design, response, resolved, chains, threads,
-                 report),
+                 report, phase_steps[["pooling"]]),
     call = call_env
   )
   assemble_fit(fit, design, response, resolved, call, threads = threads,
-               blueprint = blueprint, call_env = call_env, report = report)
+               blueprint = blueprint, call_env = call_env, report = report,
+               phase_steps = phase_steps)
 }
 
 #' Run the sweep schedule of every chain and pool the draws
@@ -298,10 +303,11 @@ new_fit <- function(design, response, control, seed, chains, threads, call,
 #' @param chains The number of chains to run.
 #' @param threads The number of threads the chains run on.
 #' @param report A progressr progressor.
+#' @param pooling_steps The steps pooling the chains takes.
 #' @return The list `core_finish()` returns.
 #' @noRd
 run_schedule <- function(control, design, response, seed, chains, threads,
-                         report) {
+                         report, pooling_steps = 1L) {
   schedule <- control$general_params
   config <- config_json(control)
   thinning <- as.integer(schedule$thinning)
@@ -343,7 +349,7 @@ run_schedule <- function(control, design, response, seed, chains, threads,
   }
   report(amount = 0, class = "sticky", message = "pooling the draws")
   fit <- core_finish(samplers, threads)
-  report(amount = POOLING_WEIGHT * updates)
+  report(amount = pooling_steps)
   fit
 }
 
@@ -359,13 +365,17 @@ run_schedule <- function(control, design, response, seed, chains, threads,
 #' @param call_env The calling environment to report.
 #' @param report A progressr progressor. The default is a disabled one,
 #'   for a caller with no report of its own to advance.
+#' @param phase_steps The steps each phase takes, named as
+#'   `progress_phase_steps()` names them; `saving` and `summarising` are
+#'   read here.
 #' @return An object of class `"thiessen"`.
 #' @noRd
 assemble_fit <- function(fit, design, response, seed, call, threads = 1L,
                          blueprint = NULL, call_env = rlang::caller_env(),
                          report = progressr::progressor(
-                           steps = 1L, enable = FALSE
-                         )) {
+                           steps = 2L, enable = FALSE
+                         ),
+                         phase_steps = c(saving = 1L, summarising = 1L)) {
   # The core measures the in-sample fit against the observed values on
   # the model's scale where the working response is replaced by latents;
   # a plain response is kept as given.
@@ -376,9 +386,11 @@ assemble_fit <- function(fit, design, response, seed, call, threads = 1L,
   # The payload exists before any save because `saveRDS` offers no hook to
   # create it at write time; an external pointer alone saves as a null
   # address.
+  report(amount = 0, class = "sticky", message = "saving the state")
   state <- new.env(parent = emptyenv())
   state$handle <- fit$state
   state$payload <- core_call(core_state_payload(fit$state), call = call_env)
+  report(amount = phase_steps[["saving"]])
   fit_object <- structure(
     list(
       state = state,
@@ -406,6 +418,6 @@ assemble_fit <- function(fit, design, response, seed, call, threads = 1L,
   report(amount = 0, class = "sticky", message = "summarising the draws")
   fit_object$convergence <- convergence_of(fit_object)
   warn_convergence(fit_object, call = call_env)
-  report()
+  report(amount = phase_steps[["summarising"]])
   fit_object
 }
