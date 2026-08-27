@@ -1,6 +1,7 @@
 # Pointwise log-likelihood of a fitted model
 
-The matrix [`loo::loo()`](https://rdrr.io/pkg/loo/man/loo.html) takes.
+The matrix [`loo::loo()`](https://mc-stan.org/loo/reference/loo.html)
+takes.
 
 ## Usage
 

@@ -55,7 +55,7 @@
   [`predictive_interval()`](https://mc-stan.org/rstantools/reference/predictive_interval.html)
   from rstantools, re-exported so no
   [`library(rstantools)`](https://mc-stan.org/rstantools/) is needed.
-  [`loo::loo()`](https://rdrr.io/pkg/loo/man/loo.html) runs on
+  [`loo::loo()`](https://mc-stan.org/loo/reference/loo.html) runs on
   [`log_lik()`](https://mc-stan.org/rstantools/reference/log_lik.html).
   The draws carry `mu[i]`, `sigma` under the Gaussian model only, and
   the per-draw `cell_count` and `dimension_count`.
