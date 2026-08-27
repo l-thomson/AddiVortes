@@ -35,7 +35,7 @@ before starting R, or restart the session afterwards: rustup puts
 `cargo` on the path of new sessions only, and a session older than the
 install fails the build as though no toolchain were there. On Windows,
 Rtools and the target `configure.win` names are needed as well; the
-[README](../index.html) has the commands. The compilation uses no
+[README](https://github.com/l-thomson/thiessen/tree/dev/r#installation) has the commands. The compilation uses no
 network: every crate ships with the package.
 
 ## The fit prints nothing while it runs
